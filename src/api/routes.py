@@ -927,11 +927,12 @@ def list_llm_configs():
         configs = db_session.query(LLMConfig).all()
         
         return jsonify({
-            "items": [{
+            "configs": [{
                 "id": c.id,
                 "name": c.name,
                 "provider": c.provider,
                 "base_url": c.base_url,
+                "api_key": c.api_key,
                 "model_id": c.model_id,
                 "timeout": c.timeout,
                 "is_default": bool(c.is_default),
@@ -999,11 +1000,11 @@ def create_llm_config():
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/llm-configs/<int:config_id>', methods=['DELETE'])
-def delete_llm_config(config_id):
+@api_bp.route('/llm-configs/<int:config_id>', methods=['PATCH'])
+def update_llm_config(config_id):
     """
-    删除LLM配置
-    DELETE /api/llm-configs/{id}
+    更新LLM配置
+    PATCH /api/llm-configs/{id}
     """
     try:
         from src.database.models import LLMConfig
@@ -1012,21 +1013,105 @@ def delete_llm_config(config_id):
         if not config:
             return jsonify({"error": "配置不存在"}), 404
         
-        db_session.delete(config)
+        data = request.json
+        
+        # 更新字段
+        if 'name' in data:
+            config.name = data['name']
+        if 'provider' in data:
+            config.provider = data['provider']
+        if 'base_url' in data:
+            config.base_url = data['base_url']
+        if 'api_key' in data:
+            config.api_key = data['api_key']
+        if 'model_id' in data:
+            config.model_id = data['model_id']
+        if 'timeout' in data:
+            config.timeout = data['timeout']
+        
+        # 如果设置为默认，取消其他默认配置
+        if data.get('is_default'):
+            db_session.query(LLMConfig).update({LLMConfig.is_default: 0})
+            config.is_default = 1
+        elif 'is_default' in data:
+            config.is_default = 0
+        
+        if 'is_active' in data:
+            config.is_active = 1 if data['is_active'] else 0
+        
         db_session.commit()
         
-        return jsonify({"message": "LLM配置删除成功"})
+        return jsonify({
+            "message": "LLM配置更新成功",
+            "id": config.id
+        })
         
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/llm-configs/<int:config_id>/default', methods=['POST'])
+@api_bp.route('/llm-configs/test', methods=['POST'])
+def test_llm_config():
+    """
+    测试LLM配置连接
+    POST /api/llm-configs/test
+    
+    Request Body:
+    {
+        "provider": "openai",
+        "base_url": "https://api.openai.com",
+        "api_key": "sk-xxx",
+        "model_id": "gpt-3.5-turbo",
+        "timeout": 30
+    }
+    """
+    try:
+        data = request.json
+        required_fields = ['provider', 'base_url', 'api_key', 'model_id']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"缺少必要字段: {field}"}), 400
+        
+        # 创建临时LLM管理器进行测试
+        from src.llm.adapter import LLMManager
+        
+        temp_llm = LLMManager()
+        temp_llm.add_config(
+            name='test',
+            provider=data['provider'],
+            base_url=data.get('base_url', ''),
+            api_key=data['api_key'],
+            model_id=data['model_id'],
+            timeout=data.get('timeout', 30),
+            is_default=True
+        )
+        
+        # 获取适配器并发送测试请求
+        adapter = temp_llm.get_adapter('test')
+        response = adapter.generate(
+            prompt="你好，这是一个测试消息。请回复'连接成功'。",
+            max_tokens=50
+        )
+        
+        return jsonify({
+            "success": True,
+            "response": response.content if hasattr(response, 'content') else str(response),
+            "message": "连接测试成功"
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@api_bp.route('/llm-configs/<int:config_id>/set-default', methods=['POST'])
 def set_default_llm_config(config_id):
     """
     设置默认LLM配置
-    POST /api/llm-configs/{id}/default
+    POST /api/llm-configs/{id}/set-default
     """
     try:
         from src.database.models import LLMConfig
@@ -1044,6 +1129,53 @@ def set_default_llm_config(config_id):
         db_session.commit()
         
         return jsonify({"message": "默认配置设置成功"})
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/llm-configs/<int:config_id>/unset-default', methods=['POST'])
+def unset_default_llm_config(config_id):
+    """
+    取消默认LLM配置
+    POST /api/llm-configs/{id}/unset-default
+    """
+    try:
+        from src.database.models import LLMConfig
+        
+        config = db_session.query(LLMConfig).get(config_id)
+        if not config:
+            return jsonify({"error": "配置不存在"}), 404
+        
+        if config.is_default:
+            config.is_default = 0
+            db_session.commit()
+        
+        return jsonify({"message": "已取消默认配置"})
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/llm-configs/<int:config_id>', methods=['DELETE'])
+def delete_llm_config(config_id):
+    """
+    删除LLM配置
+    DELETE /api/llm-configs/{id}
+    """
+    try:
+        from src.database.models import LLMConfig
+        
+        config = db_session.query(LLMConfig).get(config_id)
+        if not config:
+            return jsonify({"error": "配置不存在"}), 404
+        
+        db_session.delete(config)
+        db_session.commit()
+        
+        return jsonify({"message": "LLM配置删除成功"})
         
     except Exception as e:
         db_session.rollback()
@@ -1068,6 +1200,7 @@ def list_prompts():
                 "id": t.id,
                 "name": t.name,
                 "description": t.description,
+                "template": t.template,
                 "template_type": t.template_type,
                 "is_default": bool(t.is_default),
                 "created_at": t.created_at.isoformat() if t.created_at else None
