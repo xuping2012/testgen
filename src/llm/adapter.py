@@ -83,6 +83,28 @@ class OpenAIAdapter(BaseLLMAdapter):
                 response.raise_for_status()
 
                 data = response.json()
+                
+                # 检查响应是否包含choices字段
+                if "choices" not in data:
+                    error_msg = data.get("error", {}).get("message", str(data)) if isinstance(data.get("error"), dict) else str(data)
+                    return LLMResponse(
+                        content="",
+                        usage={},
+                        model=self.model_id,
+                        success=False,
+                        error_message=f"LLM API返回错误: {error_msg}"
+                    )
+                
+                # 检查choices是否为空
+                if not data["choices"] or len(data["choices"]) == 0:
+                    return LLMResponse(
+                        content="",
+                        usage={},
+                        model=self.model_id,
+                        success=False,
+                        error_message="LLM API返回空响应（choices为空）"
+                    )
+                
                 return LLMResponse(
                     content=data["choices"][0]["message"]["content"],
                     usage=data.get("usage", {}),
@@ -359,8 +381,13 @@ class LLMManager:
             "base_url": url
         }
         
-        if is_default or not self.default_adapter:
+        # 只在明确指定为默认，或还没有默认配置时才设置
+        if is_default:
             self.default_adapter = name
+        elif not self.default_adapter:
+            # 如果还没有默认配置，将第一个添加的配置作为临时默认
+            self.default_adapter = name
+            print(f"  [警告] 未指定默认配置，将 '{name}' 设为临时默认")
 
     def set_default_config(self, name: str):
         """设置默认配置"""

@@ -1013,6 +1013,9 @@ def update_llm_config(config_id):
         if not config:
             return jsonify({"error": "配置不存在"}), 404
         
+        # 保存旧名称用于同步
+        old_name = config.name
+        
         data = request.json
         
         # 更新字段
@@ -1040,6 +1043,25 @@ def update_llm_config(config_id):
             config.is_active = 1 if data['is_active'] else 0
         
         db_session.commit()
+        
+        # 同步到LLM管理器 - 更新内存中的配置
+        if llm_manager:
+            # 先删除旧配置（使用旧名称）
+            try:
+                llm_manager.delete_config(old_name)
+            except:
+                pass
+            
+            # 添加更新后的配置（使用新名称）
+            llm_manager.add_config(
+                name=config.name,
+                provider=config.provider,
+                base_url=config.base_url,
+                api_key=config.api_key,
+                model_id=config.model_id,
+                timeout=config.timeout,
+                is_default=bool(config.is_default)
+            )
         
         return jsonify({
             "message": "LLM配置更新成功",

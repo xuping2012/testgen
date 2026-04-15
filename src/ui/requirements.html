@@ -1773,7 +1773,22 @@
                     
                     // 安全处理进度值
                     const progressValue = data.progress;
-                    const progressNum = (typeof progressValue === 'number') ? progressValue : (parseFloat(progressValue) || 0);
+                    let progressNum;
+                    if (typeof progressValue === 'number' && progressValue > 0) {
+                        progressNum = progressValue;
+                    } else if (progressValue) {
+                        progressNum = parseFloat(progressValue);
+                        if (isNaN(progressNum) || progressNum <= 0) {
+                            // 如果进度无效，保持当前进度（不跳回0）
+                            const currentProgress = document.getElementById('taskProgress').textContent;
+                            progressNum = parseInt(currentProgress) || 1;
+                        }
+                    } else {
+                        // 如果没有进度值，保持当前进度（不跳回0）
+                        const currentProgress = document.getElementById('taskProgress').textContent;
+                        progressNum = parseInt(currentProgress) || 1;
+                    }
+                    
                     document.getElementById('taskProgress').textContent = Math.round(progressNum) + '%';
                     document.getElementById('progressFill').style.width = progressNum + '%';
                     

@@ -48,6 +48,8 @@ def create_app():
     try:
         from src.database.models import LLMConfig
         configs = db_session.query(LLMConfig).filter(LLMConfig.is_active == 1).all()
+        
+        # 先加载所有配置
         for config in configs:
             llm_manager.add_config(
                 name=config.name,
@@ -58,7 +60,11 @@ def create_app():
                 timeout=config.timeout,
                 is_default=bool(config.is_default)
             )
-        print(f"已加载 {len(configs)} 个LLM配置")
+            print(f"  加载配置: {config.name} ({config.provider}) - {'[默认]' if config.is_default else ''}")
+        
+        # 输出当前默认配置
+        default_info = llm_manager.get_config_info()
+        print(f"已加载 {len(configs)} 个LLM配置，当前默认: {default_info.get('name', '无')}")
     except Exception as e:
         print(f"加载LLM配置失败: {e}")
     

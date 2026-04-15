@@ -51,6 +51,13 @@ class GenerationService:
         self._tasks: Dict[str, GenerationTask] = {}
         self._lock = threading.Lock()
         self.callbacks: Dict[str, Callable] = {}
+        
+        # 调试：输出llm_manager的默认配置
+        if llm_manager:
+            default_info = llm_manager.get_config_info()
+            print(f"[GenerationService] 初始化完成，LLM默认配置: {default_info.get('name', '无')} ({default_info.get('provider', '未知')})")
+            print(f"[GenerationService] LLM适配器列表: {list(llm_manager.adapters.keys())}")
+            print(f"[GenerationService] 默认适配器: {llm_manager.default_adapter}")
     
     @staticmethod
     def init_default_prompts(db_session):
@@ -390,8 +397,8 @@ class GenerationService:
             task_id=task_id,
             requirement_id=requirement_id,
             status=TaskStatus.PENDING.value,
-            progress=0.0,
-            message="任务已创建，等待执行",
+            progress=1.0,  # 初始进度为1%，避免显示0%
+            message="🚀 任务已创建，即将开始生成...",
             created_at=datetime.utcnow().isoformat()
         )
         
@@ -411,7 +418,8 @@ class GenerationService:
         if task:
             task.status = TaskStatus.RUNNING.value
             task.started_at = datetime.utcnow().isoformat()
-            task.message = "正在执行..."
+            task.progress = 1.0  # 立即设置初始进度为1%，避免显示0%
+            task.message = "🚀 正在启动生成任务..."
     
     def update_progress(self, task_id: str, progress: float, message: str):
         """更新任务进度"""
@@ -471,9 +479,9 @@ class GenerationService:
                     progress_callback(5.0, "📋 开始需求分析...")
                 
                 if not skip_analysis:
-                    self.update_progress(task_id, 10.0, "🔍 正在解析需求文档结构...")
+                    self.update_progress(task_id, 10.0, "🔍 正在解析文档...")
                     if progress_callback:
-                        progress_callback(10.0, "🔍 正在解析需求文档结构...")
+                        progress_callback(10.0, "🔍 正在解析文档...")
                     
                     # 提取需求关键信息
                     requirement_analysis = self._analyze_requirement(requirement_content)
@@ -520,9 +528,9 @@ class GenerationService:
                 
                 if self.vector_store:
                     try:
-                        self.update_progress(task_id, 25.0, "🔎 正在召回相似历史用例...")
+                        self.update_progress(task_id, 25.0, "🔎 正在RAG检索...")
                         if progress_callback:
-                            progress_callback(25.0, "🔎 正在召回相似历史用例...")
+                            progress_callback(25.0, "🔎 正在RAG检索...")
                         
                         # 使用增强RAG检索器
                         rag_context, rag_stats = self._perform_rag_recall(
@@ -564,9 +572,9 @@ class GenerationService:
                 if progress_callback:
                     progress_callback(35.0, "📝 开始测试规划...")
                 
-                self.update_progress(task_id, 40.0, "🎯 正在识别测试项(ITEM)和测试点(POINT)...")
+                self.update_progress(task_id, 40.0, "🎯 正在提取测试点...")
                 if progress_callback:
-                    progress_callback(40.0, "🎯 正在识别测试项(ITEM)和测试点(POINT)...")
+                    progress_callback(40.0, "🎯 正在提取测试点...")
                 
                 test_plan = self._create_test_plan(
                     requirement_content, 
@@ -586,15 +594,21 @@ class GenerationService:
                         f"✅ 测试规划完成 - 识别{items_count}个测试项，{points_count}个测试点")
                 
                 # ========== 阶段4: LLM生成测试用例 (70%) ==========
-                self.update_progress(task_id, 50.0, "🤖 开始LLM生成测试用例...")
+                self.update_progress(task_id, 50.0, "🤖 开始生成测试用例...")
                 if progress_callback:
-                    progress_callback(50.0, "🤖 开始LLM生成测试用例...")
+                    progress_callback(50.0, "🤖 开始生成测试用例...")
                 
                 test_cases = []
                 if self.llm_manager:
-                    self.update_progress(task_id, 55.0, "🤖 正在初始化LLM适配器...")
+                    self.update_progress(task_id, 55.0, "🤖 正在初始化适配器...")
                     if progress_callback:
-                        progress_callback(55.0, "🤖 正在初始化LLM适配器...")
+                        progress_callback(55.0, "🤖 正在初始化适配器...")
+                    
+                    # 输出当前使用的默认配置信息
+                    default_config_info = self.llm_manager.get_config_info()
+                    print(f"[LLM生成] 使用默认配置: {default_config_info.get('name')} ({default_config_info.get('provider')})")
+                    print(f"[LLM生成] Base URL: {default_config_info.get('base_url')}")
+                    print(f"[LLM生成] Model ID: {default_config_info.get('model_id')}")
                     
                     adapter = self.llm_manager.get_adapter()
                     
@@ -610,9 +624,9 @@ class GenerationService:
                         requirement_analysis
                     )
                     
-                    self.update_progress(task_id, 65.0, "🤖 正在调用LLM API生成用例（这可能需要1-3分钟）...")
+                    self.update_progress(task_id, 65.0, "🤖 正在生成用例...")
                     if progress_callback:
-                        progress_callback(65.0, "🤖 正在调用LLM API生成用例（这可能需要1-3分钟）...")
+                        progress_callback(65.0, "🤖 正在生成用例...")
                     
                     # 使用更长的超时和token限制用于用例生成
                     response = adapter.generate(
@@ -705,8 +719,9 @@ class GenerationService:
                 
             except Exception as e:
                 self.fail_task(task_id, str(e))
+                task_obj = self.get_task(task_id)
                 if progress_callback:
-                    progress_callback(0.0, f"生成失败: {str(e)}")
+                    progress_callback(task_obj.progress if task_obj and task_obj.progress > 0 else 1.0, f"生成失败: {str(e)}")
                 
                 # 生成失败时，清除该需求的所有测试用例（如果有部分保存成功的话）
                 if self.db_session:
