@@ -289,12 +289,24 @@ def list_defects():
 @api_bp.route('/generate', methods=['POST'])
 def trigger_generation():
     """
-    触发AI生成用例
+    触发AI生成用例 - 阶段1：需求分析+测试规划
     POST /api/generate
     
     Request Body:
     {
         "requirement_id": 1
+    }
+    
+    Returns:
+    {
+        "task_id": "task_xxx",
+        "requirement_id": 1,
+        "analysis_result": {
+            "modules": [...],
+            "test_plan": "...",
+            "requirement_md": "..."
+        },
+        "status": "awaiting_review"
     }
     """
     try:
@@ -319,8 +331,8 @@ def trigger_generation():
         requirement.status = RequirementStatus.PROCESSING
         db_session.commit()
         
-        # 异步执行生成
-        generation_service.execute_generation(
+        # 执行阶段1：需求分析+测试规划（同步执行，快速返回）
+        analysis_result = generation_service.execute_phase1_analysis(
             task_id,
             requirement.content
         )
@@ -328,8 +340,59 @@ def trigger_generation():
         return jsonify({
             "task_id": task_id,
             "requirement_id": requirement_id,
-            "status": "pending",
-            "message": "生成任务已创建"
+            "analysis_result": analysis_result,
+            "status": "awaiting_review",
+            "message": "需求分析完成，请评审后继续"
+        }), 200
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/generate/continue', methods=['POST'])
+def continue_generation():
+    """
+    继续生成用例 - 阶段2：RAG检索+LLM生成
+    POST /api/generate/continue
+    
+    Request Body:
+    {
+        "task_id": "task_xxx",
+        "reviewed_plan": {...}  # 用户评审后的测试规划（可能已编辑）
+    }
+    
+    Returns:
+    {
+        "task_id": "task_xxx",
+        "status": "processing",
+        "message": "生成任务已继续执行"
+    }
+    """
+    try:
+        data = request.json
+        
+        if not data or 'task_id' not in data:
+            return jsonify({"error": "缺少必要字段: task_id"}), 400
+        
+        task_id = data['task_id']
+        reviewed_plan = data.get('reviewed_plan')  # 用户可能编辑过的规划
+        
+        # 获取任务
+        task = generation_service.get_task(task_id)
+        if not task:
+            return jsonify({"error": "任务不存在"}), 404
+        
+        # 异步执行阶段2：RAG检索+LLM生成
+        generation_service.execute_phase2_generation(
+            task_id,
+            reviewed_plan
+        )
+        
+        return jsonify({
+            "task_id": task_id,
+            "status": "processing",
+            "message": "生成任务已继续执行"
         }), 202
         
     except Exception as e:

@@ -7,6 +7,7 @@
 
 from docx import Document
 from PyPDF2 import PdfReader
+import openpyxl
 import os
 import cv2
 import pytesseract
@@ -100,6 +101,31 @@ def parse_markdown(filepath):
     except Exception as e:
         raise Exception(f"解析markdown文档失败: {str(e)}")
 
+def parse_excel(filepath):
+    """
+    解析Excel文件
+    """
+    try:
+        wb = openpyxl.load_workbook(filepath, read_only=True)
+        text = []
+        
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            text.append(f"## 工作表: {sheet_name}")
+            
+            for row in ws.iter_rows(values_only=True):
+                # 过滤空行
+                if any(cell is not None for cell in row):
+                    # 将单元格用 | 分隔，模拟表格格式
+                    row_text = " | ".join(str(cell) if cell is not None else "" for cell in row)
+                    text.append(row_text)
+            text.append("")  # 空行分隔
+        
+        wb.close()
+        return "\n".join(text)
+    except Exception as e:
+        raise Exception(f"解析Excel文件失败: {str(e)}")
+
 def parse_document(filepath):
     """
     根据文件扩展名选择相应的解析方法
@@ -119,6 +145,8 @@ def parse_document(filepath):
         return parse_image(filepath)
     elif ext in ['.md', '.markdown']:
         return parse_markdown(filepath)
+    elif ext in ['.xlsx', '.xls']:
+        return parse_excel(filepath)
     else:
         raise Exception(f"不支持的文件格式: {ext}")
 

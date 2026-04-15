@@ -447,6 +447,232 @@ class GenerationService:
             task.message = f"生成失败: {error_message}"
             task.completed_at = datetime.utcnow().isoformat()
     
+    def execute_phase1_analysis(self, task_id: str, requirement_content: str) -> Dict[str, Any]:
+        """
+        阶段1：需求分析 + 测试规划（同步执行）
+        
+        Returns:
+            {
+                "requirement_id": 1,
+                "modules": [...],
+                "test_plan": "...",
+                "requirement_md": "...",  # 结构化的需求文档
+                "items": [...],           # 测试项
+                "points": [...]           # 测试点
+            }
+        """
+        self.start_task(task_id)
+        task_obj = self.get_task(task_id)
+        requirement_id = task_obj.requirement_id if task_obj else 0
+        
+        # 阶段1: 需求分析
+        self.update_progress(task_id, 5.0, "📋 开始需求分析...")
+        requirement_analysis = self._analyze_requirement(requirement_content)
+        
+        self.update_progress(task_id, 10.0, "🔍 正在解析需求文档结构...")
+        
+        # 保存分析后的Markdown格式内容到需求表
+        if self.db_session:
+            try:
+                from src.database.models import Requirement
+                requirement = self.db_session.query(Requirement).get(requirement_id)
+                if requirement:
+                    analyzed_md = self._build_analyzed_markdown(requirement_analysis, requirement_content)
+                    requirement.analyzed_content = analyzed_md
+                    self.db_session.commit()
+                    print(f"已保存需求分析Markdown格式到需求ID: {requirement_id}")
+            except Exception as e:
+                print(f"保存需求分析Markdown失败: {e}")
+        
+        self.update_progress(task_id, 15.0, 
+            f"✅ 需求分析完成 - 识别到{len(requirement_analysis.get('modules', []))}个模块")
+        
+        # 阶段2: 测试规划（移到RAG之前）
+        self.update_progress(task_id, 20.0, "📝 开始测试规划...")
+        test_plan = self._create_test_plan(requirement_content, requirement_analysis)
+        
+        self.update_progress(task_id, 25.0, 
+            f"✅ 测试规划完成 - 识别到{len(requirement_analysis.get('items', []))}个测试项")
+        
+        # 构建返回结果
+        result = {
+            "requirement_id": requirement_id,
+            "modules": requirement_analysis.get('modules', []),
+            "items": requirement_analysis.get('items', []),
+            "points": requirement_analysis.get('points', []),
+            "test_plan": test_plan,
+            "requirement_md": self._build_analyzed_markdown(requirement_analysis, requirement_content),
+            "business_rules": requirement_analysis.get('business_rules', []),
+            "data_constraints": requirement_analysis.get('data_constraints', [])
+        }
+        
+        # 更新任务状态为等待评审
+        task = self.get_task(task_id)
+        if task:
+            task.status = 'awaiting_review'
+            task.progress = 25.0
+            task.message = "✅ 分析完成，请评审后继续"
+            task.result = result
+        
+        return result
+    
+    def execute_phase2_generation(self, task_id: str, reviewed_plan: Optional[Dict] = None):
+        """
+        阶段2：RAG检索 + LLM生成（异步执行）
+        
+        Args:
+            task_id: 任务ID
+            reviewed_plan: 用户评审后可能编辑过的测试规划
+        """
+        def run_phase2():
+            try:
+                task_obj = self.get_task(task_id)
+                if not task_obj:
+                    return
+                
+                requirement_id = task_obj.requirement_id
+                
+                # 从数据库获取需求内容
+                if self.db_session:
+                    from src.database.models import Requirement
+                    requirement = self.db_session.query(Requirement).get(requirement_id)
+                    if not requirement:
+                        self.fail_task(task_id, "需求不存在")
+                        return
+                    requirement_content = requirement.content
+                else:
+                    self.fail_task(task_id, "数据库会话不可用")
+                    return
+                
+                # 阶段1: RAG召回 (30%)
+                self.update_progress(task_id, 30.0, "🔎 开始RAG召回...")
+                
+                rag_context = ""
+                rag_stats = {"cases": 0, "defects": 0, "requirements": 0}
+                
+                if self.vector_store:
+                    try:
+                        self.update_progress(task_id, 35.0, "🔎 正在召回相似历史用例...")
+                        
+                        # 使用增强RAG检索器
+                        rag_context, rag_stats = self._perform_rag_recall(
+                            requirement_content, 
+                            {},  # 不需要requirement_analysis，已有reviewed_plan
+                            top_k_cases=5,
+                            top_k_defects=3,
+                            top_k_requirements=3
+                        )
+                        
+                        recall_summary = f"✅ RAG召回完成 - "
+                        if rag_stats['cases'] > 0:
+                            recall_summary += f"用例:{rag_stats['cases']}条 "
+                        if rag_stats['defects'] > 0:
+                            recall_summary += f"缺陷:{rag_stats['defects']}条 "
+                        if rag_stats['requirements'] > 0:
+                            recall_summary += f"需求:{rag_stats['requirements']}条"
+                        
+                        self.update_progress(task_id, 40.0, recall_summary)
+                    except Exception as e:
+                        print(f"RAG召回失败: {e}")
+                        self.update_progress(task_id, 40.0, "⚠️ RAG召回失败，继续生成")
+                else:
+                    self.update_progress(task_id, 40.0, "⚠️ 向量库未初始化，跳过RAG召回")
+                
+                # 阶段2: LLM生成测试用例 (50%-80%)
+                self.update_progress(task_id, 50.0, "🤖 开始生成测试用例...")
+                
+                test_cases = []
+                if self.llm_manager:
+                    self.update_progress(task_id, 55.0, "🤖 正在初始化适配器...")
+                    
+                    # 输出当前使用的默认配置信息
+                    default_config_info = self.llm_manager.get_config_info()
+                    print(f"[LLM生成] 使用默认配置: {default_config_info.get('name')} ({default_config_info.get('provider')})")
+                    print(f"[LLM生成] Base URL: {default_config_info.get('base_url')}")
+                    print(f"[LLM生成] Model ID: {default_config_info.get('model_id')}")
+                    
+                    adapter = self.llm_manager.get_adapter()
+                    
+                    self.update_progress(task_id, 60.0, "🤖 正在构建Prompt上下文...")
+                    
+                    # 使用评审后的测试规划（如果有）或重新生成
+                    test_plan = reviewed_plan.get('test_plan', '') if reviewed_plan else ''
+                    if not test_plan:
+                        test_plan = self._create_test_plan(requirement_content, {})
+                    
+                    # 构建优化的Prompt
+                    prompt = self._build_optimized_generation_prompt(
+                        requirement_content, 
+                        rag_context, 
+                        test_plan,
+                        reviewed_plan or {}
+                    )
+                    
+                    self.update_progress(task_id, 65.0, "🤖 正在生成用例...")
+                    
+                    # 调用LLM生成（带故障切换）
+                    response = self._generate_with_failover(
+                        adapter, prompt, task_id
+                    )
+                    
+                    self.update_progress(task_id, 80.0, "🤖 LLM响应已接收，正在解析结果...")
+                    
+                    if not response.success:
+                        self._log_llm_response(prompt, response)
+                        raise Exception(f"LLM生成失败: {response.error_message}")
+                    
+                    self.update_progress(task_id, 85.0, "🤖 正在解析LLM返回的响应...")
+                    
+                    # 打印原始响应以便调试
+                    print(f"LLM原始响应长度: {len(response.content)}")
+                    print(f"LLM原始响应前1000字符: {response.content[:1000]}...")
+                    
+                    # 解析生成的用例
+                    test_cases = self._parse_generated_cases(response.content)
+                    print(f"解析到用例数量: {len(test_cases)}")
+                    if not test_cases:
+                        self._log_llm_response(prompt, response)
+                        raise Exception(f"LLM返回的用例数据为空（响应长度: {len(response.content)}字符）")
+                else:
+                    self.update_progress(task_id, 60.0, "🤖 使用模拟数据生成...")
+                    test_cases = self._mock_generate_cases(requirement_content)
+                
+                self.update_progress(task_id, 90.0, f"✅ LLM生成完成 - 生成{len(test_cases)}条用例")
+                
+                # 阶段3: 保存结果
+                self.update_progress(task_id, 92.0, "💾 正在保存测试用例到数据库...")
+                
+                if test_cases and self.db_session:
+                    self._save_test_cases(requirement_id, test_cases)
+                    self.update_progress(task_id, 98.0, f"✅ 已保存{len(test_cases)}条测试用例到数据库")
+                
+                # 完成任务
+                self.update_progress(task_id, 100.0, "✅ 生成完成")
+                self.complete_task(task_id, {
+                    "case_count": len(test_cases),
+                    "rag_stats": rag_stats
+                })
+                
+                # 更新需求状态
+                if self.db_session:
+                    try:
+                        from src.database.models import Requirement, RequirementStatus
+                        requirement = self.db_session.query(Requirement).get(requirement_id)
+                        if requirement:
+                            requirement.status = RequirementStatus.COMPLETED
+                            self.db_session.commit()
+                            print(f"需求状态已更新为: {requirement.status.value}")
+                    except Exception as e:
+                        print(f"更新需求状态失败: {e}")
+                        
+            except Exception as e:
+                self.fail_task(task_id, str(e))
+        
+        # 在后台线程执行
+        thread = threading.Thread(target=run_phase2)
+        thread.daemon = True
+        thread.start()
+    
     def execute_generation(self, task_id: str, requirement_content: str,
                           progress_callback: Optional[Callable] = None,
                           skip_analysis: bool = False):
@@ -751,6 +977,94 @@ class GenerationService:
         thread.daemon = True
         thread.start()
 
+    def _generate_with_failover(self, primary_adapter, prompt: str, task_id: str, max_retries: int = 3) -> 'LLMResponse':
+        """
+        带故障切换的LLM生成
+        
+        当默认模型失败时，切换到备用模型
+        
+        Args:
+            primary_adapter: 主适配器
+            prompt: 提示词
+            task_id: 任务ID
+            max_retries: 最大重试次数
+            
+        Returns:
+            LLMResponse
+        """
+        from src.llm.adapter import LLMResponse
+        
+        # 首先尝试使用主适配器
+        try:
+            response = primary_adapter.generate(
+                prompt, 
+                temperature=0.7, 
+                max_tokens=8192,
+                timeout=180,
+                max_retries=max_retries,
+                retry_delay=5
+            )
+            
+            if response.success:
+                return response
+            
+            # 如果主适配器失败，尝试切换到其他适配器
+            print(f"[故障切换] 主适配器失败: {response.error_message}")
+            print(f"[故障切换] 正在尝试切换备用模型...")
+            
+            self.update_progress(task_id, 68.0, "⚠️ 主模型失败，正在切换备用模型...")
+            
+            # 获取所有可用的适配器名称（排除当前的）
+            all_adapters = list(self.llm_manager.adapters.keys())
+            current_adapter_name = self.llm_manager.default_adapter
+            
+            for adapter_name in all_adapters:
+                if adapter_name == current_adapter_name:
+                    continue  # 跳过当前已失败的
+                
+                try:
+                    print(f"[故障切换] 尝试使用备用模型: {adapter_name}")
+                    self.update_progress(task_id, 70.0, f"🔄 正在切换到备用模型: {adapter_name}")
+                    
+                    backup_adapter = self.llm_manager.get_adapter(adapter_name)
+                    config_info = self.llm_manager.config_infos.get(adapter_name, {})
+                    print(f"[故障切换] 备用模型信息: {config_info}")
+                    
+                    # 使用备用适配器重试
+                    response = backup_adapter.generate(
+                        prompt, 
+                        temperature=0.7, 
+                        max_tokens=8192,
+                        timeout=180,
+                        max_retries=2,
+                        retry_delay=3
+                    )
+                    
+                    if response.success:
+                        print(f"[故障切换] 备用模型 {adapter_name} 成功！")
+                        self.update_progress(task_id, 75.0, f"✅ 已切换到备用模型: {adapter_name}")
+                        return response
+                    else:
+                        print(f"[故障切换] 备用模型 {adapter_name} 也失败: {response.error_message}")
+                        
+                except Exception as e:
+                    print(f"[故障切换] 切换到 {adapter_name} 异常: {e}")
+                    continue
+            
+            # 所有备用模型都失败
+            return LLMResponse(
+                content="",
+                usage={},
+                model=primary_adapter.model_id,
+                success=False,
+                error_message=f"主模型及所有备用模型均失败。最后错误: {response.error_message}"
+            )
+            
+        except Exception as e:
+            # 异常情况也尝试切换
+            print(f"[故障切换] 主适配器异常: {e}")
+            return self._generate_with_failover(primary_adapter, prompt, task_id, max_retries)
+    
     def _save_test_cases(self, requirement_id: int, test_cases: list):
         """保存测试用例到数据库"""
         if not test_cases:
@@ -767,17 +1081,16 @@ class GenerationService:
             
             print(f"开始保存用例，需求ID: {requirement_id}, 用例数: {len(test_cases)}")
             
-            # 先删除该需求的旧用例，避免case_id冲突
-            print(f"正在删除需求ID {requirement_id} 的旧用例...")
-            deleted_count = self.db_session.query(TestCase).filter(
+            # 获取当前需求的已有用例数量，用于编号累加
+            existing_case_count = self.db_session.query(TestCase).filter(
                 TestCase.requirement_id == requirement_id
-            ).delete(synchronize_session=False)
-            print(f"已删除 {deleted_count} 条旧用例")
+            ).count()
+            print(f"需求ID {requirement_id} 已有 {existing_case_count} 条用例，将累加新用例")
             
-            # 重新从1开始编号
+            # 从已有编号之后开始编号
             for idx, case_data in enumerate(test_cases):
-                # 生成唯一的用例编号：TC + 6位序号
-                case_id = f"TC_{idx + 1:06d}"
+                # 生成唯一的用例编号：TC + 6位序号（累加）
+                case_id = f"TC_{existing_case_count + idx + 1:06d}"
 
                 # 处理测试步骤和预期结果（支持字符串或列表）
                 test_steps = case_data.get('test_steps', [])
