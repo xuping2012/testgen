@@ -491,19 +491,23 @@ class GenerationService:
         self.update_progress(task_id, 20.0, "📝 开始测试规划...")
         test_plan = self._create_test_plan(requirement_content, requirement_analysis)
         
+        # 解析测试规划为结构化的ITEM和POINT
+        structured_plan = self._parse_test_plan(test_plan)
+        
         self.update_progress(task_id, 25.0, 
-            f"✅ 测试规划完成 - 识别到{len(requirement_analysis.get('items', []))}个测试项")
+            f"✅ 测试规划完成 - 识别到{len(structured_plan.get('items', []))}个测试项，{len(structured_plan.get('points', []))}个测试点")
         
         # 构建返回结果
         result = {
             "requirement_id": requirement_id,
             "modules": requirement_analysis.get('modules', []),
-            "items": requirement_analysis.get('items', []),
-            "points": requirement_analysis.get('points', []),
+            "items": structured_plan.get('items', []),
+            "points": structured_plan.get('points', []),
             "test_plan": test_plan,
             "requirement_md": self._build_analyzed_markdown(requirement_analysis, requirement_content),
             "business_rules": requirement_analysis.get('business_rules', []),
-            "data_constraints": requirement_analysis.get('data_constraints', [])
+            "data_constraints": requirement_analysis.get('data_constraints', []),
+            "risk_assessment": structured_plan.get('risk_assessment', {})
         }
         
         # 更新任务状态为等待评审
@@ -1340,7 +1344,7 @@ class GenerationService:
 
     def _create_test_plan(self, requirement_content: str,
                          requirement_analysis: Dict[str, Any],
-                         rag_context: str) -> str:
+                         rag_context: str = "") -> str:
         """
         基于testcase-planner技能创建测试规划
         

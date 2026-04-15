@@ -797,6 +797,121 @@ def rag_stats():
         return jsonify({"error": str(e)}), 500
 
 
+@api_bp.route('/rag/import-from-db', methods=['POST'])
+def rag_import_from_db():
+    """
+    从数据库导入用例/需求到向量库
+    POST /api/rag/import-from-db
+    
+    Request Body:
+    {
+        "type": "cases",  // 支持 cases, requirements
+        "ids": [1, 2, 3]  // 要导入的用例/需求ID列表
+    }
+    """
+    try:
+        if not vector_store:
+            return jsonify({"error": "向量库未初始化"}), 500
+        
+        data = request.json
+        if not data or 'type' not in data or 'ids' not in data:
+            return jsonify({"error": "缺少必要字段: type, ids"}), 400
+        
+        item_type = data['type']
+        ids = data['ids']
+        imported_count = 0
+        
+        if item_type == 'cases':
+            from src.database.models import TestCase, Requirement
+            
+            # 查询指定ID的用例
+            cases = db_session.query(TestCase).outerjoin(Requirement, TestCase.requirement_id == Requirement.id).filter(
+                TestCase.id.in_(ids)
+            ).all()
+            
+            for case in cases:
+                # 构建用例内容文本
+                case_content = f"测试用例: {case.name}\n"
+                case_content += f"用例编号: {case.case_id}\n"
+                case_content += f"功能模块: {case.module}\n"
+                if case.test_point:
+                    case_content += f"测试点: {case.test_point}\n"
+                if case.preconditions:
+                    case_content += f"前置条件: {case.preconditions}\n"
+                if case.test_steps:
+                    steps = case.test_steps if isinstance(case.test_steps, list) else [case.test_steps]
+                    case_content += "测试步骤:\n"
+                    for i, step in enumerate(steps, 1):
+                        case_content += f"{i}. {step}\n"
+                if case.expected_results:
+                    results = case.expected_results if isinstance(case.expected_results, list) else [case.expected_results]
+                    case_content += "预期结果:\n"
+                    for i, result in enumerate(results, 1):
+                        case_content += f"{i}. {result}\n"
+                
+                # 构建元数据
+                metadata = {
+                    "case_id": case.case_id,
+                    "name": case.name,
+                    "module": case.module,
+                    "test_point": case.test_point or "",
+                    "priority": case.priority.value if case.priority else "P2",
+                    "status": case.status.value if case.status else "pending_review",
+                    "case_type": case.case_type or "功能",
+                    "requirement_id": case.requirement_id
+                }
+                
+                if case.requirement:
+                    metadata["requirement_title"] = case.requirement.title
+                
+                # 添加到向量库
+                try:
+                    vector_store.add_case(f"case_{case.id}", case_content, metadata)
+                    imported_count += 1
+                except Exception as e:
+                    print(f"导入用例 {case.id} 失败: {e}")
+                    continue
+            
+        elif item_type == 'requirements':
+            from src.database.models import Requirement
+            
+            # 查询指定ID的需求
+            requirements = db_session.query(Requirement).filter(
+                Requirement.id.in_(ids)
+            ).all()
+            
+            for req in requirements:
+                # 构建需求内容文本
+                req_content = f"需求标题: {req.title}\n"
+                req_content += f"需求内容:\n{req.content}\n"
+                
+                # 构建元数据
+                metadata = {
+                    "title": req.title,
+                    "status": req.status.value if req.status else "pending",
+                    "source_file": req.source_file or ""
+                }
+                
+                # 添加到向量库
+                try:
+                    vector_store.add_requirement(f"req_{req.id}", req_content, metadata)
+                    imported_count += 1
+                except Exception as e:
+                    print(f"导入需求 {req.id} 失败: {e}")
+                    continue
+        else:
+            return jsonify({"error": f"不支持的类型: {item_type}"}), 400
+        
+        return jsonify({
+            "message": f"成功导入 {imported_count} 条数据到RAG向量库",
+            "imported_count": imported_count
+        })
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
 @api_bp.route('/rag/list', methods=['GET'])
 def rag_list():
     """
