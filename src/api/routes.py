@@ -400,6 +400,73 @@ def continue_generation():
         return jsonify({"error": str(e)}), 500
 
 
+@api_bp.route('/generate/retry', methods=['POST'])
+def retry_generation():
+    """
+    重新生成用例 - 直接使用已有的需求分析结果，跳过评审弹窗
+    POST /api/generate/retry
+    
+    Request Body:
+    {
+        "requirement_id": 1,
+        "modules": "功能模块内容（可选，为空则使用已有内容）",
+        "points": "测试点内容（可选，为空则使用已有内容）"
+    }
+    
+    Returns:
+    {
+        "task_id": "task_xxx",
+        "status": "processing",
+        "message": "重新生成任务已启动"
+    }
+    """
+    try:
+        data = request.json
+        
+        if not data or 'requirement_id' not in data:
+            return jsonify({"error": "缺少必要字段: requirement_id"}), 400
+        
+        requirement_id = data['requirement_id']
+        modules = data.get('modules', '')
+        points = data.get('points', '')
+        
+        # 获取需求内容
+        from src.database.models import Requirement
+        requirement = db_session.query(Requirement).get(requirement_id)
+        if not requirement:
+            return jsonify({"error": "需求不存在"}), 404
+        
+        # 创建新任务
+        import uuid
+        task_id = f"task_{uuid.uuid4().hex[:12]}"
+        
+        # 构建评审后的规划（使用已有的或用户编辑的）
+        reviewed_plan = {}
+        if modules or points:
+            # 如果用户提供了编辑后的内容，使用它
+            reviewed_plan = {
+                'modules': modules,
+                'points': points,
+                'test_plan': f"功能模块:\n{modules}\n\n测试点:\n{points}" if modules or points else ''
+            }
+        
+        # 异步执行阶段2：RAG检索+LLM生成
+        generation_service.execute_phase2_generation(
+            task_id,
+            reviewed_plan if reviewed_plan else None
+        )
+        
+        return jsonify({
+            "task_id": task_id,
+            "status": "processing",
+            "message": "重新生成任务已启动"
+        }), 202
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
 @api_bp.route('/generate/<task_id>', methods=['GET'])
 def get_generation_status(task_id):
     """
@@ -1047,6 +1114,129 @@ def export_cases():
         return jsonify({"error": str(e)}), 500
 
 
+@api_bp.route('/export/cases', methods=['POST'])
+def export_cases_post():
+    """
+    导出测试用例（POST方式，支持选择特定用例）
+    POST /api/export/cases
+    Body: {
+        "format": "excel|xmind|json",
+        "case_ids": [1, 2, 3],  // 可选，指定用例ID列表
+        "requirement_id": 1,     // 可选，按需求筛选
+        "status": "approved",    // 可选，按状态筛选
+        "priority": "P0"         // 可选，按优先级筛选
+    }
+    """
+    try:
+        from src.database.models import TestCase, Requirement
+        from src.case_generator.exporter import CaseExporter
+        
+        data = request.json
+        export_format = data.get('format', 'excel')
+        case_ids = data.get('case_ids')
+        requirement_id = data.get('requirement_id')
+        status = data.get('status')
+        priority = data.get('priority')
+        
+        if export_format not in ['excel', 'xmind', 'json']:
+            return jsonify({"error": f"不支持的导出格式: {export_format}"}), 400
+        
+        # 查询用例
+        query = db_session.query(TestCase)
+        
+        # 如果指定了case_ids，直接按ID查询
+        if case_ids and len(case_ids) > 0:
+            query = query.filter(TestCase.id.in_(case_ids))
+        else:
+            # 否则使用筛选条件
+            if requirement_id:
+                query = query.filter(TestCase.requirement_id == requirement_id)
+            if status:
+                query = query.filter(TestCase.status == status)
+            if priority:
+                query = query.filter(TestCase.priority == priority)
+        
+        test_cases = query.all()
+        
+        if not test_cases:
+            return jsonify({"error": "没有可导出的用例数据"}), 500
+        
+        # 转换为字典列表
+        cases_data = [{
+            'case_id': c.case_id,
+            'module': c.module,
+            'name': c.name,
+            'test_point': c.test_point,
+            'preconditions': c.preconditions,
+            'test_steps': c.test_steps if isinstance(c.test_steps, list) else json.loads(c.test_steps) if c.test_steps else [],
+            'expected_results': c.expected_results if isinstance(c.expected_results, list) else json.loads(c.expected_results) if c.expected_results else [],
+            'priority': c.priority.value if c.priority else 'P2',
+            'case_type': c.case_type,
+            'requirement_clause': c.requirement_clause
+        } for c in test_cases]
+        
+        # 创建临时文件
+        tmpdir = tempfile.mkdtemp()
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"test_cases_{timestamp}"
+        
+        exporter = CaseExporter()
+        
+        if export_format == 'excel':
+            filepath = os.path.join(tmpdir, f"{filename}.xlsx")
+            exporter.export_to_excel(cases_data, filepath)
+        elif export_format == 'xmind':
+            filepath = os.path.join(tmpdir, f"{filename}.xmind")
+            exporter.export_to_xmind(cases_data, filepath)
+        elif export_format == 'json':
+            filepath = os.path.join(tmpdir, f"{filename}.json")
+            exporter.export_to_json(cases_data, filepath)
+        
+        # 将临时文件复制到持久目录
+        export_folder = 'data/exports'
+        os.makedirs(export_folder, exist_ok=True)
+        final_path = os.path.join(export_folder, os.path.basename(filepath))
+        
+        import shutil
+        shutil.copy2(filepath, final_path)
+        
+        # 返回下载URL
+        download_url = f"/api/export/download/{os.path.basename(final_path)}"
+        
+        return jsonify({
+            "message": "导出成功",
+            "exported_count": len(cases_data),
+            "download_url": download_url
+        })
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/export/download/<filename>', methods=['GET'])
+def download_export(filename):
+    """
+    下载导出的文件
+    GET /api/export/download/<filename>
+    """
+    try:
+        export_folder = 'data/exports'
+        filepath = os.path.join(export_folder, filename)
+        
+        if not os.path.exists(filepath):
+            return jsonify({"error": "文件不存在"}), 404
+        
+        return send_file(
+            filepath,
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ==================== 文件上传接口 ====================
 
 @api_bp.route('/upload', methods=['POST'])
@@ -1088,6 +1278,217 @@ def upload_file():
         
     except Exception as e:
         db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+# ==================== 需求导入辅助函数 ====================
+
+def _extract_title_from_content(content: str, file_ext: str) -> str:
+    """
+    从文件内容中提取一级标题作为需求标题
+    
+    对于 Markdown 文件：提取第一个 # 标题
+    对于其他文件：提取第一行非空文本
+    """
+    try:
+        if not content:
+            return ""
+        
+        if file_ext in ['.md', '.markdown']:
+            # Markdown: 查找第一个一级标题 (# 标题)
+            lines = content.split('\n')
+            for line in lines:
+                line = line.strip()
+                if line.startswith('# ') and len(line) > 2:
+                    # 提取标题内容，去掉 # 号
+                    title = line[1:].strip()
+                    # 去掉可能的结尾标记
+                    if '\r' in title:
+                        title = title.split('\r')[0]
+                    return title
+            
+            # 如果没有找到 # 标题，尝试查找 ## 标题
+            for line in lines:
+                line = line.strip()
+                if line.startswith('## ') and len(line) > 3:
+                    title = line[2:].strip()
+                    if '\r' in title:
+                        title = title.split('\r')[0]
+                    return title
+        
+        # 对于所有文件类型，尝试提取第一行非空文本
+        lines = content.split('\n')
+        for line in lines:
+            line = line.strip()
+            if line and len(line) > 0:
+                # 限制标题长度
+                if len(line) > 200:
+                    line = line[:200] + "..."
+                return line
+        
+        return ""
+    except Exception as e:
+        print(f"[提取标题] 异常: {str(e)}")
+        return ""
+
+
+# ==================== 需求导入接口 ====================
+
+@api_bp.route('/import/requirements', methods=['POST'])
+def import_requirements():
+    """
+    导入需求文件（支持 .xlsx, .xls, .txt, .md, .markdown, .docx, .pdf）
+    POST /api/import/requirements
+    """
+    print("[导入需求] ========== 开始导入 ==========")
+    try:
+        if 'file' not in request.files:
+            print("[导入需求] 错误: 没有上传文件")
+            return jsonify({"error": "没有上传文件"}), 400
+        
+        file = request.files['file']
+        print(f"[导入需求] file对象: {file}")
+        print(f"[导入需求] file.filename: {repr(file.filename)}")
+        
+        if file.filename == '':
+            print("[导入需求] 错误: 文件名为空")
+            return jsonify({"error": "文件名为空"}), 400
+        
+        # 获取原始文件名（这时就应该提取扩展名）
+        original_filename = file.filename or ''
+        
+        # 直接从原始文件名提取扩展名（使用unicode友好方式）
+        file_ext = ''
+        if '.' in original_filename:
+            # 使用rsplit从右边分割，获取最后一个扩展名
+            parts = original_filename.rsplit('.', 1)
+            if len(parts) == 2 and parts[1]:
+                file_ext = '.' + parts[1].lower()
+        
+        print(f"[导入需求] 原始文件名: {original_filename}")
+        print(f"[导入需求] 提取的扩展名: '{file_ext}'")
+        print(f"[导入需求] 扩展名repr: {repr(file_ext)}")
+        print(f"[导入需求] 扩展名长度: {len(file_ext)}")
+        
+        # 如果提取的扩展名为空，给一个默认值
+        if not file_ext:
+            print("[导入需求] 警告: 扩展名为空，使用默认值 .txt")
+            file_ext = '.txt'
+        
+        print(f"[导入需求] 最终使用的扩展名: '{file_ext}'")
+        
+        # 支持的文件格式
+        supported_extensions = ['.xlsx', '.xls', '.txt', '.md', '.markdown', '.docx', '.pdf']
+        
+        if file_ext not in supported_extensions:
+            return jsonify({
+                "error": f"不支持的文件格式: {file_ext}，支持的格式: {', '.join(supported_extensions)}"
+            }), 400
+        
+        # 保存文件
+        upload_folder = 'data/uploads'
+        os.makedirs(upload_folder, exist_ok=True)
+        
+        # 使用secure_filename处理文件名（但可能会把中文名全部删掉）
+        safe_filename = secure_filename(original_filename)
+        
+        # 如果secure_filename处理后文件名为空或只有扩展名，使用原始文件名
+        if not safe_filename or safe_filename == file_ext or len(safe_filename) < 5:
+            # 保留中文文件名，只替换不安全的字符
+            import re
+            safe_filename = re.sub(r'[<>:"/\\|?*]', '_', original_filename)
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filepath = os.path.join(upload_folder, f"{timestamp}_{safe_filename}")
+        
+        # 确保filepath有正确的扩展名
+        if not filepath.lower().endswith(file_ext):
+            filepath = filepath + file_ext
+        
+        file.save(filepath)
+        
+        print(f"[导入需求] 保存路径: {filepath}")
+        print(f"[导入需求] 文件扩展名验证: {os.path.splitext(filepath)[1]}")
+        
+        # 解析文件内容并创建需求记录
+        from src.database.models import Requirement, RequirementStatus
+        from src.document_parser.parser import parse_document
+        
+        # 解析文档内容
+        content = parse_document(filepath)
+        
+        if not content:
+            return jsonify({"error": "文件内容为空"}), 400
+        
+        # 根据文件类型决定如何创建需求
+        imported_count = 0
+        
+        if file_ext in ['.xlsx', '.xls']:
+            # Excel 文件：每一行作为一个需求
+            import openpyxl
+            wb = openpyxl.load_workbook(filepath)
+            ws = wb.active
+            
+            # 假设第一行是标题，从第二行开始读取
+            for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+                # 尝试获取标题和内容（假设第一列是标题，第二列是内容）
+                title = str(row[0]) if len(row) > 0 and row[0] else f"导入需求_{timestamp}_{row_idx}"
+                content_text = str(row[1]) if len(row) > 1 and row[1] else ""
+                
+                # 如果只有标题没有内容，把标题作为内容
+                if not content_text:
+                    content_text = title
+                
+                req = Requirement(
+                    title=title,
+                    content=content_text,
+                    source_file=filepath,
+                    status=RequirementStatus.PENDING
+                )
+                db_session.add(req)
+                imported_count += 1
+        else:
+            # txt、md、docx、pdf 文件：整个文件作为一个需求
+            # 优先从内容中提取一级标题作为需求标题
+            title = _extract_title_from_content(content, file_ext)
+            
+            # 如果无法从内容提取标题，使用文件名
+            if not title or not title.strip():
+                title = os.path.splitext(safe_filename)[0]
+                # 如果文件名包含时间戳前缀，尝试提取原始文件名
+                if '_' in title and len(title.split('_')[-1]) > 10:
+                    # 可能是 timestamp_original_name 格式
+                    parts = title.split('_', 1)
+                    if len(parts) > 1:
+                        title = parts[1]
+            
+            # 如果标题仍然为空，使用原始文件名
+            if not title or not title.strip():
+                title = os.path.splitext(original_filename)[0]
+            
+            req = Requirement(
+                title=title,
+                content=content,
+                source_file=filepath,
+                status=RequirementStatus.PENDING
+            )
+            db_session.add(req)
+            imported_count = 1
+        
+        db_session.commit()
+        
+        print(f"[导入需求] 导入成功，数量: {imported_count}")
+        
+        return jsonify({
+            "message": "导入成功",
+            "imported_count": imported_count
+        })
+        
+    except Exception as e:
+        db_session.rollback()
+        print(f"[导入需求] 异常: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
@@ -1254,7 +1655,7 @@ def update_llm_config(config_id):
 @api_bp.route('/llm-configs/test', methods=['POST'])
 def test_llm_config():
     """
-    测试LLM配置连接
+    测试LLM配置连接 - 真实发起请求验证连接
     POST /api/llm-configs/test
     
     Request Body:
@@ -1287,20 +1688,54 @@ def test_llm_config():
             is_default=True
         )
         
-        # 获取适配器并发送测试请求
+        # 获取适配器并发送真实测试请求
         adapter = temp_llm.get_adapter('test')
+        
+        # 打印请求信息以便调试
+        print(f"[测试连接] 提供商: {data['provider']}")
+        print(f"[测试连接] Base URL: {data.get('base_url', '')}")
+        print(f"[测试连接] Model ID: {data['model_id']}")
+        print(f"[测试连接] Timeout: {data.get('timeout', 30)}秒")
+        
+        # 发起真实的测试请求
         response = adapter.generate(
-            prompt="你好，这是一个测试消息。请回复'连接成功'。",
-            max_tokens=50
+            prompt="你好，这是一个API连接测试。如果你收到这条消息，请简单回复'连接成功'四个字。",
+            max_tokens=100,
+            temperature=0.1,
+            max_retries=2,
+            retry_delay=3
         )
+        
+        # 验证响应
+        if not response.success:
+            print(f"[测试连接] 失败: {response.error_message}")
+            return jsonify({
+                "success": False,
+                "error": f"LLM API请求失败: {response.error_message}",
+                "message": "连接测试失败"
+            }), 500
+        
+        # 验证响应内容是否为空
+        if not response.content or len(response.content.strip()) == 0:
+            print(f"[测试连接] 失败: 响应为空")
+            return jsonify({
+                "success": False,
+                "error": "LLM API返回空响应",
+                "message": "连接测试失败"
+            }), 500
+        
+        print(f"[测试连接] 成功，响应: {response.content[:100]}...")
         
         return jsonify({
             "success": True,
-            "response": response.content if hasattr(response, 'content') else str(response),
+            "response": response.content[:200],  # 返回前200字符作为验证
+            "model": response.model,
+            "usage": response.usage,
             "message": "连接测试成功"
         })
         
     except Exception as e:
+        print(f"[测试连接] 异常: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e)

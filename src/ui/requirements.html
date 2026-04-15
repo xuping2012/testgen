@@ -1243,49 +1243,16 @@
                 
                 <!-- 需求分析结果 -->
                 <div class="form-group">
-                    <label>功能模块划分</label>
-                    <div id="reviewModules" style="background: var(--dark-bg); padding: 16px; border-radius: 8px; border: 1px solid var(--dark-border); min-height: 60px;">
-                        <!-- 动态填充模块列表 -->
-                    </div>
+                    <label>功能模块划分 (可编辑)</label>
+                    <textarea class="form-control" id="reviewModules" rows="6" style="resize: vertical; font-family: monospace;"></textarea>
                 </div>
                 
                 <div class="form-group">
-                    <label>测试项 (ITEMS)</label>
-                    <div id="reviewItems" style="background: var(--dark-bg); padding: 16px; border-radius: 8px; border: 1px solid var(--dark-border); min-height: 60px;">
-                        <!-- 动态填充测试项 -->
-                    </div>
+                    <label>测试点 (POINTS) (可编辑)</label>
+                    <textarea class="form-control" id="reviewPoints" rows="12" style="resize: vertical; font-family: monospace;"></textarea>
                 </div>
                 
-                <div class="form-group">
-                    <label>测试点 (POINTS)</label>
-                    <div id="reviewPoints" style="background: var(--dark-bg); padding: 16px; border-radius: 8px; border: 1px solid var(--dark-border); min-height: 60px;">
-                        <!-- 动态填充测试点 -->
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label>业务规则</label>
-                    <div id="reviewBusinessRules" style="background: var(--dark-bg); padding: 16px; border-radius: 8px; border: 1px solid var(--dark-border); min-height: 60px;">
-                        <!-- 动态填充业务规则 -->
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label>数据约束</label>
-                    <div id="reviewDataConstraints" style="background: var(--dark-bg); padding: 16px; border-radius: 8px; border: 1px solid var(--dark-border); min-height: 60px;">
-                        <!-- 动态填充数据约束 -->
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label>测试规划 (可编辑)</label>
-                    <textarea class="form-control" id="reviewTestPlan" rows="10" style="resize: vertical; font-family: monospace;"></textarea>
-                </div>
-                
-                <div class="form-group">
-                    <label>需求分析文档 (Markdown)</label>
-                    <textarea class="form-control" id="reviewRequirementMd" rows="15" style="resize: vertical; font-family: monospace;" readonly></textarea>
-                </div>
+                <!-- 已隐藏：业务规则、数据约束、需求分析文档 -->
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeReviewModal()">取消</button>
@@ -1303,8 +1270,8 @@
                 <button class="close-btn" onclick="closeProgressModal()">&times;</button>
             </div>
             <div class="modal-body">
-                <!-- 工作流程可视化 -->
-                <div class="workflow-container">
+                <!-- 工作流程可视化 - 已隐藏 -->
+                <div class="workflow-container" style="display: none;">
                     <div class="workflow-steps">
                         <div class="workflow-step" id="step-analysis">
                             <div class="step-icon">📋</div>
@@ -1743,6 +1710,9 @@
             try {
                 currentRequirementId = requirementId;
                 
+                // 显示加载状态
+                showToast('正在创建分析任务...', 'info');
+                
                 // 调用阶段1：需求分析+测试规划
                 const response = await fetch('/api/generate', {
                     method: 'POST',
@@ -1751,10 +1721,18 @@
                 });
 
                 const data = await response.json();
-                if (data.task_id && data.analysis_result) {
+                if (data.task_id) {
                     currentTaskId = data.task_id;
-                    // 显示评审编辑弹窗
-                    showReviewModal(data.analysis_result);
+                    
+                    // 如果已经有分析结果（同步返回），直接显示
+                    if (data.analysis_result) {
+                        showReviewModal(data.analysis_result);
+                        showToast('需求分析完成，请评审', 'success');
+                    } else {
+                        // 否则轮询任务进度
+                        showToast('正在分析需求，请稍候...', 'info');
+                        startPhase1ProgressCheck(currentTaskId);
+                    }
                 } else {
                     showToast(`分析失败：${data.error || '未知错误'}`, 'error');
                 }
@@ -1764,70 +1742,94 @@
             }
         }
         
+        // 轮询Phase 1任务进度
+        let phase1ProgressInterval = null;
+        let phase1PollCount = 0;
+        const MAX_PHASE1_POLLS = 120; // 最多轮询120次（2分钟）
+        
+        function startPhase1ProgressCheck(taskId) {
+            // 清除之前的轮询
+            if (phase1ProgressInterval) {
+                clearInterval(phase1ProgressInterval);
+            }
+            
+            phase1PollCount = 0;
+            
+            // 每1秒轮询一次
+            phase1ProgressInterval = setInterval(async () => {
+                phase1PollCount++;
+                
+                // 超时检查
+                if (phase1PollCount > MAX_PHASE1_POLLS) {
+                    clearInterval(phase1ProgressInterval);
+                    phase1ProgressInterval = null;
+                    showToast('分析超时，请刷新页面重试', 'error');
+                    return;
+                }
+                
+                try {
+                    const response = await fetch(`/api/generate/${taskId}`);
+                    const data = await response.json();
+                    
+                    if (data && data.status) {
+                        const task = data;
+                        
+                        // 更新进度显示
+                        const progress = Math.round(task.progress || 0);
+                        const message = task.message || '处理中...';
+                        
+                        // 显示进度toast
+                        showToast(`分析进度: ${progress}% - ${message}`, 'info');
+                        
+                        // 检查是否完成
+                        if (task.status === 'awaiting_review' && task.result) {
+                            clearInterval(phase1ProgressInterval);
+                            phase1ProgressInterval = null;
+                            showReviewModal(task.result);
+                            showToast('需求分析完成，请评审', 'success');
+                        } else if (task.status === 'failed') {
+                            clearInterval(phase1ProgressInterval);
+                            phase1ProgressInterval = null;
+                            showToast(`分析失败：${task.error_message || '未知错误'}`, 'error');
+                        }
+                        // 否则继续轮询
+                    }
+                } catch (error) {
+                    console.error('轮询进度失败:', error);
+                    // 继续轮询，不中断
+                }
+            }, 1000);
+        }
+        
         function showReviewModal(analysisResult) {
             // 填充评审弹窗数据
             document.getElementById('reviewTaskId').value = currentTaskId;
             
-            // 功能模块
+            // 功能模块（可编辑）
             const modulesDiv = document.getElementById('reviewModules');
             if (analysisResult.modules && analysisResult.modules.length > 0) {
-                modulesDiv.innerHTML = analysisResult.modules.map((m, i) => 
-                    `<div style="padding: 8px; margin: 4px 0; background: rgba(0, 245, 255, 0.05); border-radius: 4px; border-left: 3px solid var(--neon-cyan);">${i + 1}. ${m}</div>`
-                ).join('');
+                modulesDiv.value = analysisResult.modules.map((m, i) => {
+                    const moduleName = typeof m === 'string' ? m : (m.name || '');
+                    const moduleDesc = typeof m === 'object' ? (m.description || '') : '';
+                    const content = moduleDesc ? `${moduleName} - ${moduleDesc}` : moduleName;
+                    return `${i + 1}. ${content}`;
+                }).join('\n');
             } else {
-                modulesDiv.innerHTML = '<div style="color: var(--text-secondary);">未识别到功能模块</div>';
+                modulesDiv.value = '未识别到功能模块';
             }
             
-            // 测试项
-            const itemsDiv = document.getElementById('reviewItems');
-            if (analysisResult.items && analysisResult.items.length > 0) {
-                itemsDiv.innerHTML = analysisResult.items.map((item, i) => {
-                    const riskColor = item.risk_level === 'Critical' ? '#ff0055' : 
-                                     item.risk_level === 'High' ? '#ffc107' : 'var(--neon-green)';
-                    return `<div style="padding: 8px; margin: 4px 0; background: rgba(0, 245, 255, 0.05); border-radius: 4px; border-left: 3px solid ${riskColor};">${i + 1}. ${item.name} <span style="color: ${riskColor}; font-size: 11px;">[${item.risk_level}]</span></div>`;
-                }).join('');
-            } else {
-                itemsDiv.innerHTML = '<div style="color: var(--text-secondary);">未识别到测试项</div>';
-            }
-            
-            // 测试点
+            // 测试点（可编辑）
             const pointsDiv = document.getElementById('reviewPoints');
             if (analysisResult.points && analysisResult.points.length > 0) {
-                pointsDiv.innerHTML = analysisResult.points.map((point, i) => {
+                pointsDiv.value = analysisResult.points.map((point, i) => {
                     const focusPoints = point.focus_points && point.focus_points.length > 0 
-                        ? `<div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">  关注点: ${point.focus_points.join(', ')}</div>` 
+                        ? `  [关注点: ${point.focus_points.join(', ')}]` 
                         : '';
-                    return `<div style="padding: 8px; margin: 4px 0; background: rgba(0, 255, 136, 0.05); border-radius: 4px; border-left: 3px solid var(--neon-green);">${i + 1}. [${point.item}] ${point.name}${focusPoints}</div>`;
-                }).join('');
+                    return `${i + 1}. [${point.item}] ${point.name}${focusPoints}`;
+                }).join('\n');
             } else {
-                pointsDiv.innerHTML = '<div style="color: var(--text-secondary);">未识别到测试点</div>';
+                pointsDiv.value = '未识别到测试点';
             }
-            
-            // 业务规则
-            const rulesDiv = document.getElementById('reviewBusinessRules');
-            if (analysisResult.business_rules && analysisResult.business_rules.length > 0) {
-                rulesDiv.innerHTML = analysisResult.business_rules.map((rule, i) => 
-                    `<div style="padding: 8px; margin: 4px 0; background: rgba(255, 193, 7, 0.05); border-radius: 4px; border-left: 3px solid #ffc107;">${i + 1}. ${rule}</div>`
-                ).join('');
-            } else {
-                rulesDiv.innerHTML = '<div style="color: var(--text-secondary);">无业务规则</div>';
-            }
-            
-            // 数据约束
-            const constraintsDiv = document.getElementById('reviewDataConstraints');
-            if (analysisResult.data_constraints && analysisResult.data_constraints.length > 0) {
-                constraintsDiv.innerHTML = analysisResult.data_constraints.map((c, i) => 
-                    `<div style="padding: 8px; margin: 4px 0; background: rgba(184, 41, 221, 0.05); border-radius: 4px; border-left: 3px solid var(--neon-purple);">${i + 1}. ${c}</div>`
-                ).join('');
-            } else {
-                constraintsDiv.innerHTML = '<div style="color: var(--text-secondary);">无数据约束</div>';
-            }
-            
-            // 测试规划（可编辑）
-            document.getElementById('reviewTestPlan').value = analysisResult.test_plan || '';
-            
-            // 需求分析文档（只读）
-            document.getElementById('reviewRequirementMd').value = analysisResult.requirement_md || '';
             
             // 显示弹窗
             document.getElementById('reviewModal').classList.add('active');
@@ -1840,19 +1842,48 @@
         async function reAnalyze() {
             // 关闭评审弹窗
             closeReviewModal();
+            
+            // 显示加载状态
+            showToast('正在创建重新分析任务...', 'info');
+            
             // 重新触发分析
             if (currentRequirementId) {
-                showToast('正在重新分析...', 'info');
-                await generateCases(currentRequirementId);
+                try {
+                    const response = await fetch('/api/generate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ requirement_id: currentRequirementId })
+                    });
+
+                    const data = await response.json();
+                    if (data.task_id) {
+                        currentTaskId = data.task_id;
+                        
+                        // 如果已经有分析结果（同步返回），直接显示
+                        if (data.analysis_result) {
+                            showReviewModal(data.analysis_result);
+                            showToast('分析完成，请评审', 'success');
+                        } else {
+                            // 否则轮询任务进度
+                            showToast('正在重新分析需求，请稍候...', 'info');
+                            startPhase1ProgressCheck(currentTaskId);
+                        }
+                    } else {
+                        showToast(`分析失败：${data.error || '未知错误'}`, 'error');
+                    }
+                } catch (error) {
+                    console.error('重新分析失败:', error);
+                    showToast('重新分析失败', 'error');
+                }
             }
         }
         
         async function confirmAndContinue() {
             try {
-                // 获取用户编辑后的测试规划
+                // 获取用户编辑后的功能模块和测试点
                 const reviewedPlan = {
-                    test_plan: document.getElementById('reviewTestPlan').value,
-                    requirement_md: document.getElementById('reviewRequirementMd').value
+                    modules: document.getElementById('reviewModules').value,
+                    points: document.getElementById('reviewPoints').value
                 };
                 
                 // 关闭评审弹窗
@@ -1935,7 +1966,51 @@
         async function retryGeneration() {
             if (currentRequirementId) {
                 document.getElementById('retryContainer').style.display = 'none';
-                await generateCases(currentRequirementId);
+                
+                // 显示加载状态
+                showToast('正在启动重新生成任务...', 'info');
+                
+                try {
+                    // 调用新的 retry 接口，直接使用已有的需求分析结果
+                    const response = await fetch('/api/generate/retry', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            requirement_id: currentRequirementId 
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    if (data.task_id) {
+                        currentTaskId = data.task_id;
+                        
+                        // 显示进度弹窗
+                        document.getElementById('progressFill').style.width = '25%';
+                        document.getElementById('taskId').textContent = currentTaskId;
+                        document.getElementById('taskStatus').textContent = 'processing';
+                        document.getElementById('taskProgress').textContent = '25%';
+                        document.getElementById('taskMessage').textContent = '正在重新生成...';
+                        document.getElementById('retryContainer').style.display = 'none';
+                        
+                        // 重置所有workflow步骤状态
+                        resetWorkflowSteps();
+                        
+                        // 更新workflow步骤显示（Phase 1已完成，直接从Phase 2开始）
+                        updateWorkflowStep('analysis', 'completed', '✅ 已使用');
+                        updateWorkflowStep('plan', 'completed', '✅ 已使用');
+                        updateWorkflowStep('rag', 'active', '执行中...');
+                        
+                        openProgressModal();
+                        startProgressCheck();
+                    } else {
+                        showToast(`重新生成失败：${data.error || '未知错误'}`, 'error');
+                        document.getElementById('retryContainer').style.display = 'block';
+                    }
+                } catch (error) {
+                    console.error('重新生成失败:', error);
+                    showToast('重新生成失败', 'error');
+                    document.getElementById('retryContainer').style.display = 'block';
+                }
             }
         }
 

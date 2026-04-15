@@ -23,6 +23,8 @@ class CaseExporter:
     def export_to_excel(self, test_cases: List[Dict[str, Any]], output_path: str) -> str:
         """
         导出测试用例到Excel
+        
+        表头顺序：用例编号、功能模块、测试点、测试标题、前置条件、操作步骤、预期结果、优先级
         """
         try:
             # 创建工作簿
@@ -30,28 +32,51 @@ class CaseExporter:
             ws = wb.active
             ws.title = "测试用例"
             
-            # 表头
-            headers = ["用例ID", "模块", "用例名称", "前置条件", "测试步骤", "预期结果", "测试数据", "优先级", "状态"]
+            # 表头（按照用户要求的顺序）
+            headers = ["用例编号", "功能模块", "测试点", "测试标题", "前置条件", "操作步骤", "预期结果", "优先级"]
             ws.append(headers)
             
             # 填充数据
             for test_case in test_cases:
+                # 处理测试步骤
+                steps = test_case.get("test_steps", [])
+                if isinstance(steps, list):
+                    steps_text = "\n".join([str(s) for s in steps])
+                else:
+                    steps_text = str(steps)
+                
+                # 处理预期结果
+                expected = test_case.get("expected_results", [])
+                if isinstance(expected, list):
+                    expected_text = "\n".join([str(e) for e in expected])
+                else:
+                    expected_text = str(expected)
+                
                 row = [
                     test_case.get("case_id", ""),
                     test_case.get("module", ""),
+                    test_case.get("test_point", ""),
                     test_case.get("name", ""),
                     test_case.get("preconditions", ""),
-                    "\n".join(test_case.get("test_steps", [])),
-                    "\n".join(test_case.get("expected_results", [])),
-                    "\n".join(test_case.get("test_data", [])),
-                    test_case.get("priority", ""),
-                    test_case.get("status", "")
+                    steps_text,
+                    expected_text,
+                    test_case.get("priority", "")
                 ]
                 ws.append(row)
             
             # 调整列宽
-            for column in ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']:
-                ws.column_dimensions[column].width = 20
+            column_widths = {
+                'A': 15,  # 用例编号
+                'B': 20,  # 功能模块
+                'C': 25,  # 测试点
+                'D': 30,  # 测试标题
+                'E': 30,  # 前置条件
+                'F': 40,  # 操作步骤
+                'G': 40,  # 预期结果
+                'H': 12   # 优先级
+            }
+            for col, width in column_widths.items():
+                ws.column_dimensions[col].width = width
             
             # 保存文件
             wb.save(output_path)

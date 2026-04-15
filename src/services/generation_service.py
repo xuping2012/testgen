@@ -654,6 +654,7 @@ class GenerationService:
                 self.update_progress(task_id, 100.0, "✅ 生成完成")
                 self.complete_task(task_id, {
                     "case_count": len(test_cases),
+                    "total_count": len(test_cases),
                     "rag_stats": rag_stats
                 })
                 
@@ -985,7 +986,7 @@ class GenerationService:
         """
         带故障切换的LLM生成
         
-        当默认模型失败时，切换到备用模型
+        优先使用默认AI配置，失败后再选择切换其它备用模型（仅切换一次）
         
         Args:
             primary_adapter: 主适配器
@@ -998,12 +999,12 @@ class GenerationService:
         """
         from src.llm.adapter import LLMResponse
         
-        # 首先尝试使用主适配器
+        # 首先尝试使用主适配器（使用默认AI配置）
         try:
             response = primary_adapter.generate(
                 prompt, 
                 temperature=0.7, 
-                max_tokens=8192,
+                max_tokens=16384,  # 增加以支持长输出
                 timeout=180,
                 max_retries=max_retries,
                 retry_delay=5
@@ -1012,7 +1013,7 @@ class GenerationService:
             if response.success:
                 return response
             
-            # 如果主适配器失败，尝试切换到其他适配器
+            # 如果主适配器失败，尝试切换到第一个可用的备用模型（仅切换一次）
             print(f"[故障切换] 主适配器失败: {response.error_message}")
             print(f"[故障切换] 正在尝试切换备用模型...")
             
@@ -1022,6 +1023,7 @@ class GenerationService:
             all_adapters = list(self.llm_manager.adapters.keys())
             current_adapter_name = self.llm_manager.default_adapter
             
+            # 只尝试第一个备用模型，不遍历所有
             for adapter_name in all_adapters:
                 if adapter_name == current_adapter_name:
                     continue  # 跳过当前已失败的
@@ -1038,7 +1040,7 @@ class GenerationService:
                     response = backup_adapter.generate(
                         prompt, 
                         temperature=0.7, 
-                        max_tokens=8192,
+                        max_tokens=16384,  # 增加以支持长输出
                         timeout=180,
                         max_retries=2,
                         retry_delay=3
@@ -1050,27 +1052,30 @@ class GenerationService:
                         return response
                     else:
                         print(f"[故障切换] 备用模型 {adapter_name} 也失败: {response.error_message}")
+                        # 只尝试切换一次，失败即返回错误
+                        break
                         
                 except Exception as e:
                     print(f"[故障切换] 切换到 {adapter_name} 异常: {e}")
-                    continue
+                    # 只尝试切换一次
+                    break
             
-            # 所有备用模型都失败
+            # 备用模型也失败或无可用备用模型
             return LLMResponse(
                 content="",
                 usage={},
                 model=primary_adapter.model_id,
                 success=False,
-                error_message=f"主模型及所有备用模型均失败。最后错误: {response.error_message}"
+                error_message=f"主模型及备用模型均失败。最后错误: {response.error_message}"
             )
             
         except Exception as e:
-            # 异常情况也尝试切换
+            # 异常情况也尝试切换一次
             print(f"[故障切换] 主适配器异常: {e}")
             return self._generate_with_failover(primary_adapter, prompt, task_id, max_retries)
     
     def _save_test_cases(self, requirement_id: int, test_cases: list):
-        """保存测试用例到数据库"""
+        """保存测试用例到数据库 - 先删除旧用例再保存新用例"""
         if not test_cases:
             print("警告: 没有需要保存的测试用例")
             return
@@ -1085,16 +1090,20 @@ class GenerationService:
             
             print(f"开始保存用例，需求ID: {requirement_id}, 用例数: {len(test_cases)}")
             
-            # 获取当前需求的已有用例数量，用于编号累加
-            existing_case_count = self.db_session.query(TestCase).filter(
+            # 先删除该需求的所有旧用例
+            deleted_count = self.db_session.query(TestCase).filter(
                 TestCase.requirement_id == requirement_id
-            ).count()
-            print(f"需求ID {requirement_id} 已有 {existing_case_count} 条用例，将累加新用例")
+            ).delete(synchronize_session=False)
             
-            # 从已有编号之后开始编号
+            if deleted_count > 0:
+                print(f"已删除 {deleted_count} 条旧用例")
+            
+            self.db_session.commit()
+            
+            # 从 TC_000001 开始编号
             for idx, case_data in enumerate(test_cases):
-                # 生成唯一的用例编号：TC + 6位序号（累加）
-                case_id = f"TC_{existing_case_count + idx + 1:06d}"
+                # 生成唯一的用例编号：TC + 6位序号
+                case_id = f"TC_{idx + 1:06d}"
 
                 # 处理测试步骤和预期结果（支持字符串或列表）
                 test_steps = case_data.get('test_steps', [])
@@ -1125,6 +1134,12 @@ class GenerationService:
                     test_steps = [str(test_steps)]
                 if not isinstance(expected_results, list):
                     expected_results = [str(expected_results)]
+                
+                # 为测试步骤添加序号（从1开始）
+                test_steps = [f"{i+1}. {str(step).strip()}" for i, step in enumerate(test_steps) if str(step).strip()]
+                
+                # 为预期结果添加序号（从1开始）
+                expected_results = [f"{i+1}. {str(result).strip()}" for i, result in enumerate(expected_results) if str(result).strip()]
 
                 # 处理优先级
                 priority_str = case_data.get('priority', 'P2')
@@ -1165,58 +1180,363 @@ class GenerationService:
 
     def _analyze_requirement(self, requirement_content: str) -> Dict[str, Any]:
         """
-        分析需求文档，提取关键信息
+        需求分析Agent - 基于01_需求分析Agent.md
+        
+        分析需求文档，提取关键信息：
+        - 功能模块清单（按业务域划分）
+        - 业务流程步骤
+        - 约束条件清单
+        - 状态变化清单
+        - 测试点清单
+        - 非功能需求
         
         Returns:
             {
-                "modules": [],  # 识别的模块
-                "key_features": [],  # 关键功能
-                "business_rules": [],  # 业务规则
-                "data_constraints": []  # 数据约束
+                "modules": [],  # 功能模块清单
+                "business_flows": [],  # 业务流程步骤
+                "business_rules": [],  # 约束条件清单
+                "state_changes": [],  # 状态变化清单
+                "test_points": [],  # 测试点清单
+                "non_functional": {},  # 非功能需求
+                "risks": [],  # 风险与模糊点
+                "key_features": [],  # 关键功能点
+                "data_constraints": [],  # 数据约束
+                "items": [],  # 测试项（由_parse_test_plan填充）
+                "points": []  # 测试点（由_parse_test_plan填充）
             }
         """
         analysis = {
             "modules": [],
-            "key_features": [],
+            "business_flows": [],
             "business_rules": [],
-            "data_constraints": []
+            "state_changes": [],
+            "test_points": [],
+            "non_functional": {
+                "performance": [],
+                "compatibility": [],
+                "security": [],
+                "usability": [],
+                "stability": []
+            },
+            "risks": [],
+            "key_features": [],
+            "data_constraints": [],
+            "items": [],
+            "points": []
         }
         
-        # 简单启发式分析（可以后续用LLM增强）
         lines = requirement_content.split('\n')
+        content_lower = requirement_content.lower()
         
+        # ========== 1. 识别功能模块（按业务域划分）==========
         for line in lines:
             line = line.strip()
             
-            # 检测模块标题（包含"模块"关键词，且是标题行）
-            if ('模块' in line or '功能' in line) and line.startswith('#'):
-                # 清理标题标记
+            # 模式1: # 包含"模块"或"功能"的标题（高优先级）
+            if ('模块' in line or '功能' in line or '业务' in line or '管理' in line or '系统' in line) and line.startswith('#'):
                 clean_line = line.replace('#', '').replace('*', '').strip()
                 if clean_line and 3 < len(clean_line) < 50:
-                    analysis["modules"].append(clean_line)
+                    analysis["modules"].append({
+                        "name": clean_line,
+                        "description": "",
+                        "sub_features": []
+                    })
             
-            # 检测业务规则（包含"必须"、"禁止"、"限制"等）
-            if any(keyword in line for keyword in ['必须', '禁止', '限制', '不允许', '仅支持']):
-                # 只提取有意义的业务规则行
-                if not line.startswith('#') and len(line) > 5 and len(line) < 200:
-                    analysis["business_rules"].append(line)
+            # 模式2: # 一级标题（即使没有关键词也识别为模块）
+            elif line.startswith('#') and not line.startswith('##'):
+                clean_line = line.replace('#', '').replace('*', '').strip()
+                # 排除纯技术性标题
+                if clean_line and 3 < len(clean_line) < 50:
+                    # 检查是否已经是模块（避免重复）
+                    existing_names = [m["name"] for m in analysis["modules"]]
+                    if clean_line not in existing_names:
+                        analysis["modules"].append({
+                            "name": clean_line,
+                            "description": "",
+                            "sub_features": []
+                        })
             
-            # 检测数据约束（包含长度、范围等）
-            if any(keyword in line for keyword in ['长度', '范围', '最大', '最小', '≤', '≥', '<', '>']):
-                # 只提取有意义的数据约束行
-                if not line.startswith('#') and len(line) > 5 and len(line) < 200:
-                    analysis["data_constraints"].append(line)
+            # 模式3: ## 级别的标题（子功能）
+            elif line.startswith('##') and not line.startswith('###'):
+                clean_line = line.replace('#', '').replace('*', '').strip()
+                if clean_line and 3 < len(clean_line) < 50:
+                    # 添加到关键功能点
+                    analysis["key_features"].append(clean_line)
         
-        # 提取关键功能点（从##和###标题中提取）
+        # 如果没有识别到模块，基于内容特征智能推断
+        if not analysis["modules"]:
+            inferred_modules = self._infer_modules(requirement_content)
+            analysis["modules"] = inferred_modules  # _infer_modules already returns list of dicts
+        
+        # ========== 2. 提取业务流程步骤 ==========
+        analysis["business_flows"] = self._extract_business_flows(requirement_content)
+        
+        # ========== 3. 识别约束条件 ==========
         for line in lines:
             line = line.strip()
-            if line.strip() and (line.startswith('##') or '**' in line):
-                # 提取标题行
-                title = line.replace('#', '').replace('*', '').strip()
-                if title and 3 < len(title) < 100 and not title.startswith('需求文档'):
-                    analysis["key_features"].append(title)
+            if not line or line.startswith('#'):
+                continue
+            
+            # 业务规则（必须/禁止/限制等）
+            if any(keyword in line for keyword in ['必须', '禁止', '限制', '不允许', '仅支持', '需要', '应当', '应该']):
+                if 5 < len(line) < 200:
+                    analysis["business_rules"].append({
+                        "content": line,
+                        "type": "业务规则"
+                    })
+            
+            # 数据约束（长度/范围/格式等）
+            if any(keyword in line for keyword in ['长度', '范围', '最大', '最小', '≤', '≥', '<', '>', '不超过', '至少', '至多', '位', '字符']):
+                if 5 < len(line) < 200:
+                    analysis["data_constraints"].append({
+                        "content": line,
+                        "type": "数据约束"
+                    })
+        
+        # ========== 4. 识别状态变化 ==========
+        analysis["state_changes"] = self._extract_state_changes(requirement_content)
+        
+        # ========== 5. 识别非功能需求 ==========
+        analysis["non_functional"] = self._extract_non_functional(requirement_content)
+        
+        # ========== 6. 识别风险与模糊点 ==========
+        analysis["risks"] = self._identify_risks(requirement_content)
+        
+        # ========== 7. 划分测试点（按功能模块组织）==========
+        analysis["test_points"] = self._extract_test_points(requirement_content, analysis)
         
         return analysis
+    
+    def _extract_business_flows(self, content: str) -> list:
+        """提取业务流程步骤"""
+        flows = []
+        lines = content.split('\n')
+        
+        # 寻找流程关键词
+        flow_keywords = ['步骤', '首先', '然后', '接着', '最后', '第一步', '第二步', '第三步']
+        state_keywords = ['待支付', '待发货', '待收货', '已完成', '已取消', '待审核', '已审核']
+        action_keywords = ['创建', '分配', '登录', '提交', '支付', '发货', '收货', '售后', '申请', '审核']
+        
+        # 新增：流程连接词（表示先后顺序）
+        flow_connectors = ['成功后', '失败后', '返回', '跳转到', '进入', '清除', '记录', '发送', '显示']
+        
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            
+            # 检查是否包含流程关键词
+            has_flow_keyword = any(kw in line for kw in flow_keywords)
+            has_action = any(kw in line for kw in action_keywords)
+            has_state = any(kw in line for kw in state_keywords)
+            has_flow_connector = any(kw in line for kw in flow_connectors)
+            
+            # 匹配条件：
+            # 1. 有流程关键词
+            # 2. 有动作+状态
+            # 3. 有流程连接词（表示操作的结果或后续动作）
+            if has_flow_keyword or (has_action and has_state) or has_flow_connector:
+                flows.append({
+                    "step": line[:50],
+                    "keywords": []
+                })
+        
+        return flows[:10]  # 最多10个流程步骤
+    
+    def _extract_state_changes(self, content: str) -> list:
+        """提取状态变化清单"""
+        state_changes = []
+        states = ['待支付', '待发货', '待收货', '已完成', '已取消', '待审核', '已审核', '已驳回', '已通过']
+        
+        # 寻找状态转换模式：从X状态到Y状态
+        import re
+        pattern = r'(待\w+|已\w+).*?(变为|转为|更新为|修改为|改为).+?(待\w+|已\w+)'
+        matches = re.findall(pattern, content)
+        
+        for match in matches:
+            if len(match) >= 2:
+                state_changes.append({
+                    "from_state": match[0],
+                    "to_state": match[-1]
+                })
+        
+        # 如果没有找到明确的状态转换，尝试识别提到的状态
+        if not state_changes:
+            found_states = [s for s in states if s in content]
+            if len(found_states) >= 2:
+                for i in range(len(found_states) - 1):
+                    state_changes.append({
+                        "from_state": found_states[i],
+                        "to_state": found_states[i + 1]
+                    })
+        
+        return state_changes
+    
+    def _extract_non_functional(self, content: str) -> dict:
+        """提取非功能需求"""
+        non_functional = {
+            "performance": [],
+            "compatibility": [],
+            "security": [],
+            "usability": [],
+            "stability": []
+        }
+        
+        lines = content.split('\n')
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            
+            # 性能需求
+            if any(kw in line for kw in ['响应时间', '并发', '性能', 'QPS', 'TPS', '秒内', '毫秒']):
+                non_functional["performance"].append(line)
+            
+            # 兼容性需求
+            if any(kw in line for kw in ['浏览器', '兼容', 'iOS', 'Android', 'Chrome', 'Firefox', 'Safari']):
+                non_functional["compatibility"].append(line)
+            
+            # 安全需求
+            if any(kw in line for kw in ['加密', '权限', '鉴权', 'SQL注入', 'XSS', '安全', '密码加密']):
+                non_functional["security"].append(line)
+            
+            # 易用性需求
+            if any(kw in line for kw in ['操作步骤', '错误提示', '用户体验', '易用', '界面']):
+                non_functional["usability"].append(line)
+            
+            # 稳定性需求
+            if any(kw in line for kw in ['7×24', '崩溃', '恢复时间', '稳定性', '可用性']):
+                non_functional["stability"].append(line)
+        
+        return non_functional
+    
+    def _identify_risks(self, content: str) -> list:
+        """识别风险与模糊点"""
+        risks = []
+        lines = content.split('\n')
+        
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            
+            # 识别模糊描述
+            if any(kw in line for kw in ['等', '可能', '大概', '类似', '适当', '合理']):
+                risks.append({
+                    "type": "模糊点",
+                    "content": line,
+                    "severity": "中"
+                })
+            
+            # 识别外部依赖
+            if any(kw in line for kw in ['第三方', '接口', '外部', '依赖']):
+                risks.append({
+                    "type": "高风险点",
+                    "content": line,
+                    "severity": "高"
+                })
+        
+        return risks
+    
+    def _extract_test_points(self, content: str, analysis: dict) -> list:
+        """
+        提取测试点清单（按功能模块组织）
+        
+        基于需求分析Agent的测试点划分规则：
+        - 按需求中的实际子功能/操作划分测试点
+        - 测试点名称禁止与功能模块名称相同
+        - 测试点应描述具体操作，禁止使用"功能"、"测试"等泛化词
+        """
+        test_points = []
+        modules = analysis.get("modules", [])
+        
+        for module in modules:
+            module_name = module["name"] if isinstance(module, dict) else module
+            
+            # 为每个模块生成测试点
+            # 1. 正向场景测试点
+            test_points.append({
+                "module": module_name,
+                "name": f"{module_name}正常流程验证",
+                "description": f"验证{module_name}的正常业务流程",
+                "test_type": "正向场景",
+                "estimated_cases": 1
+            })
+            
+            # 2. 边界值测试点
+            if analysis.get("data_constraints"):
+                test_points.append({
+                    "module": module_name,
+                    "name": f"{module_name}边界值验证",
+                    "description": f"验证{module_name}的边界条件",
+                    "test_type": "边界值",
+                    "estimated_cases": 2
+                })
+            
+            # 3. 异常场景测试点
+            test_points.append({
+                "module": module_name,
+                "name": f"{module_name}异常处理验证",
+                "description": f"验证{module_name}的异常场景处理",
+                "test_type": "异常场景",
+                "estimated_cases": 2
+            })
+            
+            # 4. 业务规则验证点
+            module_rules = [r for r in analysis.get("business_rules", []) 
+                          if module_name in r.get("content", "") or module_name in str(r)]
+            if module_rules:
+                test_points.append({
+                    "module": module_name,
+                    "name": f"{module_name}业务规则验证",
+                    "description": f"验证{module_name}相关的业务规则",
+                    "test_type": "业务规则",
+                    "estimated_cases": len(module_rules)
+                })
+        
+        return test_points
+    
+    def _infer_modules(self, requirement_content: str) -> list:
+        """
+        基于需求内容智能推断功能模块
+        
+        通过分析业务场景、用户角色、操作流程等推断可能的功能模块
+        """
+        modules = []
+        content_lower = requirement_content.lower()
+        
+        # 扩展的业务场景模式（包含更多常见场景）
+        patterns = {
+            '用户管理': ['用户注册', '用户登录', '用户信息', '账号管理', '权限管理'],
+            '登录认证': ['登录', '登出', '忘记密码', '验证码', '密码重置', '免登录'],
+            '订单管理': ['订单创建', '订单查询', '订单状态', '支付', '退款'],
+            '商品管理': ['商品上架', '商品下架', '库存管理', '商品分类'],
+            '数据统计': ['统计报表', '数据分析', '导出报表', '趋势分析'],
+            '审批流程': ['审批', '审核', '流程', '驳回', '通过'],
+            '系统配置': ['系统设置', '参数配置', '基础数据', '字典管理'],
+            '权限管理': ['角色', '权限', '菜单权限', '数据权限', '操作权限'],
+            '消息通知': ['消息', '通知', '推送', '短信', '邮件'],
+            '文件管理': ['文件上传', '文件下载', '附件', '图片上传']
+        }
+        
+        for module_name, keywords in patterns.items():
+            # 如果内容中包含多个相关关键词，则推断存在该模块
+            match_count = sum(1 for keyword in keywords if keyword in content_lower)
+            if match_count >= 2:  # 至少匹配2个关键词
+                modules.append({
+                    "name": module_name,
+                    "description": f"基于内容推断的{module_name}模块",
+                    "sub_features": []
+                })
+            # 对于登录认证等关键场景，1个关键词也可以推断
+            elif match_count >= 1 and module_name in ['登录认证', '权限管理', '消息通知']:
+                modules.append({
+                    "name": module_name,
+                    "description": f"基于内容推断的{module_name}模块",
+                    "sub_features": []
+                })
+        
+        return modules
 
     def _build_analyzed_markdown(self, analysis: Dict[str, Any], original_content: str) -> str:
         """
@@ -1236,7 +1556,12 @@ class GenerationService:
         if analysis.get('modules'):
             md += "## 一、功能模块划分\n\n"
             for i, module in enumerate(analysis['modules'], 1):
-                md += f"{i}. **{module}**\n"
+                module_name = module["name"] if isinstance(module, dict) else module
+                module_desc = module.get("description", "") if isinstance(module, dict) else ""
+                md += f"{i}. **{module_name}**"
+                if module_desc:
+                    md += f" - {module_desc}"
+                md += "\n"
             md += "\n"
         
         # 2. 关键功能点
@@ -1253,7 +1578,8 @@ class GenerationService:
             md += "|------|----------|\n"
             for i, rule in enumerate(analysis['business_rules'], 1):
                 # 清理规则文本
-                clean_rule = rule.replace('|', '｜')
+                rule_content = rule.get('content', str(rule)) if isinstance(rule, dict) else str(rule)
+                clean_rule = rule_content.replace('|', '｜')
                 md += f"| {i} | {clean_rule} |\n"
             md += "\n"
         
@@ -1263,7 +1589,8 @@ class GenerationService:
             md += "| 序号 | 约束内容 |\n"
             md += "|------|----------|\n"
             for i, constraint in enumerate(analysis['data_constraints'], 1):
-                clean_constraint = constraint.replace('|', '｜')
+                constraint_content = constraint.get('content', str(constraint)) if isinstance(constraint, dict) else str(constraint)
+                clean_constraint = constraint_content.replace('|', '｜')
                 md += f"| {i} | {clean_constraint} |\n"
             md += "\n"
         
@@ -1346,42 +1673,131 @@ class GenerationService:
                          requirement_analysis: Dict[str, Any],
                          rag_context: str = "") -> str:
         """
-        基于testcase-planner技能创建测试规划
+        测试规划Agent - 基于02_模块评审Agent.md
+        
+        基于需求分析结果创建详细的测试规划：
+        - 模块拆分评审（完整性/合理性/一致性）
+        - 测试点评审（完整性/可测性/合理性/优先级/追溯性/全面性）
+        - 风险评审（高风险覆盖/依赖异常）
         
         识别测试项(ITEM)和测试点(POINT)
         """
-        test_plan = "\n\n## 测试规划（基于testcase-planner方法论）\n\n"
+        test_plan = "\n\n## 测试规划（基于模块评审Agent方法论）\n\n"
         
-        # 根据分析的模块生成测试项
+        # 获取分析结果
         modules = requirement_analysis.get("modules", [])
+        business_rules = requirement_analysis.get("business_rules", [])
+        data_constraints = requirement_analysis.get("data_constraints", [])
+        business_flows = requirement_analysis.get("business_flows", [])
+        state_changes = requirement_analysis.get("state_changes", [])
+        test_points = requirement_analysis.get("test_points", [])
+        non_functional = requirement_analysis.get("non_functional", {})
+        risks = requirement_analysis.get("risks", [])
+        
+        # ========== 1. 模块拆分评审 ==========
+        test_plan += "### 一、模块拆分评审\n\n"
+        
         if not modules:
-            # 如果没有识别到模块，使用默认结构
+            test_plan += "**评审结论**: 未识别到功能模块，使用默认测试结构\n\n"
             test_plan += "### 测试项：核心功能\n"
             test_plan += "- 测试点：正常流程测试\n"
             test_plan += "- 测试点：边界值测试\n"
             test_plan += "- 测试点：异常流程测试\n\n"
         else:
+            # 完整性检查
+            test_plan += f"**完整性**: 识别到 {len(modules)} 个功能模块\n\n"
+            
+            # 为每个模块生成详细的测试项和测试点
             for module in modules[:5]:  # 最多处理5个模块
-                test_plan += f"### 测试项：{module}\n"
-                test_plan += "- 测试点：正常流程\n"
-                test_plan += "- 测试点：边界值\n"
-                test_plan += "- 测试点：异常处理\n\n"
+                module_name = module["name"] if isinstance(module, dict) else module
+                module_desc = module.get("description", "") if isinstance(module, dict) else ""
+                
+                test_plan += f"### 测试项：{module_name}\n"
+                if module_desc:
+                    test_plan += f"**描述**: {module_desc}\n\n"
+                
+                # 正向测试点（基于业务流程）
+                test_plan += "- 测试点：正常流程验证\n"
+                if business_flows:
+                    test_plan += f"  - 覆盖流程步骤: {len(business_flows)}个\n"
+                
+                # 状态转换测试点
+                if state_changes:
+                    test_plan += f"- 测试点：状态流转验证（覆盖{len(state_changes)}个状态转换）\n"
+                
+                # 基于业务规则生成测试点
+                module_rules = [r for r in business_rules 
+                               if module_name in r.get("content", "") or module_name in str(r)]
+                if module_rules:
+                    for rule in module_rules[:3]:  # 最多3个规则
+                        rule_content = rule.get("content", rule) if isinstance(rule, dict) else str(rule)
+                        rule_desc = rule_content[:30] + ('...' if len(rule_content) > 30 else '')
+                        test_plan += f"- 测试点：业务规则验证 - {rule_desc}\n"
+                
+                # 基于数据约束生成测试点
+                module_constraints = [c for c in data_constraints 
+                                     if module_name in c.get("content", "") or module_name in str(c)]
+                if module_constraints:
+                    for constraint in module_constraints[:2]:  # 最多2个约束
+                        constraint_content = constraint.get("content", constraint) if isinstance(constraint, dict) else str(constraint)
+                        constraint_desc = constraint_content[:30] + ('...' if len(constraint_content) > 30 else '')
+                        test_plan += f"- 测试点：数据约束验证 - {constraint_desc}\n"
+                
+                # 通用测试点
+                test_plan += "- 测试点：边界值测试\n"
+                test_plan += "- 测试点：异常处理验证\n"
+                test_plan += "\n"
         
-        # 添加业务规则关注点
-        business_rules = requirement_analysis.get("business_rules", [])
+        # ========== 2. 测试点评审 ==========
+        test_plan += "### 二、测试点评审\n\n"
+        
+        # 完整性评审
+        total_test_points = len(test_points) if test_points else 0
+        test_plan += f"**完整性**: 规划 {total_test_points} 个测试点\n"
+        
+        # 覆盖场景评审
+        test_plan += "**全面性**: 覆盖以下场景\n"
+        test_plan += "- 正向场景：正常业务流程\n"
         if business_rules:
-            test_plan += "### 业务规则验证点\n"
-            for rule in business_rules[:10]:  # 最多10条
-                test_plan += f"- {rule}\n"
-            test_plan += "\n"
-        
-        # 添加数据约束关注点
-        data_constraints = requirement_analysis.get("data_constraints", [])
+            test_plan += f"- 业务规则：{len(business_rules)}条规则验证\n"
         if data_constraints:
-            test_plan += "### 数据约束验证点\n"
-            for constraint in data_constraints[:10]:  # 最多10条
-                test_plan += f"- {constraint}\n"
+            test_plan += f"- 数据约束：{len(data_constraints)}个约束验证\n"
+        if state_changes:
+            test_plan += f"- 状态流转：{len(state_changes)}个状态转换\n"
+        test_plan += "- 异常场景：错误处理、异常输入\n"
+        test_plan += "- 边界场景：边界值、临界值\n\n"
+        
+        # ========== 3. 风险评审 ==========
+        test_plan += "### 三、风险评审\n\n"
+        
+        if risks:
+            test_plan += f"**识别到 {len(risks)} 个风险点**\n\n"
+            for i, risk in enumerate(risks[:5], 1):  # 最多显示5个风险
+                risk_content = risk.get("content", risk) if isinstance(risk, dict) else str(risk)
+                risk_type = risk.get("type", "风险") if isinstance(risk, dict) else "风险"
+                risk_severity = risk.get("severity", "中") if isinstance(risk, dict) else "中"
+                test_plan += f"{i}. **[{risk_severity}]{risk_type}**: {risk_content[:50]}\n"
             test_plan += "\n"
+        else:
+            test_plan += "**风险**: 未识别到明显风险点\n\n"
+        
+        # ========== 4. 非功能需求测试 ==========
+        test_plan += "### 四、非功能需求测试\n\n"
+        
+        if non_functional:
+            if non_functional.get("performance"):
+                test_plan += f"**性能测试**: {len(non_functional['performance'])}个性能指标\n"
+            if non_functional.get("security"):
+                test_plan += f"**安全测试**: {len(non_functional['security'])}个安全要求\n"
+            if non_functional.get("compatibility"):
+                test_plan += f"**兼容性测试**: {len(non_functional['compatibility'])}个兼容性要求\n"
+            if non_functional.get("usability"):
+                test_plan += f"**易用性测试**: {len(non_functional['usability'])}个易用性要求\n"
+            if non_functional.get("stability"):
+                test_plan += f"**稳定性测试**: {len(non_functional['stability'])}个稳定性要求\n"
+            test_plan += "\n"
+        else:
+            test_plan += "**非功能需求**: 未识别到明确的非功能需求\n\n"
         
         return test_plan
 
@@ -1589,8 +2005,8 @@ class GenerationService:
   "test_point": "测试点描述，说明测什么",
   "name": "用例标题，清晰描述测试目的",
   "preconditions": "前置条件，包括环境、数据、权限等准备",
-  "test_steps": ["打开登录页面", "输入用户名和密码", "点击登录按钮"],
-  "expected_results": ["登录成功", "页面跳转到首页", "显示用户登录状态"],
+  "test_steps": ["1. 打开登录页面", "2. 输入用户名和密码", "3. 点击登录按钮"],
+  "expected_results": ["1. 登录成功", "2. 页面跳转到首页", "3. 显示用户登录状态"],
   "priority": "P0/P1/P2/P3",
   "requirement_clause": "对应需求条款编号",
   "case_type": "功能/边界/异常/性能/安全/兼容"
@@ -1600,9 +2016,14 @@ class GenerationService:
 ## 重要提示
 1. 必须覆盖需求中的所有功能点
 2. 边界值和异常场景不能遗漏
-3. 测试步骤要详细到可执行程度
-4. 预期结果要明确可验证
-5. 直接输出JSON数组，不要包含其他说明文字
+3. 测试步骤必须从1开始编号，格式为"1. 步骤内容"、"2. 步骤内容"
+4. 预期结果必须从1开始编号，格式为"1. 结果内容"、"2. 结果内容"
+5. 测试步骤和预期结果的数量应该对应
+6. 测试步骤要详细到可执行程度
+7. 预期结果要明确可验证
+8. 必须输出合法的JSON数组，以 [ 开头，以 ] 结尾
+9. 如果输出内容过长，请分批输出但必须保证JSON格式正确
+10. 不要包含任何JSON数组之外的说明文字
 """
 
         return prompt
@@ -1612,6 +2033,20 @@ class GenerationService:
         if not content or not content.strip():
             print("警告: LLM返回内容为空")
             return []
+        
+        # 保存原始响应到日志文件以便调试
+        try:
+            import os
+            log_dir = 'data'
+            os.makedirs(log_dir, exist_ok=True)
+            log_path = os.path.join(log_dir, 'llm_response.log')
+            with open(log_path, 'w', encoding='utf-8') as f:
+                f.write(f"[{datetime.now().isoformat()}] LLM响应长度: {len(content)}字符\n")
+                f.write(f"前2000字符:\n{content[:2000]}\n")
+                f.write(f"\n后2000字符:\n{content[-2000:]}\n")
+            print(f"LLM原始响应已保存到: {log_path}")
+        except Exception as e:
+            print(f"保存LLM响应日志失败: {e}")
             
         # 尝试1: 直接解析JSON
         try:
@@ -1634,7 +2069,9 @@ class GenerationService:
             json_block_pattern = r'```(?:json)?\s*\n?([\s\S]*?)\n?\s*```'
             matches = re.findall(json_block_pattern, content)
             if matches:
-                for match in matches:
+                print(f"找到 {len(matches)} 个JSON代码块")
+                for idx, match in enumerate(matches):
+                    print(f"尝试解析第 {idx+1} 个JSON代码块 (长度: {len(match)}字符)")
                     try:
                         cases = json.loads(match)
                         if isinstance(cases, list):
@@ -1645,8 +2082,15 @@ class GenerationService:
                                 if key in cases and isinstance(cases[key], list):
                                     print(f"从JSON代码块dict['{key}']解析到 {len(cases[key])} 条用例")
                                     return cases[key]
-                    except:
-                        continue
+                    except json.JSONDecodeError as e:
+                        print(f"第 {idx+1} 个JSON代码块解析失败: {e}")
+                        # 如果是最后一个且特别长，尝试修复JSON
+                        if len(match) > 10000:
+                            print("JSON过长，尝试智能修复...")
+                            fixed_match = self._try_fix_json(match)
+                            if fixed_match:
+                                print(f"智能修复成功，解析到 {len(fixed_match)} 条用例")
+                                return fixed_match
         except Exception as e:
             print(f"JSON代码块解析失败: {e}")
         
@@ -1656,10 +2100,18 @@ class GenerationService:
             end = content.rfind(']')
             if start != -1 and end != -1 and end > start:
                 json_str = content[start:end+1]
-                cases = json.loads(json_str)
-                if isinstance(cases, list):
-                    print(f"从方括号解析到 {len(cases)} 条用例")
-                    return cases
+                print(f"尝试方括号解析 (长度: {len(json_str)}字符)")
+                # 如果太长，尝试智能修复
+                if len(json_str) > 10000:
+                    cases = self._try_fix_json(json_str)
+                    if cases:
+                        print(f"方括号智能修复成功，解析到 {len(cases)} 条用例")
+                        return cases
+                else:
+                    cases = json.loads(json_str)
+                    if isinstance(cases, list):
+                        print(f"从方括号解析到 {len(cases)} 条用例")
+                        return cases
         except json.JSONDecodeError as e:
             print(f"方括号JSON解析失败: {e}")
         
@@ -1669,18 +2121,89 @@ class GenerationService:
             end = content.rfind('}')
             if start != -1 and end != -1 and end > start:
                 json_str = content[start:end+1]
-                obj = json.loads(json_str)
-                if isinstance(obj, dict):
-                    for key in ["test_cases", "testCases", "cases", "data"]:
-                        if key in obj and isinstance(obj[key], list):
-                            print(f"从花括号dict['{key}']解析到 {len(obj[key])} 条用例")
-                            return obj[key]
+                print(f"尝试花括号解析 (长度: {len(json_str)}字符)")
+                if len(json_str) > 10000:
+                    obj = self._try_fix_json(json_str, expect_dict=True)
+                    if obj:
+                        for key in ["test_cases", "testCases", "cases", "data"]:
+                            if key in obj and isinstance(obj[key], list):
+                                print(f"从花括号dict['{key}']解析到 {len(obj[key])} 条用例")
+                                return obj[key]
+                else:
+                    obj = json.loads(json_str)
+                    if isinstance(obj, dict):
+                        for key in ["test_cases", "testCases", "cases", "data"]:
+                            if key in obj and isinstance(obj[key], list):
+                                print(f"从花括号dict['{key}']解析到 {len(obj[key])} 条用例")
+                                return obj[key]
         except json.JSONDecodeError as e:
             print(f"花括号JSON解析失败: {e}")
         
         # 返回空列表
         print("所有解析方法均失败，返回空列表")
+        print(f"提示：请检查 data/llm_response.log 查看LLM原始响应")
         return []
+    
+    def _try_fix_json(self, json_str: str, expect_dict: bool = False) -> any:
+        """
+        尝试修复不完整的JSON
+        主要针对LLM输出被截断的情况
+        """
+        try:
+            import re
+            
+            # 策略1: 尝试找到最后一个完整的对象或数组
+            # 从后向前扫描，找到匹配的括号
+            if expect_dict:
+                # 找 { ... }
+                depth = 0
+                last_valid_end = -1
+                for i, char in enumerate(json_str):
+                    if char == '{':
+                        depth += 1
+                    elif char == '}':
+                        depth -= 1
+                        if depth == 0:
+                            last_valid_end = i
+                
+                if last_valid_end > 0:
+                    candidate = json_str[:last_valid_end+1]
+                    return json.loads(candidate)
+            else:
+                # 找 [ ... ]
+                depth = 0
+                last_valid_end = -1
+                for i, char in enumerate(json_str):
+                    if char == '[':
+                        depth += 1
+                    elif char == ']':
+                        depth -= 1
+                        if depth == 0:
+                            last_valid_end = i
+                
+                if last_valid_end > 0:
+                    candidate = json_str[:last_valid_end+1]
+                    return json.loads(candidate)
+            
+            # 策略2: 尝试找到所有独立的JSON对象
+            pattern = r'\{[^{}]*"case_id"[^{}]*\}'
+            matches = re.findall(pattern, json_str)
+            if matches:
+                print(f"找到 {len(matches)} 个独立JSON对象")
+                cases = []
+                for match in matches:
+                    try:
+                        case = json.loads(match)
+                        cases.append(case)
+                    except:
+                        pass
+                if cases:
+                    return cases
+            
+            return None
+        except Exception as e:
+            print(f"JSON修复失败: {e}")
+            return None
     
     def _mock_generate_cases(self, requirement_content: str) -> list:
         """模拟生成用例（无LLM时使用）"""
