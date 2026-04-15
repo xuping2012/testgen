@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prompt管理 // TestGen</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --neon-cyan: #00f5ff;
+            --neon-pink: #ff00ff;
+            --neon-purple: #b829dd;
+            --neon-green: #00ff88;
+            --neon-yellow: #ffee00;
+            --dark-bg: #0a0a0f;
+            --dark-sidebar: #08080c;
+            --dark-card: #12121a;
+            --dark-border: #1e1e2e;
+            --text-primary: #e0e0e0;
+            --text-secondary: #888;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Roboto, monospace;
+            background: var(--dark-bg);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        
+        .layout { display: flex; min-height: 100vh; }
+        
+        .sidebar {
+            width: 260px;
+            background: var(--dark-sidebar);
+            border-right: 1px solid var(--dark-border);
+            padding: 30px 0;
+        }
+        
+        .logo {
+            padding: 0 30px 30px;
+            font-size: 28px;
+            font-weight: 900;
+            color: var(--neon-cyan);
+            text-shadow: 0 0 20px var(--neon-cyan);
+            letter-spacing: 4px;
+            border-bottom: 1px solid var(--dark-border);
+        }
+        
+        .nav-menu { list-style: none; padding: 20px 0; }
+        .nav-item {
+            padding: 16px 30px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--text-secondary);
+            border-left: 3px solid transparent;
+        }
+        .nav-item:hover { background: rgba(0, 245, 255, 0.05); color: var(--text-primary); }
+        .nav-item.active {
+            background: linear-gradient(90deg, rgba(0, 245, 255, 0.1), transparent);
+            color: var(--neon-cyan);
+            border-left-color: var(--neon-cyan);
+        }
+        .nav-icon { width: 24px; text-align: center; font-size: 18px; }
+        
+        .main-content { flex: 1; padding: 40px; overflow-y: auto; }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+        .header h1 {
+            font-size: 32px;
+            color: var(--neon-cyan);
+            text-shadow: 0 0 20px rgba(0, 245, 255, 0.5);
+            letter-spacing: 2px;
+        }
+        .header h1::before { content: '// '; color: var(--neon-pink); }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+        .btn-primary {
+            background: transparent;
+            color: var(--neon-cyan);
+            border: 1px solid var(--neon-cyan);
+            box-shadow: 0 0 20px rgba(0, 245, 255, 0.2);
+        }
+        .btn-primary:hover {
+            background: var(--neon-cyan);
+            color: var(--dark-bg);
+            box-shadow: 0 0 30px rgba(0, 245, 255, 0.5);
+        }
+        .btn-secondary {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--dark-border);
+        }
+        .btn-secondary:hover { border-color: var(--text-primary); color: var(--text-primary); }
+        .btn-success {
+            background: transparent;
+            color: var(--neon-green);
+            border: 1px solid var(--neon-green);
+        }
+        .btn-success:hover {
+            background: var(--neon-green);
+            color: var(--dark-bg);
+        }
+        
+        .card {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 24px;
+            color: var(--text-primary);
+            letter-spacing: 1px;
+        }
+        
+        .prompt-list { display: flex; flex-direction: column; gap: 16px; }
+        
+        .prompt-item {
+            padding: 20px;
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-border);
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+        .prompt-item:hover { border-color: var(--neon-cyan); }
+        
+        .prompt-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .prompt-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--neon-cyan);
+        }
+        
+        .prompt-type {
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            background: rgba(0, 245, 255, 0.1);
+            color: var(--neon-cyan);
+            border: 1px solid rgba(0, 245, 255, 0.3);
+        }
+        
+        .prompt-description {
+            color: var(--text-secondary);
+            font-size: 13px;
+            margin-bottom: 12px;
+        }
+        
+        .prompt-preview {
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-family: monospace;
+            line-height: 1.6;
+            max-height: 60px;
+            overflow: hidden;
+            margin-bottom: 12px;
+            white-space: pre-wrap;
+        }
+        
+        .prompt-actions { display: flex; gap: 8px; }
+        
+        .form-group { margin-bottom: 20px; }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--neon-cyan);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .form-control {
+            width: 100%;
+            padding: 12px;
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-border);
+            border-radius: 8px;
+            font-size: 14px;
+            color: var(--text-primary);
+            transition: all 0.3s;
+        }
+        .form-control:focus {
+            outline: none;
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 15px rgba(0, 245, 255, 0.2);
+        }
+        textarea.form-control {
+            min-height: 400px;
+            resize: vertical;
+            font-family: monospace;
+            line-height: 1.6;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 1000px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal-header {
+            padding: 24px 30px;
+            border-bottom: 1px solid var(--dark-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-header h3 { color: var(--neon-cyan); font-size: 20px; letter-spacing: 2px; }
+        .modal-body { padding: 30px; }
+        .modal-footer {
+            padding: 20px 30px;
+            border-top: 1px solid var(--dark-border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: var(--text-secondary);
+        }
+        .close-btn:hover { color: var(--neon-pink); }
+        
+        .toast-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+        .toast-modal.active { display: flex; }
+        .toast-box {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 380px;
+            text-align: center;
+            padding: 40px 30px;
+        }
+        .toast-box.success { border-color: var(--neon-green); }
+        .toast-box.error { border-color: #ff0055; }
+        .toast-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin: 0 auto 20px;
+            background: rgba(0, 245, 255, 0.15);
+            border: 2px solid rgba(0, 245, 255, 0.4);
+            color: var(--neon-cyan);
+        }
+        .toast-box.success .toast-icon {
+            background: rgba(0, 255, 136, 0.15);
+            border-color: rgba(0, 255, 136, 0.4);
+            color: var(--neon-green);
+        }
+        .toast-box.error .toast-icon {
+            background: rgba(255, 0, 85, 0.15);
+            border-color: rgba(255, 0, 85, 0.4);
+            color: #ff0055;
+        }
+        .toast-message { font-size: 16px; color: var(--text-primary); margin-bottom: 24px; }
+        .toast-btn {
+            padding: 12px 40px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            background: transparent;
+            border: 1px solid var(--neon-cyan);
+            color: var(--neon-cyan);
+        }
+        .toast-box.success .toast-btn { border-color: var(--neon-green); color: var(--neon-green); }
+        .toast-box.error .toast-btn { border-color: #ff0055; color: #ff0055; }
+    </style>
+</head>
+<body>
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="logo">◈ TestGen</div>
+            <ul class="nav-menu">
+                <li class="nav-item" onclick="location.href='requirements.html'">
+                    <span class="nav-icon">◉</span>
+                    <span>需求管理</span>
+                </li>
+                <li class="nav-item" onclick="location.href='cases.html'">
+                    <span class="nav-icon">◆</span>
+                    <span>用例管理</span>
+                </li>
+                <li class="nav-item" onclick="location.href='rag.html'">
+                    <span class="nav-icon">◈</span>
+                    <span>RAG检索</span>
+                </li>
+                <li class="nav-item active" onclick="location.href='prompts.html'">
+                    <span class="nav-icon">▤</span>
+                    <span>Prompt管理</span>
+                </li>
+                <li class="nav-item" onclick="location.href='config.html'">
+                    <span class="nav-icon">▣</span>
+                    <span>AI配置</span>
+                </li>
+            </ul>
+        </aside>
+
+        <main class="main-content">
+            <div class="header">
+                <h1>Prompt管理</h1>
+                <button class="btn btn-primary" onclick="resetToDefaults()">恢复默认</button>
+            </div>
+
+            <div class="card">
+                <div class="card-title">系统内置Prompt模板</div>
+                <div class="prompt-list" id="promptList">
+                    <div class="empty-state" style="text-align: center; padding: 60px 20px; color: var(--text-secondary);">
+                        <p>加载中...</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 编辑模态框 -->
+    <div class="modal" id="editModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>// 编辑Prompt模板</h3>
+                <button class="close-btn" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>模板名称</label>
+                    <input type="text" class="form-control" id="editName" readonly>
+                </div>
+                <div class="form-group">
+                    <label>模板类型</label>
+                    <input type="text" class="form-control" id="editType" readonly>
+                </div>
+                <div class="form-group">
+                    <label>模板描述</label>
+                    <input type="text" class="form-control" id="editDescription">
+                </div>
+                <div class="form-group">
+                    <label>模板内容</label>
+                    <textarea class="form-control" id="editTemplate" rows="25"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn btn-success" onclick="savePrompt()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 提示弹窗 -->
+    <div class="toast-modal" id="toastModal">
+        <div class="toast-box" id="toastBox">
+            <div class="toast-icon" id="toastIcon">✓</div>
+            <div class="toast-message" id="toastMessage">操作成功</div>
+            <button class="toast-btn" onclick="closeToast()">确定</button>
+        </div>
+    </div>
+
+    <script>
+        let currentPromptId = null;
+
+        async function loadPrompts() {
+            try {
+                const response = await fetch('/api/prompts');
+                const data = await response.json();
+                renderPromptList(data.items || []);
+            } catch (error) {
+                console.error('加载Prompt列表失败:', error);
+                showToast('加载失败', 'error');
+            }
+        }
+
+        function renderPromptList(items) {
+            const container = document.getElementById('promptList');
+            if (items.length === 0) {
+                container.innerHTML = '<div class="empty-state" style="text-align: center; padding: 60px 20px; color: var(--text-secondary);"><p>暂无Prompt模板</p></div>';
+                return;
+            }
+
+            container.innerHTML = items.map(item => `
+                <div class="prompt-item">
+                    <div class="prompt-header">
+                        <span class="prompt-name">${item.name}</span>
+                        <span class="prompt-type">${item.template_type || '未分类'}</span>
+                    </div>
+                    <div class="prompt-description">${item.description || '暂无描述'}</div>
+                    <div class="prompt-preview">${item.template.substring(0, 200)}...</div>
+                    <div class="prompt-actions">
+                        <button class="btn btn-secondary" onclick="editPrompt('${item.id}')">编辑</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function editPrompt(id) {
+            try {
+                const response = await fetch(`/api/prompts/${id}`);
+                const data = await response.json();
+                currentPromptId = id;
+                document.getElementById('editName').value = data.name || '';
+                document.getElementById('editType').value = data.template_type || '';
+                document.getElementById('editDescription').value = data.description || '';
+                document.getElementById('editTemplate').value = data.template || '';
+                document.getElementById('editModal').classList.add('active');
+            } catch (error) {
+                console.error('获取Prompt详情失败:', error);
+                showToast('获取详情失败', 'error');
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('editModal').classList.remove('active');
+            currentPromptId = null;
+        }
+
+        async function savePrompt() {
+            if (!currentPromptId) return;
+
+            const description = document.getElementById('editDescription').value;
+            const template = document.getElementById('editTemplate').value;
+
+            if (!template || !template.trim()) {
+                showToast('模板内容不能为空', 'info');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/prompts/${currentPromptId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        description: description,
+                        template: template
+                    })
+                });
+
+                if (response.ok) {
+                    closeModal();
+                    loadPrompts();
+                    showToast('保存成功', 'success');
+                } else {
+                    const data = await response.json();
+                    showToast(`保存失败：${data.error || '未知错误'}`, 'error');
+                }
+            } catch (error) {
+                console.error('保存失败:', error);
+                showToast('保存失败', 'error');
+            }
+        }
+
+        async function resetToDefaults() {
+            if (!confirm('确定要恢复所有Prompt为默认模板吗？这将覆盖所有自定义修改。')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/prompts/reset-defaults', {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    loadPrompts();
+                    showToast('已恢复默认模板', 'success');
+                } else {
+                    const data = await response.json();
+                    showToast(`恢复失败：${data.error || '未知错误'}`, 'error');
+                }
+            } catch (error) {
+                console.error('恢复默认失败:', error);
+                showToast('恢复失败', 'error');
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const toastModal = document.getElementById('toastModal');
+            const toastBox = document.getElementById('toastBox');
+            const toastIcon = document.getElementById('toastIcon');
+            const toastMessage = document.getElementById('toastMessage');
+
+            toastBox.className = 'toast-box ' + type;
+            toastIcon.textContent = type === 'success' ? '✓' : type === 'error' ? '✗' : 'ℹ';
+            toastMessage.textContent = message;
+
+            toastModal.classList.add('active');
+        }
+
+        function closeToast() {
+            document.getElementById('toastModal').classList.remove('active');
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadPrompts();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+# 核心依赖
+python-docx==1.2.0      # 处理docx文件
+PyPDF2==3.0.1           # 处理PDF文件
+langchain==0.1.20       # 大语言模型应用框架
+langchain-openai==0.1.6 # OpenAI集成
+Flask==2.1.3            # Web框架
+flask-cors==4.0.0       # CORS支持
+requests==2.31.0        # HTTP请求
+
+# 数据库
+SQLAlchemy==2.0.28      # ORM框架
+
+# 向量数据库
+chromadb==0.4.24        # ChromaDB向量库
+sentence-transformers==2.5.1  # Embedding模型
+
+# 数据处理
+numpy==1.26.4           # 数值计算
+pandas==2.2.1           # 数据处理
+openpyxl==3.1.2         # Excel处理
+xmind==1.2.0            # XMind导出
+
+# 图像处理
+opencv-python==4.9.0.80 # OpenCV
+pytesseract==0.3.10     # OCR识别
+pillow==10.2.0          # 图像处理
+
+# 开发依赖
+pytest==8.0.0           # 测试框架
+black==23.3.0           # 代码格式化
+flake8==6.0.0           # 代码检查

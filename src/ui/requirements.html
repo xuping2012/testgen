@@ -1,0 +1,1918 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>需求管理 // TestGen</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --neon-cyan: #00f5ff;
+            --neon-pink: #ff00ff;
+            --neon-purple: #b829dd;
+            --neon-green: #00ff88;
+            --dark-bg: #0a0a0f;
+            --dark-sidebar: #08080c;
+            --dark-card: #12121a;
+            --dark-border: #1e1e2e;
+            --text-primary: #e0e0e0;
+            --text-secondary: #888;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Roboto, monospace;
+            background: var(--dark-bg);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        
+        /* 扫描线 */
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(transparent 50%, rgba(0, 245, 255, 0.02) 50%);
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 1000;
+        }
+        
+        .layout {
+            display: flex;
+            min-height: 100vh;
+        }
+        
+        /* 侧边栏 */
+        .sidebar {
+            width: 260px;
+            background: var(--dark-sidebar);
+            border-right: 1px solid var(--dark-border);
+            padding: 30px 0;
+            position: relative;
+        }
+        
+        .sidebar::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 1px;
+            height: 100%;
+            background: linear-gradient(180deg, transparent, var(--neon-cyan), transparent);
+            opacity: 0.5;
+        }
+        
+        .logo {
+            padding: 0 30px 30px;
+            font-size: 28px;
+            font-weight: 900;
+            color: var(--neon-cyan);
+            text-shadow: 0 0 20px var(--neon-cyan);
+            letter-spacing: 4px;
+            border-bottom: 1px solid var(--dark-border);
+        }
+        
+        .nav-menu {
+            list-style: none;
+            padding: 20px 0;
+        }
+        
+        .nav-item {
+            padding: 16px 30px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--text-secondary);
+            border-left: 3px solid transparent;
+            position: relative;
+        }
+        
+        .nav-item:hover {
+            background: rgba(0, 245, 255, 0.05);
+            color: var(--text-primary);
+        }
+        
+        .nav-item.active {
+            background: linear-gradient(90deg, rgba(0, 245, 255, 0.1), transparent);
+            color: var(--neon-cyan);
+            border-left-color: var(--neon-cyan);
+        }
+        
+        .nav-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 4px;
+            height: 20px;
+            background: var(--neon-cyan);
+            box-shadow: 0 0 10px var(--neon-cyan);
+        }
+        
+        .nav-icon {
+            width: 24px;
+            text-align: center;
+            font-size: 18px;
+        }
+        
+        /* 主内容 */
+        .main-content {
+            flex: 1;
+            padding: 40px;
+            overflow-y: auto;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+            position: relative;
+            z-index: 10;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+            position: relative;
+            z-index: 10;
+        }
+
+        .header-actions > * {
+            position: relative;
+            z-index: 11;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            color: var(--neon-cyan);
+            text-shadow: 0 0 20px rgba(0, 245, 255, 0.5);
+            letter-spacing: 2px;
+        }
+
+        .header h1::before {
+            content: '// ';
+            color: var(--neon-pink);
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+            position: relative;
+            z-index: 12;
+        }
+        
+        .btn-primary {
+            background: transparent;
+            color: var(--neon-cyan);
+            border: 1px solid var(--neon-cyan);
+            box-shadow: 0 0 20px rgba(0, 245, 255, 0.2);
+        }
+        
+        .btn-primary:hover {
+            background: var(--neon-cyan);
+            color: var(--dark-bg);
+            box-shadow: 0 0 30px rgba(0, 245, 255, 0.5);
+        }
+        
+        .btn-secondary {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--dark-border);
+        }
+        
+        .btn-secondary:hover {
+            border-color: var(--neon-pink);
+            color: var(--neon-pink);
+        }
+        
+        /* 卡片 */
+        .card {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+            opacity: 0.5;
+        }
+        
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 24px;
+            color: var(--text-primary);
+            letter-spacing: 1px;
+        }
+        
+        .card-title::after {
+            content: '';
+            display: block;
+            width: 40px;
+            height: 2px;
+            background: var(--neon-cyan);
+            margin-top: 8px;
+        }
+        
+        /* 表格 */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .data-table th {
+            padding: 16px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--neon-cyan);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid var(--dark-border);
+        }
+        
+        .data-table td {
+            padding: 16px;
+            border-bottom: 1px solid var(--dark-border);
+            color: var(--text-secondary);
+        }
+        
+        .data-table tr:hover td {
+            color: var(--text-primary);
+            background: rgba(0, 245, 255, 0.03);
+        }
+        
+        .status-badge {
+            padding: 6px 14px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border: 1px solid;
+        }
+        
+        .status-pending {
+            background: rgba(255, 193, 7, 0.1);
+            color: #ffc107;
+            border-color: rgba(255, 193, 7, 0.3);
+        }
+        
+        .status-processing {
+            background: rgba(0, 245, 255, 0.1);
+            color: var(--neon-cyan);
+            border-color: rgba(0, 245, 255, 0.3);
+            animation: pulse 2s infinite;
+        }
+        
+        .status-completed {
+            background: rgba(0, 255, 136, 0.1);
+            color: var(--neon-green);
+            border-color: rgba(0, 255, 136, 0.3);
+        }
+        
+        .status-failed {
+            background: rgba(255, 0, 85, 0.1);
+            color: #ff0055;
+            border-color: rgba(255, 0, 85, 0.3);
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        
+        .action-btns {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .action-btn {
+            padding: 6px 12px;
+            border: 1px solid var(--dark-border);
+            background: transparent;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            color: var(--text-secondary);
+            transition: all 0.3s;
+        }
+        
+        .action-btn:hover {
+            border-color: var(--neon-cyan);
+            color: var(--neon-cyan);
+            box-shadow: 0 0 10px rgba(0, 245, 255, 0.3);
+        }
+        
+        .action-btn.generate:hover {
+            border-color: var(--neon-green);
+            color: var(--neon-green);
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+        }
+        
+        /* 分页 */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 30px;
+        }
+        
+        .page-btn {
+            padding: 10px 16px;
+            border: 1px solid var(--dark-border);
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.3s;
+            font-family: monospace;
+        }
+        
+        .page-btn:hover {
+            border-color: var(--neon-cyan);
+            color: var(--neon-cyan);
+        }
+        
+        .page-btn.active {
+            background: var(--neon-cyan);
+            color: var(--dark-bg);
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 20px rgba(0, 245, 255, 0.4);
+        }
+        
+        /* 表单 */
+        .form-group {
+            margin-bottom: 24px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 500;
+            color: var(--neon-cyan);
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 14px;
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-border);
+            border-radius: 8px;
+            font-size: 14px;
+            color: var(--text-primary);
+            transition: all 0.3s;
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 20px rgba(0, 245, 255, 0.2);
+        }
+        
+        textarea.form-control {
+            min-height: 200px;
+            resize: vertical;
+            font-family: monospace;
+        }
+        
+        /* 模态框 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 700px;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+        }
+        
+        .modal-content::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+        }
+        
+        .modal-header {
+            padding: 24px 30px;
+            border-bottom: 1px solid var(--dark-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-header h3 {
+            color: var(--neon-cyan);
+            font-size: 20px;
+            letter-spacing: 2px;
+        }
+        
+        .modal-body {
+            padding: 30px;
+        }
+        
+        .modal-footer {
+            padding: 20px 30px;
+            border-top: 1px solid var(--dark-border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+        
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: color 0.3s;
+        }
+        
+        .close-btn:hover {
+            color: var(--neon-pink);
+        }
+        
+        /* 进度条 */
+        .progress-container {
+            margin: 20px 0;
+        }
+        
+        .progress-bar {
+            height: 8px;
+            background: var(--dark-bg);
+            border-radius: 4px;
+            overflow: hidden;
+            border: 1px solid var(--dark-border);
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+            transition: width 0.3s;
+            box-shadow: 0 0 20px rgba(0, 245, 255, 0.5);
+        }
+        
+        .progress-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-top: 20px;
+        }
+        
+        .info-item {
+            padding: 12px;
+            background: var(--dark-bg);
+            border-radius: 8px;
+            border: 1px solid var(--dark-border);
+        }
+        
+        .info-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .info-value {
+            font-size: 14px;
+            color: var(--neon-cyan);
+            margin-top: 4px;
+            font-family: monospace;
+        }
+        
+        /* 工作流程可视化 */
+        .workflow-container {
+            margin: 20px 0;
+            padding: 20px;
+            background: rgba(0, 245, 255, 0.05);
+            border: 1px solid var(--dark-border);
+            border-radius: 8px;
+        }
+        
+        .workflow-steps {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .workflow-step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 15px;
+            background: var(--dark-card);
+            border: 2px solid var(--dark-border);
+            border-radius: 12px;
+            min-width: 120px;
+            transition: all 0.3s;
+        }
+        
+        .workflow-step.active {
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 20px rgba(0, 245, 255, 0.3);
+            animation: pulse 1.5s infinite;
+        }
+        
+        .workflow-step.completed {
+            border-color: var(--neon-green);
+            box-shadow: 0 0 15px rgba(0, 255, 136, 0.2);
+        }
+        
+        .workflow-step.error {
+            border-color: #ff0055;
+            box-shadow: 0 0 15px rgba(255, 0, 85, 0.2);
+        }
+        
+        .step-icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+        
+        .step-label {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+        
+        .step-status {
+            font-size: 11px;
+            color: var(--text-secondary);
+            font-family: monospace;
+        }
+        
+        .workflow-step.active .step-status {
+            color: var(--neon-cyan);
+        }
+        
+        .workflow-step.completed .step-status {
+            color: var(--neon-green);
+        }
+        
+        .workflow-step.error .step-status {
+            color: #ff0055;
+        }
+        
+        .workflow-arrow {
+            font-size: 24px;
+            color: var(--text-secondary);
+            font-weight: bold;
+        }
+        
+        .modal-lg {
+            max-width: 900px;
+        }
+        
+        /* 生成完成通知 */
+        .generation-complete-notification {
+            position: fixed;
+            top: 100px;
+            right: 30px;
+            background: var(--dark-card);
+            border: 2px solid var(--neon-green);
+            border-radius: 12px;
+            box-shadow: 0 0 30px rgba(0, 255, 136, 0.3);
+            z-index: 10000;
+            animation: slideInRight 0.3s ease-out;
+            transition: all 0.3s;
+        }
+        
+        @keyframes slideInRight {
+            from {
+                opacity: 0;
+                transform: translateX(100%);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        
+        .notification-content {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 20px;
+        }
+        
+        .notification-icon {
+            font-size: 32px;
+        }
+        
+        .notification-text {
+            flex: 1;
+        }
+        
+        .notification-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--neon-green);
+            margin-bottom: 4px;
+        }
+        
+        .notification-detail {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        
+        .notification-btn {
+            padding: 8px 16px;
+            background: var(--neon-green);
+            color: var(--dark-bg);
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .notification-btn:hover {
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
+            transform: translateY(-1px);
+        }
+        
+        .notification-btn-close {
+            background: transparent;
+            border: 1px solid var(--dark-border);
+            color: var(--text-secondary);
+            padding: 8px 12px;
+        }
+        
+        .notification-btn-close:hover {
+            border-color: var(--text-secondary);
+            color: var(--text-primary);
+            box-shadow: none;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+            color: var(--text-secondary);
+        }
+        
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+        
+        /* 批量操作栏 */
+        .batch-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-border);
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .batch-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn-sm {
+            padding: 8px 16px;
+            font-size: 12px;
+        }
+        
+        .btn-danger {
+            background: transparent;
+            color: #ff0055;
+            border: 1px solid #ff0055;
+        }
+        
+        .btn-danger:hover {
+            background: #ff0055;
+            color: white;
+            box-shadow: 0 0 20px rgba(255, 0, 85, 0.4);
+        }
+        
+        .btn-success {
+            background: transparent;
+            color: var(--neon-green);
+            border: 1px solid var(--neon-green);
+        }
+        
+        .btn-success:hover {
+            background: var(--neon-green);
+            color: var(--dark-bg);
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
+        }
+        
+        /* 复选框样式 */
+        .cyber-checkbox {
+            width: 18px;
+            height: 18px;
+            border: 1px solid var(--dark-border);
+            background: var(--dark-bg);
+            cursor: pointer;
+            appearance: none;
+            position: relative;
+        }
+        
+        .cyber-checkbox:checked {
+            background: var(--neon-cyan);
+            border-color: var(--neon-cyan);
+        }
+        
+        .cyber-checkbox:checked::after {
+            content: '✓';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: var(--dark-bg);
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        /* 文件上传 */
+        .file-upload {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .file-upload input[type="file"] {
+            position: absolute;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+        
+        .selected-count {
+            color: var(--neon-cyan);
+            font-weight: 600;
+        }
+
+        /* 自定义确认弹窗 */
+        .confirm-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(8px);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .confirm-modal.active {
+            display: flex;
+        }
+
+        .confirm-box {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 420px;
+            position: relative;
+            overflow: hidden;
+            animation: confirmSlideIn 0.2s ease-out;
+        }
+
+        @keyframes confirmSlideIn {
+            from {
+                opacity: 0;
+                transform: scale(0.95) translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        .confirm-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--neon-pink), var(--neon-cyan));
+        }
+
+        .confirm-header {
+            padding: 24px 28px 16px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .confirm-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: rgba(255, 0, 85, 0.15);
+            border: 2px solid rgba(255, 0, 85, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            color: #ff0055;
+            flex-shrink: 0;
+        }
+
+        .confirm-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .confirm-body {
+            padding: 0 28px 24px;
+        }
+
+        .confirm-message {
+            font-size: 14px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        .confirm-footer {
+            padding: 16px 28px 24px;
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        .confirm-btn {
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .confirm-btn-cancel {
+            background: transparent;
+            border: 1px solid var(--dark-border);
+            color: var(--text-secondary);
+        }
+
+        .confirm-btn-cancel:hover {
+            border-color: var(--text-secondary);
+            color: var(--text-primary);
+        }
+
+        .confirm-btn-ok {
+            background: transparent;
+            border: 1px solid #ff0055;
+            color: #ff0055;
+        }
+
+        .confirm-btn-ok:hover {
+            background: #ff0055;
+            color: white;
+            box-shadow: 0 0 20px rgba(255, 0, 85, 0.4);
+        }
+
+        /* 提示弹窗 */
+        .toast-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .toast-modal.active { display: flex; }
+
+        .toast-box {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 12px;
+            width: 90%;
+            max-width: 360px;
+            padding: 24px;
+            text-align: center;
+            animation: toastSlideIn 0.2s ease-out;
+        }
+
+        @keyframes toastSlideIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        .toast-box.success { border-color: var(--neon-green); }
+        .toast-box.error { border-color: #ff0055; }
+        .toast-box.info { border-color: var(--neon-cyan); }
+
+        .toast-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+
+        .toast-box.success .toast-icon { color: var(--neon-green); }
+        .toast-box.error .toast-icon { color: #ff0055; }
+        .toast-box.info .toast-icon { color: var(--neon-cyan); }
+
+        .toast-message {
+            font-size: 15px;
+            color: var(--text-primary);
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+
+        .toast-btn {
+            padding: 10px 32px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: transparent;
+            border: 1px solid var(--neon-cyan);
+            color: var(--neon-cyan);
+        }
+
+        .toast-btn:hover {
+            background: var(--neon-cyan);
+            color: var(--dark-bg);
+        }
+        
+        /* Theme: Dark Minimal */
+        body.theme-minimal {
+            --neon-cyan: #a0a0a0;
+            --neon-pink: #888;
+            --neon-purple: #777;
+            --neon-green: #909090;
+            --neon-yellow: #aaa;
+            --dark-bg: #1a1a1a;
+            --dark-sidebar: #141414;
+            --dark-card: #1e1e1e;
+            --dark-border: #333;
+            --text-primary: #d0d0d0;
+            --text-secondary: #777;
+        }
+
+        body.theme-minimal .logo {
+            text-shadow: none;
+            color: var(--text-primary);
+        }
+
+        body.theme-minimal .nav-item.active {
+            background: rgba(160, 160, 160, 0.1);
+            color: var(--text-primary);
+        }
+
+        body.theme-minimal .nav-item.active::before {
+            background: var(--text-primary);
+            box-shadow: none;
+        }
+
+        body.theme-minimal .header h1 {
+            text-shadow: none;
+            color: var(--text-primary);
+        }
+
+        body.theme-minimal .btn-primary {
+            background: var(--text-primary);
+            color: var(--dark-bg);
+            border-color: var(--text-primary);
+            box-shadow: none;
+        }
+
+        body.theme-minimal .btn-primary:hover {
+            background: transparent;
+            color: var(--text-primary);
+            box-shadow: none;
+        }
+
+        /* Theme: Ocean Blue */
+        body.theme-ocean {
+            --neon-cyan: #00b4d8;
+            --neon-pink: #0077b6;
+            --neon-purple: #023e8a;
+            --neon-green: #48cae4;
+            --neon-yellow: #90e0ef;
+            --dark-bg: #0a1929;
+            --dark-sidebar: #071420;
+            --dark-card: #0d1f33;
+            --dark-border: #1a3650;
+            --text-primary: #caf0f8;
+            --text-secondary: #90e0ef;
+        }
+
+        body.theme-ocean .logo {
+            color: var(--neon-cyan);
+            text-shadow: 0 0 20px rgba(0, 180, 216, 0.5);
+        }
+
+        body.theme-ocean .nav-item.active {
+            background: linear-gradient(90deg, rgba(0, 180, 216, 0.1), transparent);
+            color: var(--neon-cyan);
+            border-left-color: var(--neon-cyan);
+        }
+
+        body.theme-ocean .nav-item.active::before {
+            background: var(--neon-cyan);
+            box-shadow: 0 0 10px var(--neon-cyan);
+        }
+
+        body.theme-ocean .header h1 {
+            color: var(--neon-cyan);
+            text-shadow: 0 0 20px rgba(0, 180, 216, 0.5);
+        }
+
+        body.theme-ocean .btn-primary {
+            color: var(--neon-cyan);
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 20px rgba(0, 180, 216, 0.2);
+        }
+
+        body.theme-ocean .btn-primary:hover {
+            background: var(--neon-cyan);
+            color: var(--dark-bg);
+            box-shadow: 0 0 30px rgba(0, 180, 216, 0.5);
+        }
+
+        .sidebar {
+            padding-bottom: 220px;
+        }
+    </style>
+</head>
+<body>
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="logo">◈ TestGen</div>
+            <ul class="nav-menu">
+                <li class="nav-item active" onclick="location.href='requirements.html'">
+                    <span class="nav-icon">◉</span>
+                    <span>需求管理</span>
+                </li>
+                <li class="nav-item" onclick="location.href='cases.html'">
+                    <span class="nav-icon">◆</span>
+                    <span>用例管理</span>
+                </li>
+                <li class="nav-item" onclick="location.href='rag.html'">
+                    <span class="nav-icon">◈</span>
+                    <span>RAG检索</span>
+                </li>
+                <li class="nav-item" onclick="location.href='prompts.html'">
+                    <span class="nav-icon">▤</span>
+                    <span>Prompt管理</span>
+                </li>
+                <li class="nav-item" onclick="location.href='config.html'">
+                    <span class="nav-icon">▣</span>
+                    <span>AI配置</span>
+                </li>
+            </ul>
+        </aside>
+
+        <main class="main-content">
+            <div class="header">
+                <h1>需求管理</h1>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" id="importBtn">导入</button>
+                    <input type="file" id="importFile" accept=".xlsx,.txt,.md" style="display: none;">
+                    <button class="btn btn-primary" onclick="openModal()">+ 新建需求</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">需求列表</div>
+                
+                <!-- 批量操作栏 -->
+                <div class="batch-bar" id="batchBar" style="display: none;">
+                    <div>
+                        已选择 <span class="selected-count" id="selectedCount">0</span> 项
+                    </div>
+                    <div class="batch-actions">
+                        <button class="btn btn-danger btn-sm" onclick="batchDelete()">批量删除</button>
+                    </div>
+                </div>
+                
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" class="cyber-checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
+                            <th>ID</th>
+                            <th>需求标题</th>
+                            <th>状态</th>
+                            <th>创建时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="requirementList">
+                        <tr>
+                            <td colspan="6" class="empty-state">
+                                <div class="empty-state-icon">◉</div>
+                                <p>暂无需求，点击右上角新建需求</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="pagination" id="pagination"></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 新建需求模态框 -->
+    <div class="modal" id="createModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>// 新建需求</h3>
+                <button class="close-btn" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>需求标题</label>
+                    <input type="text" class="form-control" id="reqTitle" placeholder="输入需求标题...">
+                </div>
+                <div class="form-group">
+                    <label>需求内容</label>
+                    <textarea class="form-control" id="reqContent" placeholder="输入详细的需求描述..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn btn-primary" onclick="createRequirement()">创建</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 查看/编辑需求模态框 -->
+    <div class="modal" id="viewModal">
+        <div class="modal-content" style="max-width: 800px; width: 90%;">
+            <div class="modal-header">
+                <h3 id="viewModalTitle">// 查看需求</h3>
+                <button class="close-btn" onclick="closeViewModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="viewReqId">
+                <div class="form-group">
+                    <label>需求标题</label>
+                    <input type="text" class="form-control" id="viewReqTitle" readonly>
+                </div>
+                <div class="form-group">
+                    <label>需求内容</label>
+                    <textarea class="form-control" id="viewReqContent" rows="15" readonly style="resize: vertical; min-height: 200px;"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>创建时间</label>
+                    <input type="text" class="form-control" id="viewReqCreatedAt" readonly style="background: var(--dark-bg);">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeViewModal()">关闭</button>
+                <button class="btn btn-primary" id="editReqBtn" onclick="enableEditMode()">编辑</button>
+                <button class="btn btn-success" id="saveReqBtn" onclick="saveRequirement()" style="display: none;">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 生成进度模态框 -->
+    <div class="modal" id="progressModal">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3>// 测试用例生成流程</h3>
+                <button class="close-btn" onclick="closeProgressModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- 工作流程可视化 -->
+                <div class="workflow-container">
+                    <div class="workflow-steps">
+                        <div class="workflow-step" id="step-analysis">
+                            <div class="step-icon">📋</div>
+                            <div class="step-label">需求分析</div>
+                            <div class="step-status" id="status-analysis">等待中</div>
+                        </div>
+                        <div class="workflow-arrow">→</div>
+                        <div class="workflow-step" id="step-rag">
+                            <div class="step-icon">🔎</div>
+                            <div class="step-label">RAG检索</div>
+                            <div class="step-status" id="status-rag">等待中</div>
+                        </div>
+                        <div class="workflow-arrow">→</div>
+                        <div class="workflow-step" id="step-plan">
+                            <div class="step-icon">📝</div>
+                            <div class="step-label">测试规划</div>
+                            <div class="step-status" id="status-plan">等待中</div>
+                        </div>
+                        <div class="workflow-arrow">→</div>
+                        <div class="workflow-step" id="step-generate">
+                            <div class="step-icon">🤖</div>
+                            <div class="step-label">LLM生成</div>
+                            <div class="step-status" id="status-generate">等待中</div>
+                        </div>
+                        <div class="workflow-arrow">→</div>
+                        <div class="workflow-step" id="step-save">
+                            <div class="step-icon">💾</div>
+                            <div class="step-label">保存结果</div>
+                            <div class="step-status" id="status-save">等待中</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 传统进度条 -->
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="progress-info">
+                    <div class="info-item">
+                        <div class="info-label">任务ID</div>
+                        <div class="info-value" id="taskId">-</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">当前阶段</div>
+                        <div class="info-value" id="taskStatus">-</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">进度</div>
+                        <div class="info-value" id="taskProgress">0%</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">详细信息</div>
+                        <div class="info-value" id="taskMessage">-</div>
+                    </div>
+                </div>
+                <div id="retryContainer" style="display: none; margin-top: 20px; text-align: center;">
+                    <button class="btn btn-primary" onclick="retryGeneration()">重新生成</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 自定义确认弹窗 -->
+    <div class="confirm-modal" id="confirmModal">
+        <div class="confirm-box">
+            <div class="confirm-header">
+                <div class="confirm-icon">!</div>
+                <div class="confirm-title">确认操作</div>
+            </div>
+            <div class="confirm-body">
+                <div class="confirm-message" id="confirmMessage">确定要执行此操作吗？</div>
+            </div>
+            <div class="confirm-footer">
+                <button class="confirm-btn confirm-btn-cancel" onclick="closeConfirm()">取消</button>
+                <button class="confirm-btn confirm-btn-ok" id="confirmOkBtn" onclick="confirmOk()">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 提示弹窗 -->
+    <div class="toast-modal" id="toastModal">
+        <div class="toast-box" id="toastBox">
+            <div class="toast-icon" id="toastIcon">✓</div>
+            <div class="toast-message" id="toastMessage">操作成功</div>
+            <button class="toast-btn" onclick="closeToast()">确定</button>
+        </div>
+    </div>
+
+    <script>
+        let currentPage = 1;
+        let currentTaskId = null;
+        let currentRequirementId = null;
+        let progressInterval = null;
+        let selectedIds = new Set();
+        let confirmCallback = null;
+
+        // 自定义确认弹窗
+        function showConfirm(message, onConfirm) {
+            document.getElementById('confirmMessage').textContent = message;
+            document.getElementById('confirmModal').classList.add('active');
+            confirmCallback = onConfirm;
+        }
+
+        function closeConfirm() {
+            document.getElementById('confirmModal').classList.remove('active');
+            confirmCallback = null;
+        }
+
+        function confirmOk() {
+            document.getElementById('confirmModal').classList.remove('active');
+            if (confirmCallback) {
+                confirmCallback();
+                confirmCallback = null;
+            }
+        }
+
+        // 提示弹窗
+        function showToast(message, type = 'info') {
+            const toastModal = document.getElementById('toastModal');
+            const toastBox = document.getElementById('toastBox');
+            const toastIcon = document.getElementById('toastIcon');
+            const toastMessage = document.getElementById('toastMessage');
+
+            toastBox.className = 'toast-box ' + type;
+            toastIcon.textContent = type === 'success' ? '✓' : type === 'error' ? '✗' : 'ℹ';
+            toastMessage.textContent = message;
+            toastModal.classList.add('active');
+        }
+
+        function closeToast() {
+            document.getElementById('toastModal').classList.remove('active');
+        }
+
+        // 导入按钮点击事件
+        document.getElementById('importBtn').addEventListener('click', function() {
+            document.getElementById('importFile').click();
+        });
+
+        // 导入文件选择事件
+        document.getElementById('importFile').addEventListener('change', function() {
+            importRequirements(this);
+        });
+
+        async function loadRequirements(page = 1) {
+            try {
+                currentPage = page;
+                const response = await fetch(`/api/requirements?page=${page}&limit=10`);
+                const data = await response.json();
+                
+                const tbody = document.getElementById('requirementList');
+                if (data.items.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="6" class="empty-state">
+                                <div class="empty-state-icon">◉</div>
+                                <p>暂无需求，点击右上角新建需求</p>
+                            </td>
+                        </tr>
+                    `;
+                    document.getElementById('pagination').innerHTML = '';
+                    return;
+                }
+
+                tbody.innerHTML = data.items.map(req => `
+                    <tr>
+                        <td><input type="checkbox" class="cyber-checkbox" value="${req.id}" onchange="toggleSelect(${req.id})"></td>
+                        <td>${req.id}</td>
+                        <td>${req.title}</td>
+                        <td><span class="status-badge status-${req.status}">${getStatusText(req.status)}</span></td>
+                        <td>${new Date(req.created_at).toLocaleString()}</td>
+                        <td>
+                            <div class="action-btns">
+                                <button class="action-btn" onclick="viewRequirement(${req.id})">查看</button>
+                                <button class="action-btn generate" onclick="generateCases(${req.id})">生成</button>
+                                <button class="action-btn" onclick="deleteRequirement(${req.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);">删除</button>
+                            </div>
+                        </td>
+                    </tr>
+                `).join('');
+
+                // 恢复选中状态
+                selectedIds.forEach(id => {
+                    const checkbox = document.querySelector(`input[value="${id}"]`);
+                    if (checkbox) checkbox.checked = true;
+                });
+
+                renderPagination(data.total, data.page, data.limit);
+            } catch (error) {
+                console.error('加载需求失败:', error);
+            }
+        }
+
+        function getStatusText(status) {
+            const map = {
+                'pending': '待处理',
+                'processing': '处理中',
+                'completed': '已完成',
+                'failed': '失败'
+            };
+            return map[status] || status;
+        }
+
+        function renderPagination(total, page, limit) {
+            const totalPages = Math.ceil(total / limit);
+            const pagination = document.getElementById('pagination');
+            
+            let html = '';
+            for (let i = 1; i <= totalPages; i++) {
+                html += `<button class="page-btn ${i === page ? 'active' : ''}" onclick="loadRequirements(${i})">${i}</button>`;
+            }
+            pagination.innerHTML = html;
+        }
+
+        // 选择功能
+        function toggleSelect(id) {
+            if (selectedIds.has(id)) {
+                selectedIds.delete(id);
+            } else {
+                selectedIds.add(id);
+            }
+            updateBatchBar();
+        }
+
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('selectAll');
+            const checkboxes = document.querySelectorAll('.cyber-checkbox[value]');
+            
+            if (selectAll.checked) {
+                checkboxes.forEach(cb => {
+                    selectedIds.add(parseInt(cb.value));
+                    cb.checked = true;
+                });
+            } else {
+                checkboxes.forEach(cb => {
+                    selectedIds.delete(parseInt(cb.value));
+                    cb.checked = false;
+                });
+            }
+            updateBatchBar();
+        }
+
+        function updateBatchBar() {
+            const batchBar = document.getElementById('batchBar');
+            const selectedCount = document.getElementById('selectedCount');
+            
+            selectedCount.textContent = selectedIds.size;
+            batchBar.style.display = selectedIds.size > 0 ? 'flex' : 'none';
+        }
+
+        // 删除功能
+        async function deleteRequirement(id) {
+            showConfirm('确定要删除此需求吗？此操作不可撤销。', async () => {
+                try {
+                    const response = await fetch(`/api/requirements/${id}`, { method: 'DELETE' });
+                    if (response.ok) {
+                        loadRequirements(currentPage);
+                    } else {
+                        showToast('删除失败', 'error');
+                    }
+                } catch (error) {
+                    console.error('删除失败:', error);
+                    showToast('删除失败', 'error');
+                }
+            });
+        }
+
+        async function batchDelete() {
+            if (selectedIds.size === 0) return;
+            showConfirm(`确定要删除选中的 ${selectedIds.size} 项需求吗？此操作不可撤销。`, async () => {
+                try {
+                    const response = await fetch('/api/requirements/batch-delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ids: Array.from(selectedIds) })
+                    });
+
+                    if (response.ok) {
+                        selectedIds.clear();
+                        document.getElementById('selectAll').checked = false;
+                        updateBatchBar();
+                        loadRequirements(currentPage);
+                    } else {
+                        showToast('批量删除失败', 'error');
+                    }
+                } catch (error) {
+                    console.error('批量删除失败:', error);
+                    showToast('批量删除失败', 'error');
+                }
+            });
+        }
+
+        // 导入功能
+        async function importRequirements(input) {
+            const file = input.files[0];
+            if (!file) return;
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const response = await fetch('/api/import/requirements', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    showToast(`导入成功：${data.imported_count} 条需求`, 'success');
+                    loadRequirements(1);
+                } else {
+                    showToast(`导入失败：${data.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('导入失败:', error);
+                showToast('导入失败', 'error');
+            }
+            
+            input.value = '';
+        }
+
+        function openModal() {
+            document.getElementById('createModal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('createModal').classList.remove('active');
+            document.getElementById('reqTitle').value = '';
+            document.getElementById('reqContent').value = '';
+        }
+
+        async function createRequirement() {
+            const title = document.getElementById('reqTitle').value.trim();
+            const content = document.getElementById('reqContent').value.trim();
+
+            if (!title || !content) {
+                showToast('请填写完整信息', 'info');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/requirements', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, content })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    closeModal();
+                    showToast('需求创建成功！', 'success');
+                    // 重新加载第1页
+                    loadRequirements(1);
+                } else {
+                    const data = await response.json();
+                    showToast(`创建失败：${data.error || '未知错误'}`, 'error');
+                }
+            } catch (error) {
+                console.error('创建需求失败:', error);
+                showToast('创建失败', 'error');
+            }
+        }
+
+        async function viewRequirement(id) {
+            try {
+                const response = await fetch(`/api/requirements/${id}`);
+                const data = await response.json();
+
+                // 填充模态框
+                document.getElementById('viewReqId').value = data.id;
+                document.getElementById('viewReqTitle').value = data.title;
+                document.getElementById('viewReqContent').value = data.content;
+                document.getElementById('viewReqCreatedAt').value = new Date(data.created_at).toLocaleString();
+
+                // 重置为查看模式
+                document.getElementById('viewReqTitle').readOnly = true;
+                document.getElementById('viewReqContent').readOnly = true;
+                document.getElementById('editReqBtn').style.display = 'inline-block';
+                document.getElementById('saveReqBtn').style.display = 'none';
+                document.getElementById('viewModalTitle').textContent = '// 查看需求';
+
+                // 显示模态框
+                document.getElementById('viewModal').classList.add('active');
+            } catch (error) {
+                console.error('查看需求失败:', error);
+                showToast('查看需求失败', 'error');
+            }
+        }
+
+        function closeViewModal() {
+            document.getElementById('viewModal').classList.remove('active');
+        }
+
+        function enableEditMode() {
+            document.getElementById('viewReqTitle').readOnly = false;
+            document.getElementById('viewReqContent').readOnly = false;
+            document.getElementById('viewReqTitle').focus();
+            document.getElementById('editReqBtn').style.display = 'none';
+            document.getElementById('saveReqBtn').style.display = 'inline-block';
+            document.getElementById('viewModalTitle').textContent = '// 编辑需求';
+        }
+
+        async function saveRequirement() {
+            const id = document.getElementById('viewReqId').value;
+            const title = document.getElementById('viewReqTitle').value.trim();
+            const content = document.getElementById('viewReqContent').value.trim();
+
+            if (!title || !content) {
+                showToast('请填写完整信息', 'info');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/requirements/${id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, content })
+                });
+
+                if (response.ok) {
+                    showToast('需求更新成功', 'success');
+                    closeViewModal();
+                    loadRequirements(currentPage);
+                } else {
+                    const data = await response.json();
+                    showToast(`更新失败：${data.error || '未知错误'}`, 'error');
+                }
+            } catch (error) {
+                console.error('更新需求失败:', error);
+                showToast('更新需求失败', 'error');
+            }
+        }
+
+        async function generateCases(requirementId) {
+            try {
+                currentRequirementId = requirementId;
+                // 重置进度弹窗状态
+                document.getElementById('progressFill').style.width = '0%';
+                document.getElementById('taskId').textContent = '-';
+                document.getElementById('taskStatus').textContent = '-';
+                document.getElementById('taskProgress').textContent = '0%';
+                document.getElementById('taskMessage').textContent = '准备生成...';
+                document.getElementById('retryContainer').style.display = 'none';
+                
+                // 重置所有workflow步骤状态
+                resetWorkflowSteps();
+
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ requirement_id: requirementId })
+                });
+
+                const data = await response.json();
+                if (data.task_id) {
+                    currentTaskId = data.task_id;
+                    openProgressModal();
+                    startProgressCheck();
+                }
+            } catch (error) {
+                console.error('触发生成失败:', error);
+                showToast('生成失败', 'error');
+            }
+        }
+        
+        function resetWorkflowSteps() {
+            const steps = ['analysis', 'rag', 'plan', 'generate', 'save'];
+            steps.forEach(step => {
+                const stepEl = document.getElementById(`step-${step}`);
+                const statusEl = document.getElementById(`status-${step}`);
+                if (stepEl) {
+                    stepEl.classList.remove('active', 'completed', 'error');
+                }
+                if (statusEl) {
+                    statusEl.textContent = '等待中';
+                }
+            });
+        }
+        
+        function updateWorkflowStep(stepName, status, message) {
+            const stepEl = document.getElementById(`step-${stepName}`);
+            const statusEl = document.getElementById(`status-${stepName}`);
+            
+            if (stepEl && statusEl) {
+                // 清除所有状态
+                stepEl.classList.remove('active', 'completed', 'error');
+                
+                // 设置新状态
+                if (status === 'active') {
+                    stepEl.classList.add('active');
+                    statusEl.textContent = message || '执行中...';
+                } else if (status === 'completed') {
+                    stepEl.classList.add('completed');
+                    statusEl.textContent = message || '完成';
+                } else if (status === 'error') {
+                    stepEl.classList.add('error');
+                    statusEl.textContent = message || '失败';
+                }
+            }
+        }
+
+        async function retryGeneration() {
+            if (currentRequirementId) {
+                document.getElementById('retryContainer').style.display = 'none';
+                await generateCases(currentRequirementId);
+            }
+        }
+
+        function openProgressModal() {
+            document.getElementById('progressModal').classList.add('active');
+        }
+
+        function closeProgressModal() {
+            document.getElementById('progressModal').classList.remove('active');
+            if (progressInterval) {
+                clearInterval(progressInterval);
+                progressInterval = null;
+            }
+        }
+
+        function startProgressCheck() {
+            progressInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/api/generate/${currentTaskId}`);
+                    const data = await response.json();
+
+                    document.getElementById('taskId').textContent = data.task_id || '-';
+                    document.getElementById('taskStatus').textContent = data.status || '-';
+                    
+                    // 安全处理进度值
+                    const progressValue = data.progress;
+                    const progressNum = (typeof progressValue === 'number') ? progressValue : (parseFloat(progressValue) || 0);
+                    document.getElementById('taskProgress').textContent = Math.round(progressNum) + '%';
+                    document.getElementById('progressFill').style.width = progressNum + '%';
+                    
+                    // 安全处理消息
+                    const message = data.message || '执行中...';
+                    document.getElementById('taskMessage').textContent = message;
+                    
+                    // 根据进度更新workflow步骤
+                    const progress = progressNum;
+                    
+                    // 需求分析阶段 (5% - 15%)
+                    if (progress >= 5 && progress < 20) {
+                        updateWorkflowStep('analysis', 'active', message);
+                    } else if (progress >= 20) {
+                        updateWorkflowStep('analysis', 'completed', '✅ 完成');
+                    }
+                    
+                    // RAG检索阶段 (20% - 30%)
+                    if (progress >= 20 && progress < 35) {
+                        updateWorkflowStep('rag', 'active', message);
+                    } else if (progress >= 35) {
+                        updateWorkflowStep('rag', 'completed', '✅ 完成');
+                    }
+                    
+                    // 测试规划阶段 (35% - 45%)
+                    if (progress >= 35 && progress < 55) {
+                        updateWorkflowStep('plan', 'active', message);
+                    } else if (progress >= 55) {
+                        updateWorkflowStep('plan', 'completed', '✅ 完成');
+                    }
+                    
+                    // LLM生成阶段 (55% - 70%)
+                    if (progress >= 55 && progress < 80) {
+                        updateWorkflowStep('generate', 'active', message);
+                    } else if (progress >= 80) {
+                        updateWorkflowStep('generate', 'completed', '✅ 完成');
+                    }
+                    
+                    // 保存结果阶段 (80% - 100%)
+                    if (progress >= 80 && progress < 100) {
+                        updateWorkflowStep('save', 'active', message);
+                    }
+
+                    if (data.status === 'completed' || data.status === 'failed') {
+                        clearInterval(progressInterval);
+                        progressInterval = null;
+                        
+                        // 最终状态更新
+                        if (data.status === 'completed') {
+                            updateWorkflowStep('save', 'completed', '✅ 完成');
+                            
+                            // 获取生成的用例数量
+                            const caseCount = (data.result && data.result.total_count) || 0;
+                            
+                            setTimeout(() => {
+                                closeProgressModal();
+                                showToast(`生成完成！共生成 ${caseCount} 条测试用例`, 'success');
+                                loadRequirements(currentPage);
+                                
+                                // 显示导航提示
+                                setTimeout(() => {
+                                    showCaseNavigationPrompt(caseCount, currentRequirementId);
+                                }, 500);
+                            }, 1000);
+                        } else if (data.status === 'failed') {
+                            // 标记当前活跃步骤为错误
+                            const steps = ['analysis', 'rag', 'plan', 'generate', 'save'];
+                            for (const step of steps) {
+                                const stepEl = document.getElementById(`step-${step}`);
+                                if (stepEl && stepEl.classList.contains('active')) {
+                                    updateWorkflowStep(step, 'error', '❌ 失败');
+                                    break;
+                                }
+                            }
+                            document.getElementById('retryContainer').style.display = 'block';
+                            const errorMsg = data.error_message || '未知错误';
+                            showToast(`生成失败：${errorMsg}`, 'error');
+                        }
+                    }
+                } catch (error) {
+                    console.error('检查进度失败:', error);
+                }
+            }, 1000);
+        }
+
+        // 显示用例导航提示
+        function showCaseNavigationPrompt(caseCount, requirementId) {
+            // 创建自定义提示框
+            const notification = document.createElement('div');
+            notification.className = 'generation-complete-notification';
+            notification.innerHTML = `
+                <div class="notification-content">
+                    <div class="notification-icon">✅</div>
+                    <div class="notification-text">
+                        <div class="notification-title">测试用例生成完成</div>
+                        <div class="notification-detail">成功生成 ${caseCount} 条测试用例</div>
+                    </div>
+                    <button class="notification-btn" onclick="navigateToCases(${requirementId})">
+                        查看用例
+                    </button>
+                    <button class="notification-btn notification-btn-close" onclick="closeNotification(this)">
+                        关闭
+                    </button>
+                </div>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            // 5秒后自动消失
+            setTimeout(() => {
+                closeNotification(notification.querySelector('.notification-btn-close'));
+            }, 10000);
+        }
+        
+        function navigateToCases(requirementId) {
+            // 关闭通知
+            const notification = document.querySelector('.generation-complete-notification');
+            if (notification) {
+                notification.remove();
+            }
+            
+            // 导航到用例页面并筛选当前需求
+            window.location.href = `cases.html?requirement_id=${requirementId}`;
+        }
+        
+        function closeNotification(btn) {
+            const notification = btn.closest('.generation-complete-notification');
+            if (notification) {
+                notification.style.opacity = '0';
+                notification.style.transform = 'translateX(100%)';
+                setTimeout(() => {
+                    notification.remove();
+                }, 300);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadRequirements();
+        });
+    </script>
+</body>
+</html>

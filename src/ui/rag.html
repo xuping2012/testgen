@@ -1,0 +1,1766 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG检索 // TestGen v2.1</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --neon-cyan: #00f5ff;
+            --neon-pink: #ff00ff;
+            --neon-purple: #b829dd;
+            --neon-green: #00ff88;
+            --neon-yellow: #ffee00;
+            --dark-bg: #0a0a0f;
+            --dark-sidebar: #08080c;
+            --dark-card: #12121a;
+            --dark-border: #1e1e2e;
+            --text-primary: #e0e0e0;
+            --text-secondary: #888;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Roboto, monospace;
+            background: var(--dark-bg);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(transparent 50%, rgba(0, 245, 255, 0.02) 50%);
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 1000;
+        }
+        
+        .layout {
+            display: flex;
+            min-height: 100vh;
+        }
+        
+        .sidebar {
+            width: 260px;
+            background: var(--dark-sidebar);
+            border-right: 1px solid var(--dark-border);
+            padding: 30px 0;
+            position: relative;
+            padding-bottom: 220px;
+        }
+        
+        .sidebar::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 1px;
+            height: 100%;
+            background: linear-gradient(180deg, transparent, var(--neon-cyan), transparent);
+            opacity: 0.5;
+        }
+        
+        .logo {
+            padding: 0 30px 30px;
+            font-size: 28px;
+            font-weight: 900;
+            color: var(--neon-cyan);
+            text-shadow: 0 0 20px var(--neon-cyan);
+            letter-spacing: 4px;
+            border-bottom: 1px solid var(--dark-border);
+        }
+        
+        .nav-menu {
+            list-style: none;
+            padding: 20px 0;
+        }
+        
+        .nav-item {
+            padding: 16px 30px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--text-secondary);
+            border-left: 3px solid transparent;
+            position: relative;
+        }
+        
+        .nav-item:hover {
+            background: rgba(0, 245, 255, 0.05);
+            color: var(--text-primary);
+        }
+        
+        .nav-item.active {
+            background: linear-gradient(90deg, rgba(0, 245, 255, 0.1), transparent);
+            color: var(--neon-cyan);
+            border-left-color: var(--neon-cyan);
+        }
+        
+        .nav-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 4px;
+            height: 20px;
+            background: var(--neon-cyan);
+            box-shadow: 0 0 10px var(--neon-cyan);
+        }
+        
+        .nav-icon {
+            width: 24px;
+            text-align: center;
+            font-size: 18px;
+        }
+        
+        .main-content {
+            flex: 1;
+            padding: 40px;
+            overflow-y: auto;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+        
+        .header h1 {
+            font-size: 32px;
+            color: var(--neon-cyan);
+            text-shadow: 0 0 20px rgba(0, 245, 255, 0.5);
+            letter-spacing: 2px;
+        }
+        
+        .header h1::before {
+            content: '// ';
+            color: var(--neon-pink);
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+        
+        .btn-primary {
+            background: transparent;
+            color: var(--neon-cyan);
+            border: 1px solid var(--neon-cyan);
+            box-shadow: 0 0 20px rgba(0, 245, 255, 0.2);
+        }
+        
+        .btn-primary:hover {
+            background: var(--neon-cyan);
+            color: var(--dark-bg);
+            box-shadow: 0 0 30px rgba(0, 245, 255, 0.5);
+        }
+        
+        .btn-secondary {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--dark-border);
+        }
+        
+        .btn-secondary:hover {
+            border-color: var(--text-primary);
+            color: var(--text-primary);
+        }
+        
+        .card {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+            opacity: 0.5;
+        }
+        
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 24px;
+            color: var(--text-primary);
+            letter-spacing: 1px;
+        }
+        
+        .card-title::after {
+            content: '';
+            display: block;
+            width: 40px;
+            height: 2px;
+            background: var(--neon-cyan);
+            margin-top: 8px;
+        }
+        
+        /* 统计网格 */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            margin-bottom: 40px;
+        }
+        
+        .stat-box {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 12px;
+            padding: 30px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .stat-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+        }
+        
+        .stat-box:nth-child(1)::before { background: var(--neon-cyan); }
+        .stat-box:nth-child(2)::before { background: var(--neon-pink); }
+        .stat-box:nth-child(3)::before { background: var(--neon-green); }
+        
+        .stat-number {
+            font-size: 48px;
+            font-weight: bold;
+            font-family: monospace;
+            margin-bottom: 8px;
+        }
+        
+        .stat-box:nth-child(1) .stat-number { color: var(--neon-cyan); text-shadow: 0 0 20px rgba(0, 245, 255, 0.5); }
+        .stat-box:nth-child(2) .stat-number { color: var(--neon-pink); text-shadow: 0 0 20px rgba(255, 0, 255, 0.5); }
+        .stat-box:nth-child(3) .stat-number { color: var(--neon-green); text-shadow: 0 0 20px rgba(0, 255, 136, 0.5); }
+        
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        /* 搜索 */
+        .search-box {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        
+        .search-input {
+            flex: 1;
+            padding: 14px 20px;
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-border);
+            border-radius: 8px;
+            font-size: 14px;
+            color: var(--text-primary);
+            transition: all 0.3s;
+        }
+        
+        .search-input:focus {
+            outline: none;
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 20px rgba(0, 245, 255, 0.2);
+        }
+        
+        .search-input::placeholder {
+            color: var(--text-secondary);
+        }
+        
+        /* 结果项 */
+        .result-item {
+            padding: 20px;
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-border);
+            border-radius: 8px;
+            margin-bottom: 12px;
+            position: relative;
+            transition: all 0.3s;
+        }
+        
+        .result-item:hover {
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 20px rgba(0, 245, 255, 0.1);
+            cursor: pointer;
+        }
+        
+        .result-type {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+            border: 1px solid;
+        }
+        
+        .type-case { background: rgba(0, 245, 255, 0.1); color: var(--neon-cyan); border-color: rgba(0, 245, 255, 0.3); }
+        .type-defect { background: rgba(255, 0, 85, 0.1); color: #ff0055; border-color: rgba(255, 0, 85, 0.3); }
+        .type-requirement { background: rgba(0, 255, 136, 0.1); color: var(--neon-green); border-color: rgba(0, 255, 136, 0.3); }
+        
+        .result-score {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: var(--neon-cyan);
+            font-weight: bold;
+            font-family: monospace;
+            font-size: 18px;
+        }
+        
+        .result-content {
+            color: var(--text-secondary);
+            line-height: 1.8;
+            font-size: 14px;
+        }
+        
+        .result-meta {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--dark-border);
+            font-family: monospace;
+        }
+        
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 24px;
+            padding: 4px;
+            background: var(--dark-bg);
+            border-radius: 8px;
+            border: 1px solid var(--dark-border);
+        }
+        
+        .tab {
+            padding: 12px 24px;
+            cursor: pointer;
+            border-radius: 6px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 13px;
+        }
+        
+        .tab:hover {
+            color: var(--text-primary);
+        }
+        
+        .tab.active {
+            background: var(--neon-cyan);
+            color: var(--dark-bg);
+            box-shadow: 0 0 20px rgba(0, 245, 255, 0.3);
+        }
+        
+        /* 表单 */
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--neon-cyan);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 12px;
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-border);
+            border-radius: 8px;
+            font-size: 14px;
+            color: var(--text-primary);
+            transition: all 0.3s;
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 15px rgba(0, 245, 255, 0.2);
+        }
+        
+        textarea.form-control {
+            min-height: 120px;
+            resize: vertical;
+            font-family: monospace;
+        }
+        
+        /* 类型选择器 */
+        .type-selector {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        
+        .type-option {
+            padding: 20px;
+            border: 1px solid var(--dark-border);
+            border-radius: 8px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.3s;
+            background: var(--dark-bg);
+        }
+        
+        .type-option:hover {
+            border-color: var(--neon-cyan);
+        }
+        
+        .type-option.selected {
+            border-color: var(--neon-cyan);
+            background: rgba(0, 245, 255, 0.1);
+            box-shadow: 0 0 20px rgba(0, 245, 255, 0.2);
+        }
+        
+        .type-option .icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+        
+        .type-option .name {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        /* 模态框 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+        }
+        
+        .modal-content::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+        }
+        
+        .modal-header {
+            padding: 24px 30px;
+            border-bottom: 1px solid var(--dark-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-header h3 {
+            color: var(--neon-cyan);
+            font-size: 20px;
+            letter-spacing: 2px;
+        }
+        
+        .modal-body {
+            padding: 30px;
+        }
+        
+        .modal-footer {
+            padding: 20px 30px;
+            border-top: 1px solid var(--dark-border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+        
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: color 0.3s;
+        }
+        
+        .close-btn:hover {
+            color: var(--neon-pink);
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+
+        /* 提示弹窗 */
+        .toast-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .toast-modal.active { display: flex; }
+
+        .toast-box {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 380px;
+            position: relative;
+            overflow: hidden;
+            animation: toastSlideIn 0.2s ease-out;
+            text-align: center;
+            padding: 40px 30px;
+        }
+
+        @keyframes toastSlideIn {
+            from { opacity: 0; transform: scale(0.95) translateY(-20px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .toast-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+        }
+
+        .toast-box.success { border-color: var(--neon-green); }
+        .toast-box.success::before { background: var(--neon-green); }
+        .toast-box.error { border-color: #ff0055; }
+        .toast-box.error::before { background: #ff0055; }
+        .toast-box.info { border-color: var(--neon-cyan); }
+
+        .toast-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin: 0 auto 20px;
+            background: rgba(0, 245, 255, 0.15);
+            border: 2px solid rgba(0, 245, 255, 0.4);
+            color: var(--neon-cyan);
+        }
+
+        .toast-box.success .toast-icon {
+            background: rgba(0, 255, 136, 0.15);
+            border-color: rgba(0, 255, 136, 0.4);
+            color: var(--neon-green);
+        }
+
+        .toast-box.error .toast-icon {
+            background: rgba(255, 0, 85, 0.15);
+            border-color: rgba(255, 0, 85, 0.4);
+            color: #ff0055;
+        }
+
+        .toast-message {
+            font-size: 16px;
+            color: var(--text-primary);
+            margin-bottom: 24px;
+            line-height: 1.6;
+            white-space: pre-line;
+        }
+
+        .toast-btn {
+            padding: 12px 40px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            background: transparent;
+            border: 1px solid var(--neon-cyan);
+            color: var(--neon-cyan);
+        }
+
+        .toast-btn:hover {
+            background: var(--neon-cyan);
+            color: var(--dark-bg);
+            box-shadow: 0 0 20px rgba(0, 245, 255, 0.4);
+        }
+
+        .toast-box.error .toast-btn {
+            border-color: #ff0055;
+            color: #ff0055;
+        }
+
+        .toast-box.error .toast-btn:hover {
+            background: #ff0055;
+            color: white;
+            box-shadow: 0 0 20px rgba(255, 0, 85, 0.4);
+        }
+
+        .toast-box.success .toast-btn {
+            border-color: var(--neon-green);
+            color: var(--neon-green);
+        }
+
+        .toast-box.success .toast-btn:hover {
+            background: var(--neon-green);
+            color: var(--dark-bg);
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
+        }
+        
+        /* Delete button */
+        .delete-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: transparent;
+            border: 1px solid transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 4px 8px;
+            font-size: 11px;
+            border-radius: 4px;
+            transition: all 0.3s;
+            opacity: 0;
+        }
+
+        .result-item:hover .delete-btn {
+            opacity: 1;
+        }
+
+        .delete-btn:hover {
+            border-color: #ff0055;
+            color: #ff0055;
+            background: rgba(255, 0, 85, 0.1);
+        }
+
+        /* Theme: Fresh/Light (小清新) */
+        body.theme-fresh {
+            --neon-cyan: #5cb85c;
+            --neon-pink: #f0ad4e;
+            --neon-purple: #9b59b6;
+            --neon-green: #5cb85c;
+            --neon-yellow: #f0ad4e;
+            --dark-bg: #f8f9fa;
+            --dark-sidebar: #ffffff;
+            --dark-card: #ffffff;
+            --dark-border: #e0e0e0;
+            --text-primary: #333333;
+            --text-secondary: #6c757d;
+        }
+
+        body.theme-fresh body::after {
+            display: none;
+        }
+
+        body.theme-fresh .logo {
+            text-shadow: none;
+            color: #5cb85c;
+            font-weight: 700;
+        }
+
+        body.theme-fresh .sidebar::before {
+            display: none;
+        }
+
+        body.theme-fresh .nav-item {
+            border-radius: 8px;
+            margin: 4px 12px;
+        }
+
+        body.theme-fresh .nav-item:hover {
+            background: #f0f7f0;
+        }
+
+        body.theme-fresh .nav-item.active {
+            background: #e8f5e8;
+            color: #5cb85c;
+            border-left-color: #5cb85c;
+        }
+
+        body.theme-fresh .nav-item.active::before {
+            background: #5cb85c;
+            box-shadow: none;
+        }
+
+        body.theme-fresh .header h1 {
+            text-shadow: none;
+            color: #5cb85c;
+        }
+
+        body.theme-fresh .header h1::before {
+            color: #f0ad4e;
+        }
+
+        body.theme-fresh .btn-primary {
+            background: #5cb85c;
+            color: white;
+            border-color: #5cb85c;
+            box-shadow: 0 2px 4px rgba(92, 184, 92, 0.2);
+        }
+
+        body.theme-fresh .btn-primary:hover {
+            background: #4cae4c;
+            box-shadow: 0 4px 8px rgba(92, 184, 92, 0.3);
+        }
+
+        body.theme-fresh .btn-secondary {
+            background: #f0f0f0;
+            color: #666;
+            border-color: #ddd;
+        }
+
+        body.theme-fresh .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        body.theme-fresh .card {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        body.theme-fresh .card::before {
+            background: linear-gradient(90deg, #5cb85c, #f0ad4e);
+        }
+
+        body.theme-fresh .stat-box {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        body.theme-fresh .stat-number {
+            text-shadow: none;
+            color: #5cb85c;
+        }
+
+        body.theme-fresh .search-input {
+            background: white;
+            border: 1px solid #ddd;
+        }
+
+        body.theme-fresh .search-input:focus {
+            border-color: #5cb85c;
+            box-shadow: 0 0 0 3px rgba(92, 184, 92, 0.1);
+        }
+
+        body.theme-fresh .result-item {
+            background: white;
+            border: 1px solid #e0e0e0;
+        }
+
+        body.theme-fresh .result-item:hover {
+            border-color: #5cb85c;
+            box-shadow: 0 2px 8px rgba(92, 184, 92, 0.15);
+        }
+
+        body.theme-fresh .tab {
+            border-radius: 6px;
+        }
+
+        body.theme-fresh .tab.active {
+            background: #5cb85c;
+            color: white;
+            box-shadow: 0 2px 4px rgba(92, 184, 92, 0.3);
+        }
+
+        body.theme-fresh .form-control {
+            background: white;
+            border: 1px solid #ddd;
+        }
+
+        body.theme-fresh .form-control:focus {
+            border-color: #5cb85c;
+            box-shadow: 0 0 0 3px rgba(92, 184, 92, 0.1);
+        }
+
+        body.theme-fresh .modal-content {
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+
+        body.theme-fresh .type-option {
+            background: white;
+            border: 2px solid #e0e0e0;
+        }
+
+        body.theme-fresh .type-option.selected {
+            border-color: #5cb85c;
+            background: #f0f7f0;
+            box-shadow: 0 2px 8px rgba(92, 184, 92, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="logo">◈ TestGen</div>
+            <ul class="nav-menu">
+                <li class="nav-item" onclick="location.href='requirements.html'">
+                    <span class="nav-icon">◉</span>
+                    <span>需求管理</span>
+                </li>
+                <li class="nav-item" onclick="location.href='cases.html'">
+                    <span class="nav-icon">◆</span>
+                    <span>用例管理</span>
+                </li>
+                <li class="nav-item active" onclick="location.href='rag.html'">
+                    <span class="nav-icon">◈</span>
+                    <span>RAG检索</span>
+                </li>
+                <li class="nav-item" onclick="location.href='prompts.html'">
+                    <span class="nav-icon">▤</span>
+                    <span>Prompt管理</span>
+                </li>
+                <li class="nav-item" onclick="location.href='config.html'">
+                    <span class="nav-icon">▣</span>
+                    <span>AI配置</span>
+                </li>
+            </ul>
+        </aside>
+
+        <main class="main-content">
+            <div class="header">
+                <h1>RAG检索</h1>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-secondary" onclick="openImportModal()">从数据库导入</button>
+                    <button class="btn btn-primary" onclick="openAddModal()">+ 录入数据</button>
+                </div>
+            </div>
+            
+            <!-- RAG数据说明 -->
+            <!-- <div style="background: rgba(0, 245, 255, 0.05); border: 1px solid var(--neon-cyan); border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                <p style="color: var(--neon-cyan); margin: 0; font-size: 14px; line-height: 1.6;">
+                    ◉ <strong>RAG向量库数据独立于管理系统</strong><br>
+                    • 历史用例：仅包含<strong>已评审</strong>的用例（状态=已评审）<br>
+                    • 需求文档：仅包含<strong>已完成</strong>的需求（已生成测试用例）<br>
+                    • 删除RAG数据<strong>不会</strong>删除管理系统中的原始数据
+                </p>
+            </div> -->
+
+            <!-- 统计 -->
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <div class="stat-number" id="statCases">0</div>
+                    <div class="stat-label">历史用例</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-number" id="statDefects">0</div>
+                    <div class="stat-label">历史缺陷</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-number" id="statRequirements">0</div>
+                    <div class="stat-label">需求文档</div>
+                </div>
+            </div>
+
+            <!-- 搜索 -->
+            <div class="card">
+                <div class="card-title">相似度搜索</div>
+                <div class="search-box">
+                    <input type="text" class="search-input" id="searchQuery" 
+                           placeholder="输入需求关键词，搜索相似的历史用例、需求和缺陷..."
+                           onkeypress="if(event.key === 'Enter') performSearch()">
+                    <button class="btn btn-primary" onclick="performSearch()">搜索</button>
+                </div>
+                <div id="searchResults"></div>
+            </div>
+
+            <!-- 数据录入 -->
+            <div class="card">
+                <div class="tabs">
+                    <div class="tab active" onclick="switchTab('cases')">历史用例</div>
+                    <div class="tab" onclick="switchTab('defects')">历史缺陷</div>
+                    <div class="tab" onclick="switchTab('requirements')">需求文档</div>
+                </div>
+                <div id="dataList">
+                    <div class="empty-state">
+                        <div style="font-size: 48px; margin-bottom: 16px; opacity: 0.3;">◈</div>
+                        <p>通过上方"录入数据"或"从数据库导入"按钮添加数据到向量库</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 录入数据模态框 -->
+    <div class="modal" id="addModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>// 录入数据</h3>
+                <button class="close-btn" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="type-selector">
+                    <div class="type-option selected" onclick="selectType('case')" data-type="case">
+                        <div class="icon">◉</div>
+                        <div class="name">历史用例</div>
+                    </div>
+                    <div class="type-option" onclick="selectType('defect')" data-type="defect">
+                        <div class="icon">◆</div>
+                        <div class="name">历史缺陷</div>
+                    </div>
+                    <div class="type-option" onclick="selectType('requirement')" data-type="requirement">
+                        <div class="icon">◈</div>
+                        <div class="name">需求文档</div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label id="contentLabel">标题 <span style="color: var(--text-secondary); font-size: 11px;">（用于向量检索的内容）</span></label>
+                    <input type="text" class="form-control" id="dataContent" placeholder="输入用例标题，如：用户登录功能验证">
+                </div>
+                <div class="form-group">
+                    <label id="metadataLabel">元数据 <span style="color: var(--text-secondary); font-size: 11px;">（可选，前置条件、操作步骤、预期结果）</span></label>
+                    <textarea class="form-control" id="dataMetadata" rows="6"
+                              placeholder="输入可选的详细信息，如：&#10;前置条件：系统已启动，存在有效用户账号&#10;操作步骤：&#10;1. 打开登录页面&#10;2. 输入用户名和密码&#10;3. 点击登录按钮&#10;&#10;预期结果：&#10;登录成功，跳转到首页"></textarea>
+                </div>
+                <div style="background: rgba(0, 245, 255, 0.1); border: 1px solid var(--neon-cyan); border-radius: 8px; padding: 16px; margin-top: 20px;">
+                    <p style="color: var(--neon-cyan); margin: 0; font-size: 14px;" id="formHint">
+                        ◉ 提示：数据ID将自动生成。历史用例的标题作为主要检索内容，元数据包含前置条件、操作步骤和预期结果。
+                    </p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn btn-primary" onclick="submitData()">录入</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 从数据库导入模态框 -->
+    <div class="modal" id="importModal">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h3>// 从用例管理导入</h3>
+                <button class="close-btn" onclick="closeImportModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="background: rgba(0, 245, 255, 0.05); border: 1px solid var(--neon-cyan); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+                    <p style="color: var(--neon-cyan); margin: 0; font-size: 13px;">
+                        ◉ 自动加载用例管理中<strong>已评审</strong>的用例（状态=已评审），搜索支持按需求标题、用例标题模糊匹配
+                    </p>
+                </div>
+                <div class="form-group">
+                    <label>搜索用例</label>
+                    <input type="text" class="search-input" id="importSearch" oninput="filterDatabaseItems()" placeholder="输入需求标题或用例标题关键词搜索...">
+                </div>
+                <div class="form-group">
+                    <label>可导入的用例列表 (<span id="selectedCount">0</span> 已选择)</label>
+                    <div style="max-height: 450px; overflow-y: auto; border: 1px solid var(--dark-border); border-radius: 8px; background: var(--dark-bg);" id="databaseItemsList">
+                        <div class="empty-state" style="padding: 40px;">
+                            <p>加载中...</p>
+                        </div>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+                    <button class="btn btn-secondary" onclick="selectAllItems()" style="padding: 8px 16px; font-size: 12px;">全选</button>
+                    <button class="btn btn-secondary" onclick="deselectAllItems()" style="padding: 8px 16px; font-size: 12px;">取消全选</button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeImportModal()">取消</button>
+                <button class="btn btn-primary" onclick="importSelectedFromDb()">开始导入 (<span id="importCount">0</span> 条)</button>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .db-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px;
+            border-bottom: 1px solid var(--dark-border);
+            transition: background 0.2s;
+            cursor: pointer;
+        }
+        .db-item:hover {
+            background: rgba(0, 245, 255, 0.05);
+        }
+        .db-item:last-child {
+            border-bottom: none;
+        }
+        .db-item-checkbox {
+            margin-top: 4px;
+        }
+        .db-item-content {
+            flex: 1;
+        }
+        .db-item-title {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+        .db-item-meta {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-family: monospace;
+        }
+        .db-item-preview {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 8px;
+            line-height: 1.6;
+            max-height: 60px;
+            overflow: hidden;
+        }
+    </style>
+
+    <script>
+        let currentTab = 'cases';
+        let selectedType = 'case';
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/rag/stats');
+                const data = await response.json();
+                document.getElementById('statCases').textContent = data.cases || 0;
+                document.getElementById('statDefects').textContent = data.defects || 0;
+                document.getElementById('statRequirements').textContent = data.requirements || 0;
+            } catch (error) {
+                console.error('加载统计失败:', error);
+            }
+        }
+
+        async function performSearch() {
+            const query = document.getElementById('searchQuery').value.trim();
+            if (!query) {
+                showToast('请输入搜索关键词', 'info');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/rag/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, top_k: 10 })
+                });
+
+                const data = await response.json();
+                console.log('搜索结果:', data); // Debug log
+                renderSearchResults(data.results);
+            } catch (error) {
+                console.error('搜索失败:', error);
+                showToast('搜索失败', 'error');
+            }
+        }
+
+        function renderSearchResults(results) {
+            const container = document.getElementById('searchResults');
+            if (!results) {
+                container.innerHTML = '<div class="empty-state">未找到相似数据</div>';
+                return;
+            }
+
+            // 将字典格式的结果转换为扁平化数组
+            let allResults = [];
+            
+            // 处理需求结果
+            if (results.requirements && results.requirements.length > 0) {
+                results.requirements.forEach(item => {
+                    allResults.push({
+                        ...item,
+                        type: 'requirement'
+                    });
+                });
+            }
+            
+            // 处理用例结果
+            if (results.cases && results.cases.length > 0) {
+                results.cases.forEach(item => {
+                    allResults.push({
+                        ...item,
+                        type: 'case'
+                    });
+                });
+            }
+            
+            // 处理缺陷结果
+            if (results.defects && results.defects.length > 0) {
+                results.defects.forEach(item => {
+                    allResults.push({
+                        ...item,
+                        type: 'defect'
+                    });
+                });
+            }
+            
+            // 按相似度分数排序
+            allResults.sort((a, b) => b.score - a.score);
+            
+            if (allResults.length === 0) {
+                container.innerHTML = '<div class="empty-state">未找到相似数据<br><br>提示：请先通过"录入数据"或"从数据库导入"按钮将数据添加到向量库，然后再进行搜索</div>';
+                return;
+            }
+
+            container.innerHTML = allResults.map(r => {
+                // 提取标题
+                let title = '';
+                if (r.type === 'case') {
+                    title = (r.metadata && r.metadata.name) ? r.metadata.name : '';
+                    if (!title && r.metadata && r.metadata.case_id) title = r.metadata.case_id;
+                    if (!title && r.content) {
+                        const firstLine = r.content.split('\n')[0];
+                        if (firstLine.startsWith('测试用例:')) {
+                            title = firstLine.substring(5).trim();
+                        } else if (firstLine.startsWith('测试用例：')) {
+                            title = firstLine.substring(5).trim();
+                        } else {
+                            title = firstLine.substring(0, 80);
+                        }
+                    }
+                    if (!title) title = r.id;
+                } else if (r.type === 'defect') {
+                    title = (r.metadata && r.metadata.title) ? r.metadata.title : '';
+                    if (!title && r.content) {
+                        const firstLine = r.content.split('\n')[0];
+                        if (firstLine.startsWith('缺陷标题:')) {
+                            title = firstLine.substring(5).trim();
+                        } else if (firstLine.startsWith('缺陷标题：')) {
+                            title = firstLine.substring(5).trim();
+                        } else {
+                            title = firstLine.substring(0, 80);
+                        }
+                    }
+                    if (!title) title = r.id;
+                } else {
+                    title = (r.metadata && r.metadata.title) ? r.metadata.title : r.id;
+                }
+                
+                return `
+                    <div class="result-item">
+                        <span class="result-type type-${r.type}">${getTypeLabel(r.type)}</span>
+                        <span class="result-score">${(r.score * 100).toFixed(1)}% 匹配度</span>
+                        <div style="font-weight: 600; margin-bottom: 8px; color: var(--text-primary);">${title}</div>
+                        <div class="result-content">${r.content.substring(0, 200)}...</div>
+                        <div class="result-meta">ID: ${r.id}${r.metadata && r.metadata.module ? ' | 模块: ' + r.metadata.module : ''}${r.metadata && r.metadata.requirement_title ? ' | 需求: ' + r.metadata.requirement_title : ''}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function getTypeLabel(type) {
+            const map = { 
+                'case': '历史用例', 
+                'defect': '历史缺陷', 
+                'requirement': '需求文档' 
+            };
+            return map[type] || type;
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            loadDataList();
+        }
+
+        function loadDataList() {
+            const container = document.getElementById('dataList');
+            
+            // Map tab names to API types
+            const typeMap = {
+                'cases': 'cases',
+                'defects': 'defects',
+                'requirements': 'requirements'
+            };
+            
+            const apiType = typeMap[currentTab] || 'cases';
+            
+            // Show loading
+            container.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
+            
+            // Fetch data from API
+            fetch('/api/rag/list?type=' + apiType + '&limit=50')
+                .then(res => res.json())
+                .then(data => {
+                    const items = data.items || [];
+                    if (items.length === 0) {
+                        container.innerHTML = `
+                            <div class="empty-state">
+                                <div style="font-size: 48px; margin-bottom: 16px; opacity: 0.3;">◈</div>
+                                <p>暂无${getTypeLabel(currentTab)}数据，请通过上方"录入数据"或"从数据库导入"按钮添加数据</p>
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    container.innerHTML = items.map(item => {
+                        const meta = item.metadata || {};
+                        const itemType = currentTab === 'cases' ? 'case' : currentTab === 'defects' ? 'defect' : 'requirement';
+                        
+                        // 提取标题：优先使用名称/标题，其次从content提取
+                        let title = '';
+                        if (currentTab === 'cases') {
+                            // 从metadata中提取name（新数据会有这个字段）
+                            title = (meta && meta.name) ? meta.name : '';
+                            
+                            // 如果name为空，从content的第一行提取用例标题
+                            if (!title && item.content) {
+                                const lines = item.content.split('\n');
+                                const firstLine = lines[0] ? lines[0].trim() : '';
+                                // 从 "测试用例: xxx" 或 "测试用例：xxx" 中提取
+                                if (firstLine.startsWith('测试用例:')) {
+                                    title = firstLine.substring(5).trim();
+                                } else if (firstLine.startsWith('测试用例：')) {
+                                    title = firstLine.substring(5).trim();
+                                }
+                            }
+                            
+                            // 如果还是没有标题，使用case_id
+                            if (!title && meta && meta.case_id) {
+                                title = meta.case_id;
+                            }
+                            
+                            // 最后的fallback
+                            if (!title) title = '未命名用例';
+                        } else if (currentTab === 'defects') {
+                            // 从metadata中提取title
+                            title = (meta && meta.title) ? meta.title : '';
+                            if (!title && item.content) {
+                                const firstLine = item.content.split('\n')[0];
+                                if (firstLine.startsWith('缺陷标题:')) {
+                                    title = firstLine.substring(5).trim();
+                                } else if (firstLine.startsWith('缺陷标题：')) {
+                                    title = firstLine.substring(5).trim();
+                                } else {
+                                    title = firstLine.substring(0, 50);
+                                }
+                            }
+                            if (!title) title = item.id || '未命名缺陷';
+                        } else {
+                            // 需求文档
+                            title = (meta && meta.title) ? meta.title : '';
+                            if (!title && item.content) {
+                                const firstLine = item.content.split('\n')[0];
+                                title = firstLine.substring(0, 50);
+                            }
+                            if (!title) title = item.id || '未命名需求';
+                        }
+                        
+                        // 简要信息
+                        const briefInfo = [];
+                        if (meta.module) briefInfo.push('模块: ' + meta.module);
+                        if (meta.priority) briefInfo.push('优先级: ' + meta.priority);
+                        if (meta.status) briefInfo.push('状态: ' + meta.status);
+                        if (meta.requirement_title) briefInfo.push('需求: ' + meta.requirement_title);
+                        
+                        return `
+                            <div class="result-item" style="cursor: pointer;" onclick="viewItem('${item.id}', '${currentTab}')">
+                                <span class="result-type type-${itemType}">${getTypeLabel(currentTab)}</span>
+                                <button class="delete-btn" onclick="event.stopPropagation(); deleteItem('${item.id}', '${currentTab}')">删除</button>
+                                <div class="result-content" style="font-weight: 600; margin-bottom: 8px;">${title}</div>
+                                <div class="result-meta">
+                                    ID: ${item.id}
+                                    ${briefInfo.length > 0 ? ' | ' + briefInfo.join(' | ') : ''}
+                                    <span style="color: var(--neon-cyan); margin-left: 10px;">点击查看详情 →</span>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                })
+                .catch(err => {
+                    console.error('Failed to load data:', err);
+                    container.innerHTML = '<div class="empty-state"><p>加载数据失败</p></div>';
+                });
+        }
+
+        function openAddModal() {
+            document.getElementById('addModal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('addModal').classList.remove('active');
+            document.getElementById('dataContent').value = '';
+            document.getElementById('dataMetadata').value = '';
+        }
+
+        function selectType(type) {
+            selectedType = type;
+            document.querySelectorAll('.type-option').forEach(opt => {
+                opt.classList.toggle('selected', opt.dataset.type === type);
+            });
+            
+            // 动态更新表单标签和占位符
+            const contentLabel = document.getElementById('contentLabel');
+            const metadataLabel = document.getElementById('metadataLabel');
+            const contentInput = document.getElementById('dataContent');
+            const metadataInput = document.getElementById('dataMetadata');
+            const formHint = document.getElementById('formHint');
+            
+            const typeConfig = {
+                'case': {
+                    contentLabel: '用例标题 <span style="color: var(--text-secondary); font-size: 11px;">（用于向量检索的内容）</span>',
+                    contentPlaceholder: '输入用例标题，如：用户登录功能验证',
+                    metadataLabel: '元数据 <span style="color: var(--text-secondary); font-size: 11px;">（可选，前置条件、操作步骤、预期结果）</span>',
+                    metadataPlaceholder: '输入可选的详细信息，如：\n前置条件：系统已启动，存在有效用户账号\n操作步骤：\n1. 打开登录页面\n2. 输入用户名和密码\n3. 点击登录按钮\n\n预期结果：\n登录成功，跳转到首页',
+                    hint: '◉ 提示：数据ID将自动生成。历史用例的标题作为主要检索内容，元数据包含前置条件、操作步骤和预期结果。'
+                },
+                'defect': {
+                    contentLabel: '缺陷描述 <span style="color: var(--text-secondary); font-size: 11px;">（用于向量检索的内容）</span>',
+                    contentPlaceholder: '输入缺陷描述，如：登录页面密码输入框未限制最大长度',
+                    metadataLabel: '元数据 <span style="color: var(--text-secondary); font-size: 11px;">（可选，前置条件、操作步骤、预期结果）</span>',
+                    metadataPlaceholder: '输入可选的详细信息，如：\n前置条件：系统已启动，存在有效用户账号\n操作步骤：\n1. 打开登录页面\n2. 输入超长密码（如1000字符）\n3. 点击登录按钮\n\n预期结果：\n系统应提示密码长度超限',
+                    hint: '◉ 提示：数据ID将自动生成。历史缺陷的描述作为主要检索内容，元数据包含复现步骤和预期行为。'
+                },
+                'requirement': {
+                    contentLabel: '需求描述 <span style="color: var(--text-secondary); font-size: 11px;">（用于向量检索的内容）</span>',
+                    contentPlaceholder: '输入需求描述，如：用户权限管理功能',
+                    metadataLabel: '详细需求描述 <span style="color: var(--text-secondary); font-size: 11px;">（可选）</span>',
+                    metadataPlaceholder: '输入详细的需求描述，如：\n系统应支持角色管理\n- 管理员可以创建和删除角色\n- 角色可以分配权限\n- 用户可以关联多个角色\n\n业务规则：\n- 默认角色不能被删除\n- 权限变更需要审计日志',
+                    hint: '◉ 提示：数据ID将自动生成。需求描述作为主要检索内容，元数据包含详细的需求规格说明。'
+                }
+            };
+            
+            const config = typeConfig[type];
+            if (config) {
+                contentLabel.innerHTML = config.contentLabel;
+                contentInput.placeholder = config.contentPlaceholder;
+                metadataLabel.innerHTML = config.metadataLabel;
+                metadataInput.placeholder = config.metadataPlaceholder;
+                formHint.innerHTML = config.hint;
+            }
+        }
+
+        async function submitData() {
+            const content = document.getElementById('dataContent').value.trim();
+            const metadataStr = document.getElementById('dataMetadata').value.trim();
+
+            if (!content) {
+                showToast('请填写标题', 'info');
+                return;
+            }
+
+            // 自动生成递增ID
+            const typePrefix = {
+                'case': 'case',
+                'defect': 'defect',
+                'requirement': 'req'
+            };
+            
+            const prefix = typePrefix[selectedType] || 'item';
+            const timestamp = Date.now();
+            const autoId = `${prefix}_${timestamp}`;
+
+            // 将元数据作为普通字符串存储（不是JSON）
+            let metadata = {};
+            if (metadataStr) {
+                // 如果不是JSON格式，直接存储为detail字段
+                metadata = { detail: metadataStr };
+            }
+
+            try {
+                const response = await fetch('/api/rag/upsert', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: selectedType,
+                        id: autoId,
+                        content: content,
+                        metadata: metadata
+                    })
+                });
+
+                if (response.ok) {
+                    closeModal();
+                    loadStats();
+                    showToast('录入成功', 'success');
+                } else {
+                    const data = await response.json();
+                    showToast(`录入失败：${data.error || '未知错误'}`, 'error');
+                }
+            } catch (error) {
+                console.error('录入失败:', error);
+                showToast('录入失败', 'error');
+            }
+        }
+
+        function openImportModal() {
+            document.getElementById('importModal').classList.add('active');
+            document.getElementById('importSearch').value = '';
+            allDatabaseItems = [];
+            selectedItemIds = new Set();
+            updateSelectedCount();
+            loadApprovedCases();
+        }
+
+        function closeImportModal() {
+            document.getElementById('importModal').classList.remove('active');
+            document.getElementById('importSearch').value = '';
+            allDatabaseItems = [];
+            selectedItemIds = new Set();
+            updateSelectedCount();
+        }
+
+        // 存储所有数据和选中项
+        let allDatabaseItems = [];
+        let selectedItemIds = new Set();
+
+        // 加载已评审的用例
+        async function loadApprovedCases() {
+            const container = document.getElementById('databaseItemsList');
+            container.innerHTML = '<div class="empty-state" style="padding: 40px;"><p>加载中...</p></div>';
+            
+            try {
+                // 只加载已评审通过的用例 (approved status = 已评审)
+                const response = await fetch('/api/cases?status=approved&limit=1000');
+                const data = await response.json();
+                
+                allDatabaseItems = data.items || [];
+                
+                if (allDatabaseItems.length === 0) {
+                    container.innerHTML = '<div class="empty-state" style="padding: 40px;"><p>暂无已评审的用例<br><br>请先在用例管理中评审用例，将状态改为"已评审"</p></div>';
+                    return;
+                }
+                
+                renderDatabaseItems(allDatabaseItems);
+            } catch (error) {
+                console.error('加载数据失败:', error);
+                container.innerHTML = '<div class="empty-state" style="padding: 40px;"><p>加载数据失败</p></div>';
+            }
+        }
+
+        // 渲染用例列表
+        function renderDatabaseItems(items) {
+            const container = document.getElementById('databaseItemsList');
+            
+            container.innerHTML = items.map(item => {
+                const itemId = item.id;
+                const caseTitle = item.name || '未命名用例';
+                const requirementTitle = item.requirement_title || '未知需求';
+                const module = item.module || '未分类';
+                const priority = item.priority || 'P2';
+                const isSelected = selectedItemIds.has(itemId);
+                
+                return `
+                    <div class="db-item" onclick="toggleItem(${itemId})">
+                        <input type="checkbox" class="db-item-checkbox" 
+                               ${isSelected ? 'checked' : ''} 
+                               onclick="event.stopPropagation(); toggleItem(${itemId})">
+                        <div class="db-item-content">
+                            <div class="db-item-title">${caseTitle}</div>
+                            <div class="db-item-meta">需求: ${requirementTitle} | 模块: ${module} | 优先级: ${priority}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 筛选数据库项 - 支持按需求标题、用例标题模糊搜索
+        function filterDatabaseItems() {
+            const searchTerm = document.getElementById('importSearch').value.toLowerCase().trim();
+            
+            if (!searchTerm) {
+                renderDatabaseItems(allDatabaseItems);
+                return;
+            }
+            
+            const filtered = allDatabaseItems.filter(item => {
+                const caseTitle = (item.name || '').toLowerCase();
+                const requirementTitle = (item.requirement_title || '').toLowerCase();
+                const module = (item.module || '').toLowerCase();
+                
+                // 模糊匹配：需求标题、用例标题、模块
+                return caseTitle.includes(searchTerm) || 
+                       requirementTitle.includes(searchTerm) || 
+                       module.includes(searchTerm);
+            });
+            
+            renderDatabaseItems(filtered);
+        }
+
+        // 切换单个项的选择状态
+        function toggleItem(itemId) {
+            if (selectedItemIds.has(itemId)) {
+                selectedItemIds.delete(itemId);
+            } else {
+                selectedItemIds.add(itemId);
+            }
+            updateSelectedCount();
+            
+            // 更新复选框状态
+            const checkbox = document.querySelector(`.db-item input[onclick*="${itemId}"]`);
+            if (checkbox) {
+                checkbox.checked = selectedItemIds.has(itemId);
+            }
+        }
+
+        // 全选
+        function selectAllItems() {
+            allDatabaseItems.forEach(item => selectedItemIds.add(item.id));
+            updateSelectedCount();
+            renderDatabaseItems(allDatabaseItems);
+        }
+
+        // 取消全选
+        function deselectAllItems() {
+            selectedItemIds.clear();
+            updateSelectedCount();
+            renderDatabaseItems(allDatabaseItems);
+        }
+
+        // 更新已选择数量
+        function updateSelectedCount() {
+            const count = selectedItemIds.size;
+            document.getElementById('selectedCount').textContent = count;
+            document.getElementById('importCount').textContent = count;
+        }
+
+        // 导入选中的数据
+        async function importSelectedFromDb() {
+            if (selectedItemIds.size === 0) {
+                showToast('请至少选择一条用例', 'info');
+                return;
+            }
+            
+            const ids = Array.from(selectedItemIds);
+            
+            try {
+                const response = await fetch('/api/rag/import-from-db', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type: 'cases', ids })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    closeImportModal();
+                    loadStats();
+                    showToast(`成功导入 ${data.imported_count} 条用例到RAG`, 'success');
+                } else {
+                    showToast(`导入失败：${data.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('导入失败:', error);
+                showToast('导入失败', 'error');
+            }
+        }
+
+        // 查看数据详情
+        async function viewItem(itemId, itemType) {
+            // 映射类型
+            const typeMap = {
+                'cases': 'cases',
+                'defects': 'defects',
+                'requirements': 'requirements'
+            };
+            
+            const apiType = typeMap[itemType] || 'cases';
+            
+            try {
+                // 获取该项的完整内容
+                const response = await fetch('/api/rag/list?type=' + apiType + '&limit=1000');
+                const data = await response.json();
+                const item = (data.items || []).find(i => i.id === itemId);
+                
+                if (!item) {
+                    showToast('未找到该项数据', 'error');
+                    return;
+                }
+                
+                // 显示详情弹窗
+                showItemDetails(item);
+            } catch (error) {
+                console.error('获取详情失败:', error);
+                showToast('获取详情失败', 'error');
+            }
+        }
+        
+        // 显示详情弹窗
+        function showItemDetails(item) {
+            const modal = document.getElementById('viewItemModal');
+            const content = document.getElementById('viewItemContent');
+            
+            // 构建详情显示内容
+            let html = '';
+            
+            // 显示元数据信息
+            if (item.metadata && Object.keys(item.metadata).length > 0) {
+                html += '<div style="margin-bottom: 20px;">';
+                html += '<h4 style="color: var(--neon-cyan); margin-bottom: 10px;">元数据信息</h4>';
+                for (const [key, value] of Object.entries(item.metadata)) {
+                    if (value) {
+                        html += `<div style="margin-bottom: 8px;"><span style="color: var(--text-secondary);">${key}:</span> <span style="color: var(--text-primary);">${value}</span></div>`;
+                    }
+                }
+                html += '</div>';
+            }
+            
+            // 显示完整内容
+            html += '<div>';
+            html += '<h4 style="color: var(--neon-cyan); margin-bottom: 10px;">完整内容</h4>';
+            html += `<pre style="white-space: pre-wrap; word-wrap: break-word; line-height: 1.8; color: var(--text-primary);">${item.content}</pre>`;
+            html += '</div>';
+            
+            content.innerHTML = html;
+            modal.classList.add('active');
+        }
+        
+        // 关闭详情弹窗
+        function closeViewItemModal() {
+            document.getElementById('viewItemModal').classList.remove('active');
+        }
+
+        // Delete item from RAG vector store
+        async function deleteItem(itemId, itemType) {
+            const typeMap = {
+                'cases': 'case',
+                'defects': 'defect',
+                'requirements': 'requirement'
+            };
+            
+            const apiType = typeMap[itemType] || 'case';
+            
+            if (!confirm(`确定要删除此${getTypeLabel(apiType)}吗？`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/rag/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: apiType,
+                        id: itemId
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showToast('删除成功', 'success');
+                    loadStats();
+                    loadDataList();
+                } else {
+                    showToast(`删除失败：${data.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('删除失败:', error);
+                showToast('删除失败', 'error');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStats();
+            loadDataList();
+        });
+
+        document.getElementById('searchQuery')?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') performSearch();
+        });
+    </script>
+
+    <!-- 查看详情弹窗 -->
+    <div class="modal" id="viewItemModal">
+        <div class="modal-content" style="max-width: 900px; max-height: 80vh;">
+            <div class="modal-header">
+                <h3>// 数据详情</h3>
+                <button class="close-btn" onclick="closeViewItemModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="viewItemContent" style="max-height: 60vh; overflow-y: auto;">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeViewItemModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 提示弹窗 -->
+    <div class="toast-modal" id="toastModal">
+        <div class="toast-box" id="toastBox">
+            <div class="toast-icon" id="toastIcon">✓</div>
+            <div class="toast-message" id="toastMessage">操作成功</div>
+            <button class="toast-btn" onclick="closeToast()">确定</button>
+        </div>
+    </div>
+
+    <script>
+        // 提示弹窗
+        function showToast(message, type = 'info') {
+            const toastModal = document.getElementById('toastModal');
+            const toastBox = document.getElementById('toastBox');
+            const toastIcon = document.getElementById('toastIcon');
+            const toastMessage = document.getElementById('toastMessage');
+
+            toastBox.className = 'toast-box ' + type;
+            toastIcon.textContent = type === 'success' ? '✓' : type === 'error' ? '✗' : 'ℹ';
+            toastMessage.textContent = message;
+
+            toastModal.classList.add('active');
+        }
+
+        function closeToast() {
+            document.getElementById('toastModal').classList.remove('active');
+        }
+    </script>
+</body>
+</html>

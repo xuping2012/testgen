@@ -1,0 +1,1666 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>用例管理 // TestGen</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --neon-cyan: #00f5ff;
+            --neon-pink: #ff00ff;
+            --neon-purple: #b829dd;
+            --neon-green: #00ff88;
+            --neon-yellow: #ffee00;
+            --dark-bg: #0a0a0f;
+            --dark-sidebar: #08080c;
+            --dark-card: #12121a;
+            --dark-border: #1e1e2e;
+            --text-primary: #e0e0e0;
+            --text-secondary: #888;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Roboto, monospace;
+            background: var(--dark-bg);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(transparent 50%, rgba(0, 245, 255, 0.02) 50%);
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 1000;
+        }
+        
+        .layout {
+            display: flex;
+            min-height: 100vh;
+        }
+        
+        .sidebar {
+            width: 260px;
+            background: var(--dark-sidebar);
+            border-right: 1px solid var(--dark-border);
+            padding: 30px 0;
+            position: relative;
+        }
+        
+        .sidebar::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 1px;
+            height: 100%;
+            background: linear-gradient(180deg, transparent, var(--neon-cyan), transparent);
+            opacity: 0.5;
+        }
+        
+        .logo {
+            padding: 0 30px 30px;
+            font-size: 28px;
+            font-weight: 900;
+            color: var(--neon-cyan);
+            text-shadow: 0 0 20px var(--neon-cyan);
+            letter-spacing: 4px;
+            border-bottom: 1px solid var(--dark-border);
+        }
+        
+        .nav-menu {
+            list-style: none;
+            padding: 20px 0;
+        }
+        
+        .nav-item {
+            padding: 16px 30px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--text-secondary);
+            border-left: 3px solid transparent;
+            position: relative;
+        }
+        
+        .nav-item:hover {
+            background: rgba(0, 245, 255, 0.05);
+            color: var(--text-primary);
+        }
+        
+        .nav-item.active {
+            background: linear-gradient(90deg, rgba(0, 245, 255, 0.1), transparent);
+            color: var(--neon-cyan);
+            border-left-color: var(--neon-cyan);
+        }
+        
+        .nav-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 4px;
+            height: 20px;
+            background: var(--neon-cyan);
+            box-shadow: 0 0 10px var(--neon-cyan);
+        }
+        
+        .nav-icon {
+            width: 24px;
+            text-align: center;
+            font-size: 18px;
+        }
+        
+        .main-content {
+            flex: 1;
+            padding: 40px;
+            overflow-y: auto;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+        
+        .header h1 {
+            font-size: 32px;
+            color: var(--neon-cyan);
+            text-shadow: 0 0 20px rgba(0, 245, 255, 0.5);
+            letter-spacing: 2px;
+        }
+        
+        .header h1::before {
+            content: '// ';
+            color: var(--neon-pink);
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+        
+        .btn-primary {
+            background: transparent;
+            color: var(--neon-cyan);
+            border: 1px solid var(--neon-cyan);
+            box-shadow: 0 0 20px rgba(0, 245, 255, 0.2);
+        }
+        
+        .btn-primary:hover {
+            background: var(--neon-cyan);
+            color: var(--dark-bg);
+            box-shadow: 0 0 30px rgba(0, 245, 255, 0.5);
+        }
+        
+        .btn-secondary {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--dark-border);
+        }
+        
+        .btn-secondary:hover {
+            border-color: var(--neon-pink);
+            color: var(--neon-pink);
+        }
+        
+        .btn-success {
+            background: transparent;
+            color: var(--neon-green);
+            border: 1px solid var(--neon-green);
+        }
+        
+        .btn-success:hover {
+            background: var(--neon-green);
+            color: var(--dark-bg);
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
+        }
+        
+        .card {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+            opacity: 0.5;
+        }
+        
+        /* 统计卡片 */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 24px;
+            margin-bottom: 40px;
+        }
+        
+        .stat-card {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 12px;
+            padding: 24px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+        }
+        
+        .stat-card:nth-child(1)::before { background: var(--neon-cyan); }
+        .stat-card:nth-child(2)::before { background: var(--neon-yellow); }
+        .stat-card:nth-child(3)::before { background: var(--neon-green); }
+        .stat-card:nth-child(4)::before { background: #ffa500; }
+        
+        .stat-value {
+            font-size: 36px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-family: monospace;
+        }
+        
+        .stat-card:nth-child(1) .stat-value { color: var(--neon-cyan); text-shadow: 0 0 20px rgba(0, 245, 255, 0.5); }
+        .stat-card:nth-child(2) .stat-value { color: var(--neon-yellow); text-shadow: 0 0 20px rgba(255, 238, 0, 0.5); }
+        .stat-card:nth-child(3) .stat-value { color: var(--neon-green); text-shadow: 0 0 20px rgba(0, 255, 136, 0.5); }
+        .stat-card:nth-child(4) .stat-value { color: #ffa500; text-shadow: 0 0 20px rgba(255, 165, 0, 0.5); }
+        
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        /* 筛选栏 */
+        .filter-bar {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+        
+        .filter-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .filter-item label {
+            font-size: 12px;
+            color: var(--neon-cyan);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .filter-item select,
+        .filter-item input {
+            padding: 10px 14px;
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-border);
+            border-radius: 6px;
+            font-size: 13px;
+            color: var(--text-primary);
+            transition: all 0.3s;
+        }
+        
+        .filter-item select:focus,
+        .filter-item input:focus {
+            outline: none;
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 10px rgba(0, 245, 255, 0.2);
+        }
+        
+        /* 表格 */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .data-table th {
+            padding: 16px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--neon-cyan);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid var(--dark-border);
+        }
+        
+        .data-table td {
+            padding: 16px;
+            border-bottom: 1px solid var(--dark-border);
+            color: var(--text-secondary);
+        }
+        
+        .data-table tr:hover td {
+            color: var(--text-primary);
+            background: rgba(0, 245, 255, 0.03);
+        }
+        
+        .priority-badge {
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border: 1px solid;
+        }
+        
+        .priority-P0 { background: rgba(255, 0, 85, 0.1); color: #ff0055; border-color: rgba(255, 0, 85, 0.3); }
+        .priority-P1 { background: rgba(255, 136, 0, 0.1); color: #ff8800; border-color: rgba(255, 136, 0, 0.3); }
+        .priority-P2 { background: rgba(0, 245, 255, 0.1); color: var(--neon-cyan); border-color: rgba(0, 245, 255, 0.3); }
+        .priority-P3 { background: rgba(136, 136, 136, 0.1); color: #888; border-color: rgba(136, 136, 136, 0.3); }
+        
+        .status-badge {
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border: 1px solid;
+        }
+        
+        .status-pending_review { background: rgba(255, 238, 0, 0.1); color: var(--neon-yellow); border-color: rgba(255, 238, 0, 0.3); }
+        .status-approved { background: rgba(0, 255, 136, 0.1); color: var(--neon-green); border-color: rgba(0, 255, 136, 0.3); }
+        .status-rejected { background: rgba(255, 165, 0, 0.1); color: #ffa500; border-color: rgba(255, 165, 0, 0.3); }
+        
+        .action-btns {
+            display: flex;
+            gap: 6px;
+        }
+        
+        .action-btn {
+            padding: 5px 10px;
+            border: 1px solid var(--dark-border);
+            background: transparent;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            color: var(--text-secondary);
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .action-btn:hover {
+            border-color: var(--neon-cyan);
+            color: var(--neon-cyan);
+            box-shadow: 0 0 10px rgba(0, 245, 255, 0.3);
+        }
+        
+        .action-btn.approve:hover {
+            border-color: var(--neon-green);
+            color: var(--neon-green);
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+        }
+        
+        .action-btn.reject:hover {
+            border-color: #ff0055;
+            color: #ff0055;
+            box-shadow: 0 0 10px rgba(255, 0, 85, 0.3);
+        }
+        
+        /* 批量操作 */
+        .batch-actions {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding: 16px 20px;
+            background: rgba(0, 245, 255, 0.05);
+            border: 1px solid rgba(0, 245, 255, 0.2);
+            border-radius: 8px;
+        }
+        
+        .batch-actions span {
+            color: var(--neon-cyan);
+            font-size: 13px;
+        }
+        
+        /* 分页 */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 30px;
+        }
+        
+        .page-btn {
+            padding: 10px 16px;
+            border: 1px solid var(--dark-border);
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.3s;
+            font-family: monospace;
+        }
+        
+        .page-btn:hover {
+            border-color: var(--neon-cyan);
+            color: var(--neon-cyan);
+        }
+        
+        .page-btn.active {
+            background: var(--neon-cyan);
+            color: var(--dark-bg);
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 20px rgba(0, 245, 255, 0.4);
+        }
+        
+        /* 模态框 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+        }
+        
+        .modal-content::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+        }
+        
+        .modal-header {
+            padding: 24px 30px;
+            border-bottom: 1px solid var(--dark-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-header h3 {
+            color: var(--neon-cyan);
+            font-size: 20px;
+            letter-spacing: 2px;
+        }
+        
+        .modal-body {
+            padding: 30px;
+        }
+        
+        .modal-footer {
+            padding: 20px 30px;
+            border-top: 1px solid var(--dark-border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+        
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: color 0.3s;
+        }
+        
+        .close-btn:hover {
+            color: var(--neon-pink);
+        }
+        
+        /* 表单 */
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--neon-cyan);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 12px;
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-border);
+            border-radius: 8px;
+            font-size: 14px;
+            color: var(--text-primary);
+            transition: all 0.3s;
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 15px rgba(0, 245, 255, 0.2);
+        }
+        
+        textarea.form-control {
+            min-height: 100px;
+            resize: vertical;
+            font-family: monospace;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        .checkbox {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--neon-cyan);
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+            color: var(--text-secondary);
+        }
+        
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+
+        /* 自定义确认弹窗 */
+        .confirm-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(8px);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .confirm-modal.active { display: flex; }
+
+        .confirm-box {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 420px;
+            position: relative;
+            overflow: hidden;
+            animation: confirmSlideIn 0.2s ease-out;
+        }
+
+        @keyframes confirmSlideIn {
+            from { opacity: 0; transform: scale(0.95) translateY(-20px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .confirm-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--neon-pink), var(--neon-cyan));
+        }
+
+        .confirm-header {
+            padding: 24px 28px 16px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .confirm-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: rgba(255, 0, 85, 0.15);
+            border: 2px solid rgba(255, 0, 85, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            color: #ff0055;
+            flex-shrink: 0;
+        }
+
+        .confirm-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .confirm-body { padding: 0 28px 24px; }
+
+        .confirm-message {
+            font-size: 14px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        .confirm-footer {
+            padding: 16px 28px 24px;
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        .confirm-btn {
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .confirm-btn-cancel {
+            background: transparent;
+            border: 1px solid var(--dark-border);
+            color: var(--text-secondary);
+        }
+
+        .confirm-btn-cancel:hover {
+            border-color: var(--text-secondary);
+            color: var(--text-primary);
+        }
+
+        .confirm-btn-ok {
+            background: transparent;
+            border: 1px solid #ff0055;
+            color: #ff0055;
+        }
+
+        .confirm-btn-ok:hover {
+            background: #ff0055;
+            color: white;
+            box-shadow: 0 0 20px rgba(255, 0, 85, 0.4);
+        }
+
+        /* 提示弹窗 */
+        .toast-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .toast-modal.active { display: flex; }
+
+        .toast-box {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 380px;
+            position: relative;
+            overflow: hidden;
+            animation: toastSlideIn 0.2s ease-out;
+            text-align: center;
+            padding: 40px 30px;
+        }
+
+        @keyframes toastSlideIn {
+            from { opacity: 0; transform: scale(0.95) translateY(-20px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .toast-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+        }
+
+        .toast-box.success { border-color: var(--neon-green); }
+        .toast-box.success::before { background: var(--neon-green); }
+        .toast-box.error { border-color: #ff0055; }
+        .toast-box.error::before { background: #ff0055; }
+        .toast-box.info { border-color: var(--neon-cyan); }
+
+        .toast-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin: 0 auto 20px;
+            background: rgba(0, 245, 255, 0.15);
+            border: 2px solid rgba(0, 245, 255, 0.4);
+            color: var(--neon-cyan);
+        }
+
+        .toast-box.success .toast-icon {
+            background: rgba(0, 255, 136, 0.15);
+            border-color: rgba(0, 255, 136, 0.4);
+            color: var(--neon-green);
+        }
+
+        .toast-box.error .toast-icon {
+            background: rgba(255, 0, 85, 0.15);
+            border-color: rgba(255, 0, 85, 0.4);
+            color: #ff0055;
+        }
+
+        .toast-message {
+            font-size: 16px;
+            color: var(--text-primary);
+            margin-bottom: 24px;
+            line-height: 1.6;
+            white-space: pre-line;
+        }
+
+        .toast-btn {
+            padding: 12px 40px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            background: transparent;
+            border: 1px solid var(--neon-cyan);
+            color: var(--neon-cyan);
+        }
+
+        .toast-btn:hover {
+            background: var(--neon-cyan);
+            color: var(--dark-bg);
+            box-shadow: 0 0 20px rgba(0, 245, 255, 0.4);
+        }
+
+        .toast-box.error .toast-btn {
+            border-color: #ff0055;
+            color: #ff0055;
+        }
+
+        .toast-box.error .toast-btn:hover {
+            background: #ff0055;
+            color: white;
+            box-shadow: 0 0 20px rgba(255, 0, 85, 0.4);
+        }
+
+        .toast-box.success .toast-btn {
+            border-color: var(--neon-green);
+            color: var(--neon-green);
+        }
+
+        .toast-box.success .toast-btn:hover {
+            background: var(--neon-green);
+            color: var(--dark-bg);
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
+        }
+        
+        /* Theme: Dark Minimal */
+        body.theme-minimal {
+            --neon-cyan: #a0a0a0;
+            --neon-pink: #888;
+            --neon-purple: #777;
+            --neon-green: #909090;
+            --neon-yellow: #aaa;
+            --dark-bg: #1a1a1a;
+            --dark-sidebar: #141414;
+            --dark-card: #1e1e1e;
+            --dark-border: #333;
+            --text-primary: #d0d0d0;
+            --text-secondary: #777;
+        }
+
+        body.theme-minimal .logo {
+            text-shadow: none;
+            color: var(--text-primary);
+        }
+
+        body.theme-minimal .nav-item.active {
+            background: rgba(160, 160, 160, 0.1);
+            color: var(--text-primary);
+        }
+
+        body.theme-minimal .nav-item.active::before {
+            background: var(--text-primary);
+            box-shadow: none;
+        }
+
+        body.theme-minimal .header h1 {
+            text-shadow: none;
+            color: var(--text-primary);
+        }
+
+        body.theme-minimal .btn-primary {
+            background: var(--text-primary);
+            color: var(--dark-bg);
+            border-color: var(--text-primary);
+            box-shadow: none;
+        }
+
+        body.theme-minimal .btn-primary:hover {
+            background: transparent;
+            color: var(--text-primary);
+            box-shadow: none;
+        }
+
+        /* Theme: Ocean Blue */
+        body.theme-ocean {
+            --neon-cyan: #00b4d8;
+            --neon-pink: #0077b6;
+            --neon-purple: #023e8a;
+            --neon-green: #48cae4;
+            --neon-yellow: #90e0ef;
+            --dark-bg: #0a1929;
+            --dark-sidebar: #071420;
+            --dark-card: #0d1f33;
+            --dark-border: #1a3650;
+            --text-primary: #caf0f8;
+            --text-secondary: #90e0ef;
+        }
+
+        body.theme-ocean .logo {
+            color: var(--neon-cyan);
+            text-shadow: 0 0 20px rgba(0, 180, 216, 0.5);
+        }
+
+        body.theme-ocean .nav-item.active {
+            background: linear-gradient(90deg, rgba(0, 180, 216, 0.1), transparent);
+            color: var(--neon-cyan);
+            border-left-color: var(--neon-cyan);
+        }
+
+        body.theme-ocean .nav-item.active::before {
+            background: var(--neon-cyan);
+            box-shadow: 0 0 10px var(--neon-cyan);
+        }
+
+        body.theme-ocean .header h1 {
+            color: var(--neon-cyan);
+            text-shadow: 0 0 20px rgba(0, 180, 216, 0.5);
+        }
+
+        body.theme-ocean .btn-primary {
+            color: var(--neon-cyan);
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 20px rgba(0, 180, 216, 0.2);
+        }
+
+        body.theme-ocean .btn-primary:hover {
+            background: var(--neon-cyan);
+            color: var(--dark-bg);
+            box-shadow: 0 0 30px rgba(0, 180, 216, 0.5);
+        }
+
+        .sidebar {
+            padding-bottom: 220px;
+        }
+        
+        .btn-info {
+            padding: 10px 20px;
+            background: transparent;
+            color: #17a2b8;
+            border: 1px solid #17a2b8;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-family: monospace;
+        }
+        
+        .btn-info:hover {
+            background: #17a2b8;
+            color: white;
+            box-shadow: 0 0 20px rgba(23, 162, 184, 0.4);
+        }
+    </style>
+</head>
+<body>
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="logo">◈ TestGen</div>
+            <ul class="nav-menu">
+                <li class="nav-item" onclick="location.href='requirements.html'">
+                    <span class="nav-icon">◉</span>
+                    <span>需求管理</span>
+                </li>
+                <li class="nav-item active" onclick="location.href='cases.html'">
+                    <span class="nav-icon">◆</span>
+                    <span>用例管理</span>
+                </li>
+                <li class="nav-item" onclick="location.href='rag.html'">
+                    <span class="nav-icon">◈</span>
+                    <span>RAG检索</span>
+                </li>
+                <li class="nav-item" onclick="location.href='prompts.html'">
+                    <span class="nav-icon">▤</span>
+                    <span>Prompt管理</span>
+                </li>
+                <li class="nav-item" onclick="location.href='config.html'">
+                    <span class="nav-icon">▣</span>
+                    <span>AI配置</span>
+                </li>
+            </ul>
+        </aside>
+
+        <main class="main-content">
+            <div class="header">
+                <h1>用例管理</h1>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-secondary" id="importBtn">导入</button>
+                    <input type="file" id="importFile" accept=".xlsx" style="display: none;">
+                    <button class="btn btn-info" onclick="downloadCaseTemplate()">下载模板</button>
+                    <button class="btn btn-success" onclick="exportCases('excel')">导出Excel</button>
+                    <button class="btn btn-primary" onclick="exportCases('xmind')">导出XMind</button>
+                </div>
+            </div>
+
+            <!-- 统计卡片 -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalCases">0</div>
+                    <div class="stat-label">总用例数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="draftCases">0</div>
+                    <div class="stat-label">待评审</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="pendingCases">0</div>
+                    <div class="stat-label">已评审</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="approvedCases">0</div>
+                    <div class="stat-label">已拒绝</div>
+                </div>
+            </div>
+
+            <!-- 筛选和列表 -->
+            <div class="card">
+                <div class="filter-bar">
+                    <div class="filter-item">
+                        <label>需求:</label>
+                        <select id="filterRequirement">
+                            <option value="">全部需求</option>
+                        </select>
+                    </div>
+                    <div class="filter-item">
+                        <label>状态:</label>
+                        <select id="filterStatus">
+                            <option value="">全部状态</option>
+                            <option value="pending_review">待评审</option>
+                            <option value="approved">已评审</option>
+                            <option value="rejected">已拒绝</option>
+                        </select>
+                    </div>
+                    <div class="filter-item">
+                        <label>优先级:</label>
+                        <select id="filterPriority">
+                            <option value="">全部优先级</option>
+                            <option value="P0">P0</option>
+                            <option value="P1">P1</option>
+                            <option value="P2">P2</option>
+                            <option value="P3">P3</option>
+                        </select>
+                    </div>
+                    <div class="filter-item">
+                        <button class="btn btn-primary" onclick="applyFilters()">筛选</button>
+                        <button class="btn btn-secondary" onclick="resetFilters()">重置</button>
+                    </div>
+                </div>
+
+                <div class="batch-actions" id="batchActions" style="display: none;">
+                    <span>已选择 <strong id="selectedCount">0</strong> 项</span>
+                    <button class="btn btn-success" onclick="batchApprove()">批量通过</button>
+                    <button class="btn btn-secondary" onclick="batchReject()">批量拒绝</button>
+                    <button class="btn btn-primary" onclick="batchExport()">批量导出</button>
+                    <button class="btn btn-danger" onclick="batchDelete()" style="background: transparent; color: #ff0055; border: 1px solid #ff0055;">批量删除</button>
+                </div>
+
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" class="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
+                            <th>用例ID</th>
+                            <th>模块</th>
+                            <th>用例标题</th>
+                            <th>优先级</th>
+                            <th>状态</th>
+                            <th>关联需求</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="caseList">
+                        <tr>
+                            <td colspan="8" class="empty-state">
+                                <div class="empty-state-icon">◆</div>
+                                <p>暂无测试用例</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="pagination" id="pagination"></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 用例详情模态框 -->
+    <div class="modal" id="caseModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>// 用例详情</h3>
+                <button class="close-btn" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>用例ID</label>
+                        <input type="text" class="form-control" id="caseId" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label>所属模块</label>
+                        <input type="text" class="form-control" id="caseModule">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>用例标题</label>
+                    <input type="text" class="form-control" id="caseName">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>优先级</label>
+                        <select class="form-control" id="casePriority">
+                            <option value="P0">P0 - 最高</option>
+                            <option value="P1">P1 - 高</option>
+                            <option value="P2">P2 - 中</option>
+                            <option value="P3">P3 - 低</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>状态</label>
+                        <select class="form-control" id="caseStatus">
+                            <option value="pending_review">待评审</option>
+                            <option value="approved">已评审</option>
+                            <option value="rejected">已拒绝</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>前置条件</label>
+                    <textarea class="form-control" id="casePreconditions"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>测试步骤 (每行一步)</label>
+                    <textarea class="form-control" id="caseSteps"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>预期结果 (每行一条)</label>
+                    <textarea class="form-control" id="caseExpected"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn btn-primary" onclick="saveCase()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 自定义确认弹窗 -->
+    <div class="confirm-modal" id="confirmModal">
+        <div class="confirm-box">
+            <div class="confirm-header">
+                <div class="confirm-icon">!</div>
+                <div class="confirm-title">确认操作</div>
+            </div>
+            <div class="confirm-body">
+                <div class="confirm-message" id="confirmMessage">确定要执行此操作吗？</div>
+            </div>
+            <div class="confirm-footer">
+                <button class="confirm-btn confirm-btn-cancel" onclick="closeConfirm()">取消</button>
+                <button class="confirm-btn confirm-btn-ok" id="confirmOkBtn" onclick="confirmOk()">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 提示弹窗 -->
+    <div class="toast-modal" id="toastModal">
+        <div class="toast-box" id="toastBox">
+            <div class="toast-icon" id="toastIcon">✓</div>
+            <div class="toast-message" id="toastMessage">操作成功</div>
+            <button class="toast-btn" onclick="closeToast()">确定</button>
+        </div>
+    </div>
+
+    <script>
+        let currentPage = 1;
+        let selectedCases = new Set();
+        let currentCaseId = null;
+        let confirmCallback = null;
+
+        // 自定义确认弹窗
+        function showConfirm(message, onConfirm) {
+            document.getElementById('confirmMessage').textContent = message;
+            document.getElementById('confirmModal').classList.add('active');
+            confirmCallback = onConfirm;
+        }
+
+        function closeConfirm() {
+            document.getElementById('confirmModal').classList.remove('active');
+            confirmCallback = null;
+        }
+
+        function confirmOk() {
+            document.getElementById('confirmModal').classList.remove('active');
+            if (confirmCallback) {
+                confirmCallback();
+                confirmCallback = null;
+            }
+        }
+
+        // 提示弹窗
+        function showToast(message, type = 'info') {
+            const toastModal = document.getElementById('toastModal');
+            const toastBox = document.getElementById('toastBox');
+            const toastIcon = document.getElementById('toastIcon');
+            const toastMessage = document.getElementById('toastMessage');
+
+            toastBox.className = 'toast-box ' + type;
+            toastIcon.textContent = type === 'success' ? '✓' : type === 'error' ? '✗' : 'ℹ';
+            toastMessage.textContent = message;
+
+            toastModal.classList.add('active');
+        }
+
+        function closeToast() {
+            document.getElementById('toastModal').classList.remove('active');
+        }
+
+        async function loadCases(page = 1) {
+            try {
+                // 更新当前页码
+                currentPage = page;
+                
+                const requirementId = document.getElementById('filterRequirement').value;
+                const status = document.getElementById('filterStatus').value;
+                const priority = document.getElementById('filterPriority').value;
+
+                let url = `/api/cases?page=${page}&limit=10`;
+                if (requirementId) url += `&requirement_id=${requirementId}`;
+                if (status) url += `&status=${status}`;
+                if (priority) url += `&priority=${priority}`;
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                renderCaseList(data.items);
+                renderPagination(data.total, data.page, data.limit);
+            } catch (error) {
+                console.error('加载用例失败:', error);
+            }
+        }
+
+        async function loadCaseStats() {
+            try {
+                const response = await fetch('/api/cases/stats');
+                const stats = await response.json();
+                document.getElementById('totalCases').textContent = stats.total || 0;
+                document.getElementById('draftCases').textContent = stats.pending_review || 0;
+                document.getElementById('pendingCases').textContent = stats.approved || 0;
+                document.getElementById('approvedCases').textContent = stats.rejected || 0;
+            } catch (error) {
+                console.error('加载统计失败:', error);
+            }
+        }
+
+        function renderCaseList(cases) {
+            const tbody = document.getElementById('caseList');
+            if (cases.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8" class="empty-state">
+                            <div class="empty-state-icon">◆</div>
+                            <p>暂无测试用例</p>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = cases.map(c => `
+                <tr>
+                    <td><input type="checkbox" class="checkbox" value="${c.id}" onchange="toggleSelect(${c.id})"></td>
+                    <td>${c.case_id}</td>
+                    <td>${c.module}</td>
+                    <td>${c.name}</td>
+                    <td><span class="priority-badge priority-${c.priority}">${c.priority}</span></td>
+                    <td><span class="status-badge status-${c.status}">${getStatusText(c.status)}</span></td>
+                    <td>${c.requirement_title || '-'}</td>
+                    <td>
+                        <div class="action-btns">
+                            ${c.status === 'pending_review' ? `
+                                <button class="action-btn" onclick="viewCase(${c.id})">查看</button>
+                                <button class="action-btn" onclick="editCase(${c.id})">编辑</button>
+                                <button class="action-btn approve" onclick="approveCase(${c.id})">通过</button>
+                                <button class="action-btn reject" onclick="rejectCase(${c.id})">拒绝</button>
+                                <button class="action-btn" onclick="deleteCase(${c.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);">删除</button>
+                            ` : ''}
+                            ${c.status === 'approved' ? `
+                                <button class="action-btn" onclick="viewCase(${c.id})">查看</button>
+                                <button class="action-btn" onclick="activateCase(${c.id})">激活</button>
+                                <button class="action-btn" onclick="deleteCase(${c.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);">删除</button>
+                            ` : ''}
+                            ${c.status === 'rejected' ? `
+                                <button class="action-btn" onclick="viewCase(${c.id})">查看</button>
+                                <button class="action-btn" onclick="activateCase(${c.id})">激活</button>
+                                <button class="action-btn" onclick="deleteCase(${c.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);">删除</button>
+                            ` : ''}
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function getStatusText(status) {
+            const map = {
+                'pending_review': '待评审',
+                'approved': '已评审',
+                'rejected': '已拒绝'
+            };
+            return map[status] || status;
+        }
+
+        function renderPagination(total, page, limit) {
+            const totalPages = Math.ceil(total / limit);
+            const pagination = document.getElementById('pagination');
+            let html = '';
+            for (let i = 1; i <= totalPages; i++) {
+                html += `<button class="page-btn ${i === page ? 'active' : ''}" onclick="loadCases(${i})">${i}</button>`;
+            }
+            pagination.innerHTML = html;
+        }
+
+        // 删除用例
+        async function deleteCase(id) {
+            showConfirm('确定要删除此用例吗？此操作不可撤销。', async () => {
+                try {
+                    const response = await fetch(`/api/cases/${id}`, { method: 'DELETE' });
+                    if (response.ok) {
+                        loadCases(currentPage);
+                        loadCaseStats();
+                    } else {
+                        showToast('删除失败', 'error');
+                    }
+                } catch (error) {
+                    console.error('删除失败:', error);
+                    showToast('删除失败', 'error');
+                }
+            });
+        }
+
+        // 批量删除
+        async function batchDelete() {
+            if (selectedCases.size === 0) return;
+            showConfirm(`确定要删除选中的 ${selectedCases.size} 项用例吗？此操作不可撤销。`, async () => {
+                try {
+                    const response = await fetch('/api/cases/batch-delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ids: Array.from(selectedCases) })
+                    });
+
+                    if (response.ok) {
+                        selectedCases.clear();
+                        document.getElementById('selectAll').checked = false;
+                        updateBatchActions();
+                        loadCases(currentPage);
+                        loadCaseStats();
+                    } else {
+                        showToast('批量删除失败', 'error');
+                    }
+                } catch (error) {
+                    console.error('批量删除失败:', error);
+                    showToast('批量删除失败', 'error');
+                }
+            });
+        }
+
+        // 导入用例
+        async function importCases(input) {
+            const file = input.files[0];
+            if (!file) return;
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const response = await fetch('/api/import/cases', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    showToast(`导入成功：${data.imported_count} 条用例`, 'success');
+                    loadCases(1);
+                } else {
+                    showToast(`导入失败：${data.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('导入失败:', error);
+                showToast('导入失败', 'error');
+            }
+            
+            input.value = '';
+        }
+
+        // 批量导出
+        async function batchExport() {
+            if (selectedCases.size === 0) {
+                showToast('请先选择要导出的用例', 'info');
+                return;
+            }
+            await exportCases('excel', Array.from(selectedCases));
+        }
+
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('selectAll').checked;
+            const checkboxes = document.querySelectorAll('#caseList .checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = selectAll;
+                const id = parseInt(cb.value);
+                if (selectAll) selectedCases.add(id);
+                else selectedCases.delete(id);
+            });
+            updateBatchActions();
+        }
+
+        function toggleSelect(id) {
+            if (selectedCases.has(id)) selectedCases.delete(id);
+            else selectedCases.add(id);
+            updateBatchActions();
+        }
+
+        function updateBatchActions() {
+            const count = selectedCases.size;
+            document.getElementById('selectedCount').textContent = count;
+            document.getElementById('batchActions').style.display = count > 0 ? 'flex' : 'none';
+        }
+
+        async function viewCase(id) {
+            await loadCaseDetail(id, false);
+        }
+
+        async function editCase(id) {
+            await loadCaseDetail(id, true);
+        }
+
+        async function loadCaseDetail(id, editable) {
+            try {
+                const response = await fetch(`/api/cases/${id}`);
+                const c = await response.json();
+                if (!c || c.error) {
+                    showToast('加载用例详情失败', 'error');
+                    return;
+                }
+
+                currentCaseId = id;
+                document.getElementById('caseId').value = c.case_id;
+                document.getElementById('caseModule').value = c.module;
+                document.getElementById('caseName').value = c.name;
+                document.getElementById('casePriority').value = c.priority;
+                document.getElementById('caseStatus').value = c.status;
+                document.getElementById('casePreconditions').value = c.preconditions || '';
+                document.getElementById('caseSteps').value = (c.test_steps || []).join('\n');
+                document.getElementById('caseExpected').value = (c.expected_results || []).join('\n');
+
+                document.getElementById('caseModal').classList.add('active');
+            } catch (error) {
+                console.error('加载用例详情失败:', error);
+                showToast('加载用例详情失败', 'error');
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('caseModal').classList.remove('active');
+            currentCaseId = null;
+        }
+
+        async function saveCase() {
+            if (!currentCaseId) return;
+
+            const data = {
+                name: document.getElementById('caseName').value,
+                priority: document.getElementById('casePriority').value,
+                status: document.getElementById('caseStatus').value,
+                preconditions: document.getElementById('casePreconditions').value,
+                test_steps: document.getElementById('caseSteps').value.split('\n').filter(s => s.trim()),
+                expected_results: document.getElementById('caseExpected').value.split('\n').filter(s => s.trim())
+            };
+
+            try {
+                const response = await fetch(`/api/cases/${currentCaseId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.ok) {
+                    closeModal();
+                    loadCases(currentPage);
+                } else {
+                    showToast('保存失败', 'error');
+                }
+            } catch (error) {
+                console.error('保存用例失败:', error);
+                showToast('保存失败', 'error');
+            }
+        }
+
+        async function approveCase(id) {
+            await updateCaseStatus(id, 'approved');
+        }
+
+        async function rejectCase(id) {
+            await updateCaseStatus(id, 'rejected');
+        }
+
+        async function activateCase(id) {
+            await updateCaseStatus(id, 'pending_review');
+        }
+
+        async function updateCaseStatus(id, status) {
+            try {
+                const response = await fetch(`/api/cases/${id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status })
+                });
+
+                if (response.ok) {
+                    loadCases(currentPage);
+                    loadCaseStats(); // 刷新统计
+                }
+            } catch (error) {
+                console.error('更新状态失败:', error);
+            }
+        }
+
+        async function batchApprove() {
+            await batchUpdateStatus('approved');
+        }
+
+        async function batchReject() {
+            await batchUpdateStatus('rejected');
+        }
+
+        async function batchUpdateStatus(status) {
+            if (selectedCases.size === 0) return;
+
+            try {
+                const response = await fetch('/api/cases/batch-update-status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        case_ids: Array.from(selectedCases),
+                        status: status
+                    })
+                });
+
+                if (response.ok) {
+                    selectedCases.clear();
+                    document.getElementById('selectAll').checked = false;
+                    updateBatchActions();
+                    loadCases(currentPage);
+                    loadCaseStats(); // 刷新统计
+                }
+            } catch (error) {
+                console.error('批量更新失败:', error);
+            }
+        }
+
+        function applyFilters() {
+            loadCases(1);
+        }
+
+        function resetFilters() {
+            document.getElementById('filterRequirement').value = '';
+            document.getElementById('filterStatus').value = '';
+            document.getElementById('filterPriority').value = '';
+            loadCases(1);
+        }
+
+        // 下载用例导入模板
+        function downloadCaseTemplate() {
+            // 调用后端API下载模板
+            window.location.href = '/api/download/case-template';
+            showToast('模板下载中...', 'info');
+        }
+
+        async function exportCases(format = 'excel', caseIds = null) {
+            try {
+                let body = { format };
+                
+                // 如果指定了用例ID列表
+                if (caseIds && caseIds.length > 0) {
+                    body.case_ids = caseIds;
+                } else {
+                    // 如果没有指定caseIds，使用当前筛选条件
+                    const requirementId = document.getElementById('filterRequirement').value;
+                    const status = document.getElementById('filterStatus').value;
+                    const priority = document.getElementById('filterPriority').value;
+                    
+                    if (requirementId) body.requirement_id = parseInt(requirementId);
+                    if (status) body.status = status;
+                    if (priority) body.priority = priority;
+                }
+                
+                const response = await fetch('/api/export/cases', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    window.location.href = data.download_url;
+                    showToast(`导出成功：${data.exported_count} 条用例`, 'success');
+                } else {
+                    showToast(`导出失败：${data.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('导出失败:', error);
+                showToast('导出失败', 'error');
+            }
+        }
+
+        async function loadRequirements() {
+            try {
+                const response = await fetch('/api/requirements?limit=100');
+                const data = await response.json();
+                const select = document.getElementById('filterRequirement');
+                data.items.forEach(req => {
+                    const option = document.createElement('option');
+                    option.value = req.id;
+                    option.textContent = req.title;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('加载需求列表失败:', error);
+            }
+        }
+
+        // 导入按钮点击事件
+        document.getElementById('importBtn').addEventListener('click', function() {
+            document.getElementById('importFile').click();
+        });
+
+        // 导入文件选择事件
+        document.getElementById('importFile').addEventListener('change', function() {
+            importCases(this);
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadRequirements();
+            
+            // 检查URL参数，如果有requirement_id则自动筛选
+            const urlParams = new URLSearchParams(window.location.search);
+            const requirementId = urlParams.get('requirement_id');
+            
+            if (requirementId) {
+                // 设置筛选器并加载对应的用例
+                document.getElementById('filterRequirement').value = requirementId;
+                loadCases(1);
+                loadCaseStats();
+                
+                // 清除URL参数
+                window.history.replaceState({}, document.title, 'cases.html');
+                
+                // 显示提示
+                showToast(`已自动筛选需求ID: ${requirementId} 的用例`, 'info');
+            } else {
+                // 正常加载全部用例
+                loadCases();
+                loadCaseStats();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,1550 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI配置 // TestGen</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --neon-cyan: #00f5ff;
+            --neon-pink: #ff00ff;
+            --neon-purple: #b829dd;
+            --neon-green: #00ff88;
+            --neon-yellow: #ffee00;
+            --dark-bg: #0a0a0f;
+            --dark-sidebar: #08080c;
+            --dark-card: #12121a;
+            --dark-border: #1e1e2e;
+            --text-primary: #e0e0e0;
+            --text-secondary: #888;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Roboto, monospace;
+            background: var(--dark-bg);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(transparent 50%, rgba(0, 245, 255, 0.02) 50%);
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 1000;
+        }
+        
+        .layout {
+            display: flex;
+            min-height: 100vh;
+        }
+        
+        .sidebar {
+            width: 260px;
+            background: var(--dark-sidebar);
+            border-right: 1px solid var(--dark-border);
+            padding: 30px 0;
+            position: relative;
+        }
+        
+        .sidebar::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 1px;
+            height: 100%;
+            background: linear-gradient(180deg, transparent, var(--neon-cyan), transparent);
+            opacity: 0.5;
+        }
+        
+        .logo {
+            padding: 0 30px 30px;
+            font-size: 28px;
+            font-weight: 900;
+            color: var(--neon-cyan);
+            text-shadow: 0 0 20px var(--neon-cyan);
+            letter-spacing: 4px;
+            border-bottom: 1px solid var(--dark-border);
+        }
+        
+        .nav-menu {
+            list-style: none;
+            padding: 20px 0;
+        }
+        
+        .nav-item {
+            padding: 16px 30px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--text-secondary);
+            border-left: 3px solid transparent;
+            position: relative;
+        }
+        
+        .nav-item:hover {
+            background: rgba(0, 245, 255, 0.05);
+            color: var(--text-primary);
+        }
+        
+        .nav-item.active {
+            background: linear-gradient(90deg, rgba(0, 245, 255, 0.1), transparent);
+            color: var(--neon-cyan);
+            border-left-color: var(--neon-cyan);
+        }
+        
+        .nav-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 4px;
+            height: 20px;
+            background: var(--neon-cyan);
+            box-shadow: 0 0 10px var(--neon-cyan);
+        }
+        
+        .nav-icon {
+            width: 24px;
+            text-align: center;
+            font-size: 18px;
+        }
+        
+        .main-content {
+            flex: 1;
+            padding: 40px;
+            overflow-y: auto;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+        
+        .header h1 {
+            font-size: 32px;
+            color: var(--neon-cyan);
+            text-shadow: 0 0 20px rgba(0, 245, 255, 0.5);
+            letter-spacing: 2px;
+        }
+        
+        .header h1::before {
+            content: '// ';
+            color: var(--neon-pink);
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+        
+        .btn-primary {
+            background: transparent;
+            color: var(--neon-cyan);
+            border: 1px solid var(--neon-cyan);
+            box-shadow: 0 0 20px rgba(0, 245, 255, 0.2);
+        }
+        
+        .btn-primary:hover {
+            background: var(--neon-cyan);
+            color: var(--dark-bg);
+            box-shadow: 0 0 30px rgba(0, 245, 255, 0.5);
+        }
+        
+        .btn-secondary {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--dark-border);
+        }
+        
+        .btn-secondary:hover {
+            border-color: var(--neon-pink);
+            color: var(--neon-pink);
+        }
+        
+        .btn-test {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--dark-border);
+            font-size: 12px;
+            padding: 8px 14px;
+        }
+        
+        .btn-test:hover {
+            border-color: var(--neon-cyan);
+            color: var(--neon-cyan);
+        }
+        
+        .btn-test:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .btn-success {
+            background: transparent;
+            color: var(--neon-green);
+            border: 1px solid var(--neon-green);
+        }
+        
+        .btn-success:hover {
+            background: var(--neon-green);
+            color: var(--dark-bg);
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
+        }
+        
+        .btn-success:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        /* Loading spinner */
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(0, 255, 136, 0.3);
+            border-top-color: var(--neon-green);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 6px;
+            vertical-align: middle;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .card {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+            opacity: 0.5;
+        }
+        
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 24px;
+            color: var(--text-primary);
+            letter-spacing: 1px;
+        }
+        
+        .card-title::after {
+            content: '';
+            display: block;
+            width: 40px;
+            height: 2px;
+            background: var(--neon-cyan);
+            margin-top: 8px;
+        }
+        
+        /* 信息框 */
+        .info-box {
+            background: rgba(0, 245, 255, 0.05);
+            border: 1px solid rgba(0, 245, 255, 0.2);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+            position: relative;
+        }
+        
+        .info-box::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: var(--neon-cyan);
+        }
+        
+        .info-box p {
+            margin: 0;
+            font-size: 14px;
+            color: var(--text-secondary);
+            padding-left: 12px;
+        }
+        
+        .info-box strong {
+            color: var(--neon-cyan);
+        }
+        
+        /* 配置列表 */
+        .config-list {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        
+        .config-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 24px;
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-border);
+            border-radius: 10px;
+            position: relative;
+            transition: all 0.3s;
+        }
+        
+        .config-item:hover {
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 20px rgba(0, 245, 255, 0.1);
+        }
+        
+        .config-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: var(--neon-cyan);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .config-item:hover::before {
+            opacity: 1;
+        }
+        
+        .config-info h4 {
+            font-size: 18px;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+        }
+        
+        .config-info p {
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-family: monospace;
+        }
+        
+        .config-badges {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        
+        .badge {
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border: 1px solid;
+        }
+        
+        .badge-provider {
+            background: rgba(0, 245, 255, 0.1);
+            color: var(--neon-cyan);
+            border-color: rgba(0, 245, 255, 0.3);
+        }
+        
+        .badge-model {
+            background: rgba(184, 41, 221, 0.1);
+            color: var(--neon-purple);
+            border-color: rgba(184, 41, 221, 0.3);
+        }
+        
+        .badge-default {
+            background: rgba(255, 238, 0, 0.1);
+            color: var(--neon-yellow);
+            border-color: rgba(255, 238, 0, 0.3);
+        }
+        
+        .config-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        /* 提供商选项 */
+        .provider-options {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .provider-option {
+            padding: 16px 12px;
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-border);
+            border-radius: 10px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .provider-option:hover {
+            border-color: var(--neon-cyan);
+            transform: translateY(-2px);
+        }
+
+        .provider-option.selected {
+            border-color: var(--neon-cyan);
+            background: rgba(0, 245, 255, 0.1);
+            box-shadow: 0 0 30px rgba(0, 245, 255, 0.2);
+        }
+
+        .provider-option.selected::before {
+            content: '◉';
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            color: var(--neon-cyan);
+            font-size: 12px;
+        }
+
+        .provider-option .icon {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+
+        .provider-option .name {
+            font-weight: 700;
+            font-size: 13px;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .provider-option .desc {
+            font-size: 10px;
+            color: var(--text-secondary);
+        }
+        
+        /* 表单 */
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--neon-cyan);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 12px;
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-border);
+            border-radius: 8px;
+            font-size: 14px;
+            color: var(--text-primary);
+            transition: all 0.3s;
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 15px rgba(0, 245, 255, 0.2);
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        /* 复选框 */
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 16px;
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-border);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .checkbox-group:hover {
+            border-color: var(--neon-cyan);
+        }
+        
+        .checkbox-group input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            accent-color: var(--neon-cyan);
+        }
+        
+        .checkbox-group label {
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+        
+        /* 测试结果 */
+        .test-result {
+            margin-top: 20px;
+            padding: 16px;
+            border-radius: 8px;
+            display: none;
+            border: 1px solid;
+        }
+        
+        .test-result.success {
+            display: block;
+            background: rgba(0, 255, 136, 0.1);
+            color: var(--neon-green);
+            border-color: rgba(0, 255, 136, 0.3);
+        }
+        
+        .test-result.error {
+            display: block;
+            background: rgba(255, 0, 85, 0.1);
+            color: #ff0055;
+            border-color: rgba(255, 0, 85, 0.3);
+        }
+        
+        /* 模态框 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+        }
+        
+        .modal-content::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+        }
+        
+        .modal-header {
+            padding: 24px 30px;
+            border-bottom: 1px solid var(--dark-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-header h3 {
+            color: var(--neon-cyan);
+            font-size: 20px;
+            letter-spacing: 2px;
+        }
+        
+        .modal-body {
+            padding: 30px;
+        }
+        
+        .modal-footer {
+            padding: 20px 30px;
+            border-top: 1px solid var(--dark-border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+        
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: color 0.3s;
+        }
+        
+        .close-btn:hover {
+            color: var(--neon-pink);
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+
+        /* 自定义确认弹窗 */
+        .confirm-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(8px);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .confirm-modal.active { display: flex; }
+
+        .confirm-box {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 420px;
+            position: relative;
+            overflow: hidden;
+            animation: confirmSlideIn 0.2s ease-out;
+        }
+
+        @keyframes confirmSlideIn {
+            from { opacity: 0; transform: scale(0.95) translateY(-20px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .confirm-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--neon-pink), var(--neon-cyan));
+        }
+
+        .confirm-header {
+            padding: 24px 28px 16px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .confirm-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: rgba(255, 0, 85, 0.15);
+            border: 2px solid rgba(255, 0, 85, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            color: #ff0055;
+            flex-shrink: 0;
+        }
+
+        .confirm-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .confirm-body { padding: 0 28px 24px; }
+
+        .confirm-message {
+            font-size: 14px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        .confirm-footer {
+            padding: 16px 28px 24px;
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        .confirm-btn {
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .confirm-btn-cancel {
+            background: transparent;
+            border: 1px solid var(--dark-border);
+            color: var(--text-secondary);
+        }
+
+        .confirm-btn-cancel:hover {
+            border-color: var(--text-secondary);
+            color: var(--text-primary);
+        }
+
+        .confirm-btn-ok {
+            background: transparent;
+            border: 1px solid #ff0055;
+            color: #ff0055;
+        }
+
+        .confirm-btn-ok:hover {
+            background: #ff0055;
+            color: white;
+            box-shadow: 0 0 20px rgba(255, 0, 85, 0.4);
+        }
+
+        /* 提示弹窗 */
+        .toast-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .toast-modal.active { display: flex; }
+
+        .toast-box {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 380px;
+            position: relative;
+            overflow: hidden;
+            animation: toastSlideIn 0.2s ease-out;
+            text-align: center;
+            padding: 40px 30px;
+        }
+
+        @keyframes toastSlideIn {
+            from { opacity: 0; transform: scale(0.95) translateY(-20px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .toast-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+        }
+
+        .toast-box.success { border-color: var(--neon-green); }
+        .toast-box.success::before { background: var(--neon-green); }
+        .toast-box.error { border-color: #ff0055; }
+        .toast-box.error::before { background: #ff0055; }
+        .toast-box.info { border-color: var(--neon-cyan); }
+
+        .toast-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin: 0 auto 20px;
+            background: rgba(0, 245, 255, 0.15);
+            border: 2px solid rgba(0, 245, 255, 0.4);
+            color: var(--neon-cyan);
+        }
+
+        .toast-box.success .toast-icon {
+            background: rgba(0, 255, 136, 0.15);
+            border-color: rgba(0, 255, 136, 0.4);
+            color: var(--neon-green);
+        }
+
+        .toast-box.error .toast-icon {
+            background: rgba(255, 0, 85, 0.15);
+            border-color: rgba(255, 0, 85, 0.4);
+            color: #ff0055;
+        }
+
+        .toast-message {
+            font-size: 16px;
+            color: var(--text-primary);
+            margin-bottom: 24px;
+            line-height: 1.6;
+            white-space: pre-line;
+        }
+
+        .toast-btn {
+            padding: 12px 40px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            background: transparent;
+            border: 1px solid var(--neon-cyan);
+            color: var(--neon-cyan);
+        }
+
+        .toast-btn:hover {
+            background: var(--neon-cyan);
+            color: var(--dark-bg);
+            box-shadow: 0 0 20px rgba(0, 245, 255, 0.4);
+        }
+
+        .toast-box.error .toast-btn {
+            border-color: #ff0055;
+            color: #ff0055;
+        }
+
+        .toast-box.error .toast-btn:hover {
+            background: #ff0055;
+            color: white;
+            box-shadow: 0 0 20px rgba(255, 0, 85, 0.4);
+        }
+
+        .toast-box.success .toast-btn {
+            border-color: var(--neon-green);
+            color: var(--neon-green);
+        }
+
+        .toast-box.success .toast-btn:hover {
+            background: var(--neon-green);
+            color: var(--dark-bg);
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
+        }
+        
+        /* Theme: Dark Minimal */
+        body.theme-minimal {
+            --neon-cyan: #a0a0a0;
+            --neon-pink: #888;
+            --neon-purple: #777;
+            --neon-green: #909090;
+            --neon-yellow: #aaa;
+            --dark-bg: #1a1a1a;
+            --dark-sidebar: #141414;
+            --dark-card: #1e1e1e;
+            --dark-border: #333;
+            --text-primary: #d0d0d0;
+            --text-secondary: #777;
+        }
+
+        body.theme-minimal .logo {
+            text-shadow: none;
+            color: var(--text-primary);
+        }
+
+        body.theme-minimal .nav-item.active {
+            background: rgba(160, 160, 160, 0.1);
+            color: var(--text-primary);
+        }
+
+        body.theme-minimal .nav-item.active::before {
+            background: var(--text-primary);
+            box-shadow: none;
+        }
+
+        body.theme-minimal .header h1 {
+            text-shadow: none;
+            color: var(--text-primary);
+        }
+
+        body.theme-minimal .btn-primary {
+            background: var(--text-primary);
+            color: var(--dark-bg);
+            border-color: var(--text-primary);
+            box-shadow: none;
+        }
+
+        body.theme-minimal .btn-primary:hover {
+            background: transparent;
+            color: var(--text-primary);
+            box-shadow: none;
+        }
+
+        /* Theme: Ocean Blue */
+        body.theme-ocean {
+            --neon-cyan: #00b4d8;
+            --neon-pink: #0077b6;
+            --neon-purple: #023e8a;
+            --neon-green: #48cae4;
+            --neon-yellow: #90e0ef;
+            --dark-bg: #0a1929;
+            --dark-sidebar: #071420;
+            --dark-card: #0d1f33;
+            --dark-border: #1a3650;
+            --text-primary: #caf0f8;
+            --text-secondary: #90e0ef;
+        }
+
+        body.theme-ocean .logo {
+            color: var(--neon-cyan);
+            text-shadow: 0 0 20px rgba(0, 180, 216, 0.5);
+        }
+
+        body.theme-ocean .nav-item.active {
+            background: linear-gradient(90deg, rgba(0, 180, 216, 0.1), transparent);
+            color: var(--neon-cyan);
+            border-left-color: var(--neon-cyan);
+        }
+
+        body.theme-ocean .nav-item.active::before {
+            background: var(--neon-cyan);
+            box-shadow: 0 0 10px var(--neon-cyan);
+        }
+
+        body.theme-ocean .header h1 {
+            color: var(--neon-cyan);
+            text-shadow: 0 0 20px rgba(0, 180, 216, 0.5);
+        }
+
+        body.theme-ocean .btn-primary {
+            color: var(--neon-cyan);
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 20px rgba(0, 180, 216, 0.2);
+        }
+
+        body.theme-ocean .btn-primary:hover {
+            background: var(--neon-cyan);
+            color: var(--dark-bg);
+            box-shadow: 0 0 30px rgba(0, 180, 216, 0.5);
+        }
+
+        .sidebar {
+            padding-bottom: 220px;
+        }
+    </style>
+</head>
+<body>
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="logo">◈ TestGen</div>
+            <ul class="nav-menu">
+                <li class="nav-item" onclick="location.href='requirements.html'">
+                    <span class="nav-icon">◉</span>
+                    <span>需求管理</span>
+                </li>
+                <li class="nav-item" onclick="location.href='cases.html'">
+                    <span class="nav-icon">◆</span>
+                    <span>用例管理</span>
+                </li>
+                <li class="nav-item" onclick="location.href='rag.html'">
+                    <span class="nav-icon">◈</span>
+                    <span>RAG检索</span>
+                </li>
+                <li class="nav-item" onclick="location.href='prompts.html'">
+                    <span class="nav-icon">▤</span>
+                    <span>Prompt管理</span>
+                </li>
+                <li class="nav-item active" onclick="location.href='config.html'">
+                    <span class="nav-icon">▣</span>
+                    <span>AI配置</span>
+                </li>
+            </ul>
+        </aside>
+
+        <main class="main-content">
+            <div class="header">
+                <h1>AI模型配置</h1>
+                <button class="btn btn-primary" onclick="openAddModal()">+ 添加配置</button>
+            </div>
+
+            <div class="info-box">
+                <p>◉ <strong>提示</strong>：配置LLM模型后，系统才能自动生成测试用例。支持通义千问、DeepSeek、OpenAI等多种模型。</p>
+            </div>
+
+            <!-- 配置列表 -->
+            <div class="card">
+                <div class="card-title">模型配置列表</div>
+                <div class="config-list" id="configList">
+                    <div class="empty-state">
+                        <div style="font-size: 48px; margin-bottom: 16px; opacity: 0.3;">▣</div>
+                        <p>暂无LLM配置，请点击右上角添加</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 添加配置模态框 -->
+    <div class="modal" id="addModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">// 添加LLM配置</h3>
+                <button class="close-btn" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="provider-options">
+                    <div class="provider-option selected" onclick="selectProvider('qwen')" data-provider="qwen">
+                        <div class="icon">◉</div>
+                        <div class="name">通义千问</div>
+                        <div class="desc">阿里云</div>
+                    </div>
+                    <div class="provider-option" onclick="selectProvider('deepseek')" data-provider="deepseek">
+                        <div class="icon">◆</div>
+                        <div class="name">DeepSeek</div>
+                        <div class="desc">深度求索</div>
+                    </div>
+                    <div class="provider-option" onclick="selectProvider('kimi')" data-provider="kimi">
+                        <div class="icon">★</div>
+                        <div class="name">KIMI</div>
+                        <div class="desc">月之暗面</div>
+                    </div>
+                    <div class="provider-option" onclick="selectProvider('openai')" data-provider="openai">
+                        <div class="icon">◈</div>
+                        <div class="name">OpenAI</div>
+                        <div class="desc">GPT系列</div>
+                    </div>
+                    <div class="provider-option" onclick="selectProvider('zhipu')" data-provider="zhipu">
+                        <div class="icon">●</div>
+                        <div class="name">智谱AI</div>
+                        <div class="desc">GLM系列</div>
+                    </div>
+                    <div class="provider-option" onclick="selectProvider('minimax')" data-provider="minimax">
+                        <div class="icon">■</div>
+                        <div class="name">Minimax</div>
+                        <div class="desc">abab系列</div>
+                    </div>
+                    <div class="provider-option" onclick="selectProvider('iflow')" data-provider="iflow">
+                        <div class="icon">◇</div>
+                        <div class="name">iFlow</div>
+                        <div class="desc">阿里心流</div>
+                    </div>
+                    <div class="provider-option" onclick="selectProvider('uniaix')" data-provider="uniaix">
+                        <div class="icon">▲</div>
+                        <div class="name">UniAIX</div>
+                        <div class="desc">Claude中转</div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>配置名称</label>
+                    <input type="text" class="form-control" id="configName" placeholder="如: qwen-turbo-prod">
+                </div>
+
+                <div class="form-group">
+                    <label>API Key</label>
+                    <input type="password" class="form-control" id="apiKey" placeholder="输入您的API密钥">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>模型ID</label>
+                        <input type="text" class="form-control" id="modelId" placeholder="如: qwen-turbo">
+                    </div>
+                    <div class="form-group">
+                        <label>超时时间(秒)</label>
+                        <input type="number" class="form-control" id="timeout" value="30">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Base URL <span style="color: #ff0055;">*</span></label>
+                    <input type="text" class="form-control" id="baseUrl" placeholder="请输入API接口地址" required>
+                    <small style="color: var(--text-secondary); font-size: 11px; margin-top: 4px; display: block;">必填项，测试和使用时必须提供有效的BASE_URL</small>
+                </div>
+
+                <div class="checkbox-group" onclick="toggleCheckbox(event)">
+                    <input type="checkbox" id="isDefault" onclick="event.stopPropagation()">
+                    <label for="isDefault" onclick="event.stopPropagation()">设为默认配置</label>
+                </div>
+
+                <div class="test-result" id="testResult"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn btn-success" onclick="testConnection()">测试连接</button>
+                <button class="btn btn-primary" onclick="saveConfig()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 自定义确认弹窗 -->
+    <div class="confirm-modal" id="confirmModal">
+        <div class="confirm-box">
+            <div class="confirm-header">
+                <div class="confirm-icon">!</div>
+                <div class="confirm-title">确认操作</div>
+            </div>
+            <div class="confirm-body">
+                <div class="confirm-message" id="confirmMessage">确定要执行此操作吗？</div>
+            </div>
+            <div class="confirm-footer">
+                <button class="confirm-btn confirm-btn-cancel" onclick="closeConfirm()">取消</button>
+                <button class="confirm-btn confirm-btn-ok" onclick="confirmOk()">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 提示弹窗 -->
+    <div class="toast-modal" id="toastModal">
+        <div class="toast-box" id="toastBox">
+            <div class="toast-icon" id="toastIcon">✓</div>
+            <div class="toast-message" id="toastMessage">操作成功</div>
+            <button class="toast-btn" onclick="closeToast()">确定</button>
+        </div>
+    </div>
+
+    <script>
+        let selectedProvider = 'qwen';
+        let configs = [];
+        let confirmCallback = null;
+        let editingConfigId = null;  // 当前编辑的配置ID
+
+        // 自定义确认弹窗
+        function showConfirm(message, onConfirm) {
+            document.getElementById('confirmMessage').textContent = message;
+            document.getElementById('confirmModal').classList.add('active');
+            confirmCallback = onConfirm;
+        }
+
+        function closeConfirm() {
+            document.getElementById('confirmModal').classList.remove('active');
+            confirmCallback = null;
+        }
+
+        function confirmOk() {
+            document.getElementById('confirmModal').classList.remove('active');
+            if (confirmCallback) {
+                confirmCallback();
+                confirmCallback = null;
+            }
+        }
+
+        // 提示弹窗
+        function showToast(message, type = 'info') {
+            const toastModal = document.getElementById('toastModal');
+            const toastBox = document.getElementById('toastBox');
+            const toastIcon = document.getElementById('toastIcon');
+            const toastMessage = document.getElementById('toastMessage');
+
+            toastBox.className = 'toast-box ' + type;
+            toastIcon.textContent = type === 'success' ? '✓' : type === 'error' ? '✗' : 'ℹ';
+            toastMessage.textContent = message;
+
+            toastModal.classList.add('active');
+        }
+
+        function closeToast() {
+            document.getElementById('toastModal').classList.remove('active');
+        }
+
+        function toggleCheckbox(event) {
+            const checkbox = document.getElementById('isDefault');
+            checkbox.checked = !checkbox.checked;
+        }
+
+        async function loadConfigs() {
+            try {
+                const response = await fetch('/api/llm-configs');
+                const data = await response.json();
+                configs = data.configs || [];
+                renderConfigs();
+            } catch (error) {
+                console.error('加载配置失败:', error);
+            }
+        }
+
+        function renderConfigs() {
+            const container = document.getElementById('configList');
+            if (configs.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div style="font-size: 48px; margin-bottom: 16px; opacity: 0.3;">▣</div>
+                        <p>暂无LLM配置，请点击右上角添加</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = configs.map(c => `
+                <div class="config-item">
+                    <div class="config-info">
+                        <h4>${c.name} ${c.is_default ? '<span style="color: var(--neon-yellow);">★</span>' : ''}</h4>
+                        <p>${c.model_id}</p>
+                        <div class="config-badges">
+                            <span class="badge badge-provider">${getProviderName(c.provider)}</span>
+                            <span class="badge badge-model">${c.model_id}</span>
+                            ${c.is_default ? '<span class="badge badge-default">默认</span>' : ''}
+                        </div>
+                    </div>
+                    <div class="config-actions">
+                        <button class="btn btn-test" onclick="testConfigFromList(${c.id})">测试</button>
+                        <button class="btn btn-secondary" onclick="editConfig(${c.id})">编辑</button>
+                        ${!c.is_default ? `<button class="btn btn-secondary" onclick="setDefault(${c.id})">设为默认</button>` : `<button class="btn btn-secondary" onclick="unsetDefault(${c.id})">取消默认</button>`}
+                        <button class="btn btn-secondary" onclick="deleteConfig(${c.id})">删除</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function getProviderName(provider) {
+            const map = {
+                'qwen': '通义千问',
+                'deepseek': 'DeepSeek',
+                'kimi': 'KIMI',
+                'openai': 'OpenAI',
+                'zhipu': '智谱AI',
+                'minimax': 'Minimax',
+                'iflow': 'iFlow',
+                'uniaix': 'UniAIX中转'
+            };
+            return map[provider] || provider;
+        }
+
+        function selectProvider(provider) {
+            selectedProvider = provider;
+            document.querySelectorAll('.provider-option').forEach(opt => {
+                opt.classList.toggle('selected', opt.dataset.provider === provider);
+            });
+
+            const modelMap = {
+                'qwen': 'qwen-max',
+                'deepseek': 'deepseek-v3-250324',
+                'kimi': 'kimi-k2.5',
+                'openai': 'gpt-5.1',
+                'zhipu': 'glm-5.1',
+                'minimax': 'minimax-2.7',
+                'iflow': 'qwen3-coder-plus',
+                'uniaix': 'claude-opus-4-6'
+            };
+
+            // 预设的base_url
+            const baseUrlMap = {
+                'qwen': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+                'deepseek': 'https://api.deepseek.com/v1',
+                'kimi': 'https://api.moonshot.cn/v1',
+                'openai': 'https://api.openai.com/v1',
+                'zhipu': 'https://open.bigmodel.cn/api/paas/v4',
+                'minimax': 'https://api.minimax.chat/v1',
+                'iflow': 'https://apis.iflow.cn/v1',
+                'uniaix': 'https://www.uniaix.com'
+            };
+
+            // 只有在新增模式（非编辑模式）或baseUrl为空时才自动填充
+            const baseUrlInput = document.getElementById('baseUrl');
+            if (!editingConfigId || !baseUrlInput.value) {
+                document.getElementById('modelId').value = modelMap[provider] || '';
+                baseUrlInput.value = baseUrlMap[provider] || '';
+            }
+        }
+
+        function openAddModal() {
+            editingConfigId = null;
+            document.getElementById('modalTitle').textContent = '// 添加LLM配置';
+            document.getElementById('addModal').classList.add('active');
+            selectProvider('qwen');
+        }
+
+        async function editConfig(id) {
+            const config = configs.find(c => c.id === id);
+            if (!config) return;
+
+            editingConfigId = id;
+            document.getElementById('modalTitle').textContent = '// 编辑LLM配置';
+
+            // 先填充表单（在设置提供商之前，避免被覆盖）
+            document.getElementById('configName').value = config.name;
+            document.getElementById('apiKey').value = config.api_key || '';
+            document.getElementById('modelId').value = config.model_id;
+            document.getElementById('baseUrl').value = config.base_url || '';
+            document.getElementById('timeout').value = config.timeout || 30;
+            document.getElementById('isDefault').checked = config.is_default;
+            document.getElementById('testResult').className = 'test-result';
+
+            // 设置提供商（编辑模式下不会覆盖已有的base_url）
+            selectProvider(config.provider);
+
+            document.getElementById('addModal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('addModal').classList.remove('active');
+            document.getElementById('configName').value = '';
+            document.getElementById('apiKey').value = '';
+            document.getElementById('modelId').value = '';
+            document.getElementById('baseUrl').value = '';
+            document.getElementById('timeout').value = '30';
+            document.getElementById('isDefault').checked = false;
+            document.getElementById('testResult').className = 'test-result';
+            editingConfigId = null;
+        }
+
+        async function testConnection() {
+            const resultDiv = document.getElementById('testResult');
+            const testBtn = event.target;
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const modelId = document.getElementById('modelId').value.trim();
+            const baseUrl = document.getElementById('baseUrl').value.trim();
+            const timeout = parseInt(document.getElementById('timeout').value) || 30;
+
+            if (!baseUrl) {
+                resultDiv.className = 'test-result error';
+                resultDiv.textContent = '✗ 请先填写Base URL（必填）';
+                return;
+            }
+
+            if (!apiKey) {
+                resultDiv.className = 'test-result error';
+                resultDiv.textContent = '✗ 请先填写API Key';
+                return;
+            }
+
+            // 设置loading状态
+            testBtn.disabled = true;
+            const originalText = testBtn.textContent;
+            testBtn.innerHTML = '<span class="spinner"></span>测试中...';
+            resultDiv.className = 'test-result';
+            resultDiv.textContent = '正在测试连接...';
+
+            try {
+                const response = await fetch('/api/llm-configs/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        provider: selectedProvider,
+                        base_url: baseUrl,
+                        api_key: apiKey,
+                        model_id: modelId,
+                        timeout: timeout
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    resultDiv.className = 'test-result success';
+                    resultDiv.textContent = '◉ 连接成功';
+                } else {
+                    resultDiv.className = 'test-result error';
+                    resultDiv.textContent = '✗ ' + (data.error || '连接失败');
+                }
+            } catch (error) {
+                console.error('测试连接失败:', error);
+                resultDiv.className = 'test-result error';
+                resultDiv.textContent = '✗ 测试失败: ' + error.message;
+            } finally {
+                // 恢复按钮状态
+                testBtn.disabled = false;
+                testBtn.textContent = originalText;
+            }
+        }
+
+        async function saveConfig() {
+            const name = document.getElementById('configName').value.trim();
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const modelId = document.getElementById('modelId').value.trim();
+            const baseUrl = document.getElementById('baseUrl').value.trim();
+            const timeout = parseInt(document.getElementById('timeout').value) || 30;
+            const isDefault = document.getElementById('isDefault').checked;
+
+            if (!name || !apiKey || !modelId || !baseUrl) {
+                showToast('请填写完整信息（Base URL为必填）', 'info');
+                return;
+            }
+
+            try {
+                const isEditing = editingConfigId !== null;
+                const url = isEditing ? `/api/llm-configs/${editingConfigId}` : '/api/llm-configs';
+                const method = isEditing ? 'PATCH' : 'POST';
+
+                const body = {
+                    name,
+                    api_key: apiKey,
+                    model_id: modelId,
+                    base_url: baseUrl,
+                    timeout,
+                    is_default: isDefault
+                };
+
+                // 新增时需要provider
+                if (!isEditing) {
+                    body.provider = selectedProvider;
+                } else {
+                    // 编辑时也传递provider
+                    body.provider = selectedProvider;
+                }
+
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+
+                if (response.ok) {
+                    closeModal();
+                    loadConfigs();
+                    showToast(isEditing ? '配置更新成功' : '配置创建成功', 'success');
+                } else {
+                    const data = await response.json();
+                    showToast(`保存失败：${data.error || '未知错误'}`, 'error');
+                }
+            } catch (error) {
+                console.error('保存配置失败:', error);
+                showToast('保存失败', 'error');
+            }
+        }
+
+        async function setDefault(id) {
+            try {
+                const response = await fetch(`/api/llm-configs/${id}/set-default`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    showToast('已设为默认配置', 'success');
+                    loadConfigs();
+                } else {
+                    const data = await response.json();
+                    showToast(`设置失败：${data.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('设置默认失败:', error);
+                showToast('设置默认失败', 'error');
+            }
+        }
+
+        async function testConfigFromList(id) {
+            const config = configs.find(c => c.id === id);
+            if (!config) {
+                showToast('配置不存在', 'error');
+                return;
+            }
+
+            // 找到对应的测试按钮
+            const configItem = event.target.closest('.config-item');
+            const testBtn = configItem.querySelector('.btn-test');
+            if (!testBtn) return;
+
+            // 设置loading状态
+            testBtn.disabled = true;
+            const originalText = testBtn.textContent;
+            testBtn.innerHTML = '<span class="spinner"></span>';
+
+            try {
+                const response = await fetch('/api/llm-configs/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        provider: config.provider,
+                        base_url: config.base_url || '',
+                        api_key: config.api_key || '',
+                        model_id: config.model_id,
+                        timeout: config.timeout || 30
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    showToast(`[${config.name}] 连接成功\n响应: ${data.response.substring(0, 100)}`, 'success');
+                } else {
+                    showToast(`[${config.name}] 连接失败\n${data.error || '未知错误'}`, 'error');
+                }
+            } catch (error) {
+                console.error('测试连接失败:', error);
+                showToast(`[${config.name}] 测试失败: ${error.message}`, 'error');
+            } finally {
+                // 恢复按钮状态
+                testBtn.disabled = false;
+                testBtn.textContent = originalText;
+            }
+        }
+
+        async function unsetDefault(id) {
+            try {
+                const response = await fetch(`/api/llm-configs/${id}/unset-default`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    showToast('已取消默认配置', 'success');
+                    loadConfigs();
+                } else {
+                    const data = await response.json();
+                    showToast(`取消失败：${data.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('取消默认失败:', error);
+                showToast('取消默认失败', 'error');
+            }
+        }
+
+        async function deleteConfig(id) {
+            showConfirm('确定要删除此LLM配置吗？此操作不可撤销。', async () => {
+                try {
+                    const response = await fetch(`/api/llm-configs/${id}`, { method: 'DELETE' });
+                    if (response.ok) {
+                        loadConfigs();
+                    } else {
+                        showToast('删除失败', 'error');
+                    }
+                } catch (error) {
+                    console.error('删除失败:', error);
+                    showToast('删除失败', 'error');
+                }
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadConfigs();
+        });
+    </script>
+</body>
+</html>
