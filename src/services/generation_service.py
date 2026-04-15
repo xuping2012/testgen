@@ -1100,10 +1100,26 @@ class GenerationService:
             
             self.db_session.commit()
             
-            # 从 TC_000001 开始编号
+            # 查询数据库中全局最大的case_id序号
+            # 这样可以确保不会与其他需求的用例ID冲突
+            from sqlalchemy import func
+            max_case = self.db_session.query(TestCase).order_by(TestCase.id.desc()).first()
+            
+            if max_case and max_case.case_id.startswith('TC_'):
+                try:
+                    # 提取序号部分
+                    last_num = int(max_case.case_id[3:])
+                    start_num = last_num + 1
+                    print(f"从全局最大用例序号 {last_num} 之后开始编号，起始: {start_num}")
+                except:
+                    start_num = 1
+            else:
+                start_num = 1
+            
+            # 使用全局唯一的序号生成用例编号
             for idx, case_data in enumerate(test_cases):
                 # 生成唯一的用例编号：TC + 6位序号
-                case_id = f"TC_{idx + 1:06d}"
+                case_id = f"TC_{start_num + idx:06d}"
 
                 # 处理测试步骤和预期结果（支持字符串或列表）
                 test_steps = case_data.get('test_steps', [])
