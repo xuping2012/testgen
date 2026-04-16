@@ -930,12 +930,56 @@ class GenerationService:
                 else:
                     self.update_progress(task_id, 60.0, "🤖 使用模拟数据生成...")
                     test_cases = self._mock_generate_cases(requirement_content)
-                
+
                 self.update_progress(task_id, 90.0, f"✅ LLM生成完成 - 生成{len(test_cases)}条用例")
-                
-                # 阶段3: 暂存结果（不直接入库）
+
+                # 阶段3: 置信度计算 + 来源标注解析
+                self.update_progress(task_id, 91.0, "🔍 正在计算置信度和解析引用来源...")
+                confidence_stats = {}
+                citation_batch_stats = {}
+                try:
+                    from src.services.confidence_calculator import ConfidenceCalculator
+                    from src.services.citation_parser import CitationParser
+
+                    calculator = ConfidenceCalculator()
+                    parser = CitationParser(vector_store=self.vector_store)
+
+                    # 解析引用来源
+                    test_cases, citation_batch_stats = parser.parse_all_cases(test_cases)
+
+                    # 计算置信度
+                    confidence_levels = {'A': 0, 'B': 0, 'C': 0, 'D': 0}
+                    requires_review_count = 0
+                    for case in test_cases:
+                        conf_result = calculator.calculate(
+                            case,
+                            requirement_content,
+                            rag_results=rag_stats,
+                        )
+                        case['confidence_score'] = conf_result.get('confidence_score')
+                        case['confidence_level'] = conf_result.get('confidence_level')
+                        case['confidence_breakdown'] = conf_result.get('breakdown', {})
+                        # 低置信度用例标记需要人工审核
+                        if conf_result.get('requires_human_review'):
+                            case['requires_human_review'] = True
+                            requires_review_count += 1
+                        level = conf_result.get('confidence_level')
+                        if level in confidence_levels:
+                            confidence_levels[level] += 1
+
+                    confidence_stats = {
+                        'by_level': confidence_levels,
+                        'requires_review_count': requires_review_count,
+                    }
+                    print(f"[置信度] 计算完成: {confidence_levels}, 需人工审核: {requires_review_count}条")
+                except Exception as e:
+                    print(f"[置信度/引用] 计算失败，忽略继续: {e}")
+                    confidence_stats = {'error': str(e)}
+                    citation_batch_stats = {'error': str(e)}
+
+                # 阶段4: 暂存结果（不直接入库）
                 self.update_progress(task_id, 92.0, "💾 正在暂存测试用例...")
-                
+
                 # 将用例暂存到 task.result
                 if test_cases:
                     with self._lock:
@@ -943,18 +987,20 @@ class GenerationService:
                         if task_obj:
                             task_obj.result['test_cases'] = test_cases
                             task_obj.case_count = len(test_cases)
-                    
+
                     self.update_progress(task_id, 98.0, f"✅ 已暂存{len(test_cases)}条测试用例，待确认后入库")
-                
+
                 # 完成任务（状态为 completed_pending_review）
                 self.update_progress(task_id, 100.0, "✅ 生成完成，等待用户确认入库")
                 self.complete_task(task_id, {
                     "case_count": len(test_cases),
                     "total_count": len(test_cases),
                     "rag_stats": rag_stats,
+                    "confidence_stats": confidence_stats,
+                    "citation_stats": citation_batch_stats,
                     "status": "completed_pending_review"
                 })
-                
+
                 # 注意：不再自动更新需求状态和保存用例到数据库
                 # 等待用户点击"全部入库"后再执行
                         
@@ -1488,7 +1534,10 @@ class GenerationService:
                     priority=priority,
                     case_type=case_data.get('case_type', '功能'),
                     requirement_clause=case_data.get('requirement_clause', ''),
-                    status=CaseStatus.PENDING_REVIEW
+                    status=CaseStatus.PENDING_REVIEW,
+                    confidence_score=case_data.get('confidence_score'),
+                    confidence_level=case_data.get('confidence_level'),
+                    citations=case_data.get('citations'),
                 )
                 self.db_session.add(test_case)
                 saved_count += 1
@@ -2641,22 +2690,22 @@ class GenerationService:
     def _load_prompt_template(self, template_type: str) -> Optional[str]:
         """
         从数据库加载prompt模板
-        
+
         Args:
             template_type: 模板类型（如 'generate', 'generate_optimized', 'review'）
-            
+
         Returns:
             模板内容字符串，如果未找到则返回None
         """
         if not self.db_session:
             return None
-        
+
         try:
             from src.database.models import PromptTemplate
             template = self.db_session.query(PromptTemplate).filter(
                 PromptTemplate.template_type == template_type
             ).first()
-            
+
             if template:
                 print(f"[Prompt加载] 从数据库加载模板: {template.name} (类型: {template_type})")
                 return template.template
@@ -2666,19 +2715,52 @@ class GenerationService:
         except Exception as e:
             print(f"[Prompt加载] 加载模板失败: {e}")
             return None
+
+    def validate_prompt_template(self, template: str) -> Dict[str, Any]:
+        """
+        验证Prompt模板是否包含必要的占位符。
+
+        Args:
+            template: 模板内容字符串
+
+        Returns:
+            {"valid": bool, "missing": List[str], "message": str}
+        """
+        required_placeholders = ['{requirement_content}', '{rag_context}', '{test_plan}']
+        missing = [p for p in required_placeholders if p not in template]
+        valid = len(missing) == 0
+        return {
+            'valid': valid,
+            'missing': missing,
+            'message': '模板验证通过' if valid else f'缺少占位符: {", ".join(missing)}',
+        }
     
     def _build_optimized_generation_prompt(self, requirement_content: str,
                                            rag_context: str,
                                            test_plan: str,
-                                           requirement_analysis: Dict[str, Any]) -> str:
+                                           requirement_analysis: Dict[str, Any],
+                                           prompt_type: str = 'generate_optimized',
+                                           rag_items: Optional[Dict[str, Any]] = None) -> str:
         """
         构建优化的生成Prompt（包含RAG上下文和测试规划）
-        
+
         优先从数据库加载模板，如果未找到则使用硬编码默认值
+
+        Args:
+            prompt_type: 模板类型，默认'generate_optimized'，可选'generate_with_citation'
+            rag_items: 原始RAG召回项（含source ID），用于在引用模板中注入带来源ID的上下文
         """
-        # 尝试从数据库加载优化版模板
-        db_template = self._load_prompt_template('generate_optimized')
-        
+        # 如果是引用模板，使用带来源ID的RAG上下文
+        if prompt_type == 'generate_with_citation' and rag_items:
+            rag_context = self._build_rag_context_with_source_ids(rag_items)
+
+        # 尝试从数据库加载指定类型的模板
+        db_template = self._load_prompt_template(prompt_type)
+
+        # 如果指定类型未找到且不是默认类型，回退到优化版模板
+        if not db_template and prompt_type != 'generate_optimized':
+            db_template = self._load_prompt_template('generate_optimized')
+
         if db_template:
             # 使用数据库模板，替换占位符
             try:
@@ -2686,27 +2768,80 @@ class GenerationService:
                 rag_section = ""
                 if rag_context:
                     rag_section = rag_context
-                
+
                 # 构建测试规划部分
                 test_plan_section = ""
                 if test_plan:
                     test_plan_section = test_plan
-                
+
                 # 替换占位符
                 prompt = db_template.replace('{requirement_content}', requirement_content)
                 prompt = prompt.replace('{rag_context}', rag_section)
                 prompt = prompt.replace('{test_plan}', test_plan_section)
-                
-                print(f"[Prompt构建] 使用数据库模板生成prompt")
+
+                print(f"[Prompt构建] 使用数据库模板生成prompt (类型: {prompt_type})")
                 return prompt
             except Exception as e:
                 print(f"[Prompt构建] 数据库模板替换失败，使用默认模板: {e}")
                 # 回退到硬编码默认值
-        
+
         # 默认硬编码模板（回退方案）
         return self._build_default_optimized_prompt(
             requirement_content, rag_context, test_plan, requirement_analysis
         )
+
+    def _build_rag_context_with_source_ids(self, rag_items: Dict[str, Any]) -> str:
+        """
+        构建带来源ID标注的RAG上下文（用于引用标注模板）
+
+        在每个召回项目旁边注明来源ID，供LLM在生成时引用。
+
+        Args:
+            rag_items: _perform_rag_recall_with_ids() 返回的原始召回项
+
+        Returns:
+            包含来源ID标注的RAG上下文字符串
+        """
+        rag_context = ""
+
+        cases = rag_items.get('cases', [])
+        defects = rag_items.get('defects', [])
+        requirements = rag_items.get('requirements', [])
+
+        if cases:
+            rag_context += "\n\n## 召回的历史测试用例（请在生成时引用来源ID）\n"
+            rag_context += "> 引用格式示例：`[citation: #CASE-001]`\n\n"
+            for i, case in enumerate(cases, 1):
+                source_id = case.get('id', f'CASE-{i:03d}')
+                if not source_id.startswith('#'):
+                    source_id = f'#{source_id}'
+                rag_context += f"### 历史用例 {i} (来源ID: `{source_id}`)\n"
+                rag_context += case.get('content', '')
+                rag_context += "\n\n"
+
+        if defects:
+            rag_context += "\n## 召回的历史缺陷场景（请在生成时引用来源ID）\n"
+            rag_context += "> 引用格式示例：`[citation: #DEFECT-001]`\n\n"
+            for i, defect in enumerate(defects, 1):
+                source_id = defect.get('id', f'DEFECT-{i:03d}')
+                if not source_id.startswith('#'):
+                    source_id = f'#{source_id}'
+                rag_context += f"### 历史缺陷 {i} (来源ID: `{source_id}`)\n"
+                rag_context += defect.get('content', '')
+                rag_context += "\n\n"
+
+        if requirements:
+            rag_context += "\n## 召回的相似需求（请在生成时引用来源ID）\n"
+            rag_context += "> 引用格式示例：`[citation: #REQ-001]`\n\n"
+            for i, req in enumerate(requirements, 1):
+                source_id = req.get('id', f'REQ-{i:03d}')
+                if not source_id.startswith('#'):
+                    source_id = f'#{source_id}'
+                rag_context += f"### 相关需求 {i} (来源ID: `{source_id}`)\n"
+                rag_context += req.get('content', '')
+                rag_context += "\n\n"
+
+        return rag_context
     
     def _build_default_optimized_prompt(self, requirement_content: str,
                                          rag_context: str,

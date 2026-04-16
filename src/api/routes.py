@@ -508,28 +508,45 @@ def list_cases():
     """
     查询用例列表
     GET /api/cases?requirement_id=1&status=pending_review&priority=P1&page=1&limit=10
+                  &confidence_level=A&sort=confidence_score&order=desc
     """
     try:
         from src.database.models import TestCase, Requirement
-        
+
         requirement_id = request.args.get('requirement_id', type=int)
         status = request.args.get('status')
         priority = request.args.get('priority')
+        confidence_level = request.args.get('confidence_level')
+        sort_field = request.args.get('sort')
+        order = request.args.get('order', 'desc')
         page = request.args.get('page', 1, type=int)
         limit = request.args.get('limit', 10, type=int)
-        
+
         query = db_session.query(TestCase).outerjoin(Requirement, TestCase.requirement_id == Requirement.id)
-        
+
         if requirement_id:
             query = query.filter(TestCase.requirement_id == requirement_id)
         if status:
             query = query.filter(TestCase.status == status)
         if priority:
             query = query.filter(TestCase.priority == priority)
-        
+        # 按置信度等级筛选
+        if confidence_level:
+            if confidence_level == '无':
+                query = query.filter(TestCase.confidence_level.is_(None))
+            else:
+                query = query.filter(TestCase.confidence_level == confidence_level)
+
+        # 按置信度分数排序
+        if sort_field == 'confidence_score':
+            if order == 'asc':
+                query = query.order_by(TestCase.confidence_score.asc().nullslast())
+            else:
+                query = query.order_by(TestCase.confidence_score.desc().nullslast())
+
         total = query.count()
         cases = query.offset((page - 1) * limit).limit(limit).all()
-        
+
         return jsonify({
             "items": [{
                 "id": c.id,
@@ -544,13 +561,15 @@ def list_cases():
                 "preconditions": c.preconditions,
                 "test_steps": c.test_steps,
                 "expected_results": c.expected_results,
-                "test_point": c.test_point
+                "test_point": c.test_point,
+                "confidence_score": c.confidence_score,
+                "confidence_level": c.confidence_level,
             } for c in cases],
             "total": total,
             "page": page,
             "limit": limit
         })
-        
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -621,9 +640,68 @@ def get_case(case_id):
             "requirement_id": case.requirement_id,
             "requirement_title": case.requirement.title if case.requirement else None,
             "created_at": case.created_at.isoformat() if case.created_at else None,
-            "updated_at": case.updated_at.isoformat() if case.updated_at else None
+            "updated_at": case.updated_at.isoformat() if case.updated_at else None,
+            "confidence_score": case.confidence_score,
+            "confidence_level": case.confidence_level,
+            "citations": case.citations,
         })
-        
+
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/cases/<int:case_id>/confidence', methods=['GET'])
+def get_case_confidence(case_id):
+    """
+    获取用例置信度详情
+    GET /api/cases/{case_id}/confidence
+    """
+    try:
+        from src.database.models import TestCase
+        case = db_session.query(TestCase).get(case_id)
+        if not case:
+            return jsonify({"error": "用例不存在"}), 404
+
+        citations = case.citations or []
+        breakdown = {}
+        if citations and isinstance(citations, list):
+            # 从 citations 中提取 breakdown（如果存储了的话）
+            first = citations[0] if citations else {}
+            breakdown = first.get('breakdown', {})
+
+        return jsonify({
+            "case_id": case.id,
+            "confidence_score": case.confidence_score,
+            "confidence_level": case.confidence_level,
+            "requires_human_review": case.confidence_level in ('C', 'D') if case.confidence_level else None,
+            "breakdown": breakdown,
+        })
+
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/cases/<int:case_id>/citations', methods=['GET'])
+def get_case_citations(case_id):
+    """
+    获取用例引用来源列表
+    GET /api/cases/{case_id}/citations
+    """
+    try:
+        from src.database.models import TestCase
+        case = db_session.query(TestCase).get(case_id)
+        if not case:
+            return jsonify({"error": "用例不存在"}), 404
+
+        citations = case.citations or []
+        return jsonify({
+            "case_id": case.id,
+            "citations": citations,
+            "total": len(citations),
+        })
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500

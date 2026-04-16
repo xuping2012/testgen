@@ -79,6 +79,11 @@ class TestCase(Base):
     case_type = Column(String(50))                # 用例类型：功能/边界/异常等
     status = Column(Enum(CaseStatus, values_callable=lambda e: [x.value for x in e]), default=CaseStatus.PENDING_REVIEW)
     
+    # 置信度信息（RAG增强 Phase 1）
+    confidence_score = Column(Float, default=None)     # 综合置信度分数 (0.0 ~ 1.0)
+    confidence_level = Column(String(10), default=None) # 置信度等级 (A/B/C/D)
+    citations = Column(JSON, default=None)             # 引用来源列表
+
     # 追溯信息
     requirement_clause = Column(String(100))      # 关联需求条款编号
     created_at = Column(DateTime, default=datetime.utcnow)

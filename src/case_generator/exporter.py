@@ -33,9 +33,9 @@ class CaseExporter:
             ws.title = "测试用例"
             
             # 表头（按照用户要求的顺序）
-            headers = ["用例编号", "功能模块", "测试点", "测试标题", "前置条件", "操作步骤", "预期结果", "优先级"]
+            headers = ["用例编号", "功能模块", "测试点", "测试标题", "前置条件", "操作步骤", "预期结果", "优先级", "置信度等级", "置信度分数", "引用来源"]
             ws.append(headers)
-            
+
             # 填充数据
             for test_case in test_cases:
                 # 处理测试步骤
@@ -44,14 +44,25 @@ class CaseExporter:
                     steps_text = "\n".join([str(s) for s in steps])
                 else:
                     steps_text = str(steps)
-                
+
                 # 处理预期结果
                 expected = test_case.get("expected_results", [])
                 if isinstance(expected, list):
                     expected_text = "\n".join([str(e) for e in expected])
                 else:
                     expected_text = str(expected)
-                
+
+                # 处理引用来源
+                citations = test_case.get("citations") or []
+                if isinstance(citations, list):
+                    citations_text = ", ".join([c.get("source_id", "") for c in citations if c.get("source_id")])
+                else:
+                    citations_text = ""
+
+                # 置信度分数（百分比）
+                conf_score = test_case.get("confidence_score")
+                conf_score_str = f"{round(conf_score * 100)}%" if conf_score is not None else ""
+
                 row = [
                     test_case.get("case_id", ""),
                     test_case.get("module", ""),
@@ -60,10 +71,13 @@ class CaseExporter:
                     test_case.get("preconditions", ""),
                     steps_text,
                     expected_text,
-                    test_case.get("priority", "")
+                    test_case.get("priority", ""),
+                    test_case.get("confidence_level", "") or "",
+                    conf_score_str,
+                    citations_text,
                 ]
                 ws.append(row)
-            
+
             # 调整列宽
             column_widths = {
                 'A': 15,  # 用例编号
@@ -73,7 +87,10 @@ class CaseExporter:
                 'E': 30,  # 前置条件
                 'F': 40,  # 操作步骤
                 'G': 40,  # 预期结果
-                'H': 12   # 优先级
+                'H': 12,  # 优先级
+                'I': 12,  # 置信度等级
+                'J': 12,  # 置信度分数
+                'K': 30,  # 引用来源
             }
             for col, width in column_widths.items():
                 ws.column_dimensions[col].width = width
