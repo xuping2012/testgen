@@ -1,5 +1,6 @@
 schema: spec-driven
 context: |
+  技术栈：Python, OpenAI API,HTML, CSS, JavaScript,FastAPI
   语言：中文（简体）
   所有产出物必须用简体中文撰写。
 # Project context (optional)

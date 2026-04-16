@@ -482,11 +482,15 @@ def get_generation_status(task_id):
         return jsonify({
             "task_id": task.task_id,
             "requirement_id": task.requirement_id,
+            "requirement_title": task.requirement_title,
             "status": task.status,
             "progress": task.progress,
             "message": task.message,
             "result": task.result,
             "error_message": task.error_message,
+            "case_count": task.case_count,
+            "duration": task.duration,
+            "analysis_snapshot": task.analysis_snapshot,
             "created_at": task.created_at,
             "started_at": task.started_at,
             "completed_at": task.completed_at
@@ -1905,4 +1909,549 @@ def update_prompt(prompt_id):
         
     except Exception as e:
         db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+# ==================== 生成任务管理接口 ====================
+
+@api_bp.route('/tasks', methods=['GET'])
+def list_tasks():
+    """
+    查询生成任务列表
+    GET /api/tasks?page=1&limit=20&status=processing&search=keyword&requirement_id=1
+    """
+    try:
+        from src.database.models import GenerationTask as GenerationTaskModel, Requirement
+        
+        page = request.args.get('page', 1, type=int)
+        limit = request.args.get('limit', 20, type=int)
+        status = request.args.get('status')
+        search = request.args.get('search', '').strip()
+        requirement_id = request.args.get('requirement_id', type=int)
+        
+        query = db_session.query(GenerationTaskModel).outerjoin(Requirement)
+        
+        if status:
+            # 支持多值状态筛选（如 cancelled,failed）
+            status_list = [s.strip() for s in status.split(',')]
+            if len(status_list) > 1:
+                query = query.filter(GenerationTaskModel.status.in_(status_list))
+            else:
+                query = query.filter(GenerationTaskModel.status == status_list[0])
+        if requirement_id:
+            query = query.filter(GenerationTaskModel.requirement_id == requirement_id)
+        if search:
+            # 搜索需求名称（支持模糊匹配）
+            query = query.filter(GenerationTaskModel.requirement_title.contains(search))
+        
+        # 按创建时间倒序
+        query = query.order_by(GenerationTaskModel.created_at.desc())
+        
+        total = query.count()
+        tasks = query.offset((page - 1) * limit).limit(limit).all()
+        
+        task_list = []
+        for t in tasks:
+            task_list.append({
+                "task_id": t.task_id,
+                "requirement_id": t.requirement_id,
+                "requirement_title": t.requirement_title or (t.requirement.title if t.requirement else ''),
+                "status": t.status,
+                "progress": t.progress or 0.0,
+                "message": t.message or '',
+                "case_count": t.case_count or 0,
+                "duration": t.duration or 0.0,
+                "created_at": t.created_at.isoformat() if t.created_at else '',
+                "started_at": t.started_at.isoformat() if t.started_at else '',
+                "completed_at": t.completed_at.isoformat() if t.completed_at else ''
+            })
+        
+        return jsonify({
+            "tasks": task_list,
+            "total": total,
+            "page": page,
+            "limit": limit
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/tasks/<task_id>/cancel', methods=['POST'])
+def cancel_task(task_id):
+    """
+    终止生成任务
+    POST /api/tasks/<task_id>/cancel
+    """
+    try:
+        task = generation_service.get_task(task_id)
+        if not task:
+            return jsonify({"error": "任务不存在"}), 404
+        
+        if task.status in ['completed', 'failed', 'cancelled', 'discarded']:
+            return jsonify({"error": "任务已结束，无法终止"}), 400
+        
+        # 设置取消状态
+        generation_service.update_progress(task_id, task.progress, "用户已终止生成")
+        with generation_service._lock:
+            task.status = 'cancelled'
+        
+        # 同步到数据库
+        if generation_service.db_session:
+            from src.database.models import GenerationTask as GenerationTaskModel
+            task_model = db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+            if task_model:
+                task_model.status = 'cancelled'
+                task_model.message = "用户已终止生成"
+                task_model.completed_at = datetime.utcnow()
+                db_session.commit()
+        
+        return jsonify({"message": "任务已终止"})
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/tasks/<task_id>/analysis', methods=['PUT'])
+def update_task_analysis(task_id):
+    """
+    更新任务的分析结果（编辑模块/测试点）
+    PUT /api/tasks/<task_id>/analysis
+    """
+    try:
+        task = generation_service.get_task(task_id)
+        if not task:
+            return jsonify({"error": "任务不存在"}), 404
+        
+        data = request.json
+        
+        # 更新分析快照
+        with generation_service._lock:
+            if 'modules' in data:
+                task.analysis_snapshot['modules'] = data['modules']
+            if 'test_points' in data:
+                task.analysis_snapshot['test_points'] = data['test_points']
+            if 'business_flows' in data:
+                task.analysis_snapshot['business_flows'] = data['business_flows']
+        
+        # 同步到数据库
+        if generation_service.db_session:
+            from src.database.models import GenerationTask as GenerationTaskModel
+            task_model = db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+            if task_model:
+                task_model.analysis_snapshot = task.analysis_snapshot
+                db_session.commit()
+        
+        return jsonify({"message": "分析结果已更新"})
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/tasks/<task_id>/regenerate', methods=['POST'])
+def regenerate_task(task_id):
+    """
+    重新生成用例
+    POST /api/tasks/<task_id>/regenerate
+    """
+    try:
+        task = generation_service.get_task(task_id)
+        if not task:
+            return jsonify({"error": "任务不存在"}), 404
+        
+        # 重置任务状态
+        with generation_service._lock:
+            task.status = 'processing'
+            task.progress = 25.0
+            task.message = '正在重新生成...'
+            task.error_message = None
+            task.result = {}
+        
+        # 同步到数据库
+        if generation_service.db_session:
+            from src.database.models import GenerationTask as GenerationTaskModel
+            task_model = db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+            if task_model:
+                task_model.status = 'processing'
+                task_model.progress = 25.0
+                task_model.message = '正在重新生成...'
+                task_model.error_message = None
+                task_model.result = {}
+                task_model.started_at = datetime.utcnow()
+                task_model.completed_at = None
+                db_session.commit()
+        
+        # 使用分析快照重新执行 Phase 2
+        generation_service.execute_phase2_generation(task_id, task.analysis_snapshot)
+        
+        return jsonify({
+            "task_id": task_id,
+            "status": "processing",
+            "message": "重新生成任务已启动"
+        })
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/tasks/<task_id>', methods=['DELETE'])
+def delete_task(task_id):
+    """
+    删除任务记录
+    DELETE /api/tasks/<task_id>?delete_cases=false
+    Query参数:
+      - delete_cases: 是否同时删除关联的用例 (true/false)
+    """
+    try:
+        # 优先从内存中获取任务
+        task = generation_service.get_task(task_id)
+        
+        # 如果内存中没有，从数据库获取
+        if not task:
+            from src.database.models import GenerationTask as GenerationTaskModel
+            task_model = db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+            if not task_model:
+                return jsonify({"error": "任务不存在"}), 404
+            
+            # 将数据库中的任务转换为内存对象
+            from src.services.generation_service import GenerationTask
+            task = GenerationTask(
+                task_id=task_model.task_id,
+                requirement_id=task_model.requirement_id,
+                requirement_title=task_model.requirement_title,
+                status=task_model.status,
+                progress=task_model.progress,
+                message=task_model.message,
+                result=task_model.result,
+                error_message=task_model.error_message,
+                case_count=task_model.case_count,
+                duration=task_model.duration,
+                created_at=task_model.created_at.isoformat() if task_model.created_at else None,
+                started_at=task_model.started_at.isoformat() if task_model.started_at else None,
+                completed_at=task_model.completed_at.isoformat() if task_model.completed_at else None
+            )
+        
+        # 获取是否删除用例的参数
+        delete_cases = request.args.get('delete_cases', 'false').lower() == 'true'
+        
+        # 如果任务还在进行中，先终止
+        if task.status in ['pending', 'processing', 'awaiting_review']:
+            with generation_service._lock:
+                task.status = 'cancelled'
+        
+        # 从内存中删除（如果存在）
+        with generation_service._lock:
+            if task_id in generation_service._tasks:
+                del generation_service._tasks[task_id]
+        
+        requirement_id = task.requirement_id
+        deleted_case_count = 0
+        
+        # 从数据库中删除
+        if generation_service.db_session:
+            from src.database.models import GenerationTask as GenerationTaskModel, TestCase
+            
+            # 如果需要删除关联用例
+            if delete_cases:
+                # 删除该需求下的所有用例
+                deleted_case_count = db_session.query(TestCase).filter_by(
+                    requirement_id=requirement_id
+                ).delete(synchronize_session=False)
+            
+            # 删除任务记录
+            task_model = db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+            if task_model:
+                db_session.delete(task_model)
+            
+            db_session.commit()
+            
+            # 如果删除了用例，需要更新需求状态
+            if delete_cases and deleted_case_count > 0:
+                from src.database.models import Requirement, RequirementStatus
+                requirement = db_session.query(Requirement).get(requirement_id)
+                if requirement:
+                    # 检查是否还有其他已完成的任务
+                    other_completed_tasks = db_session.query(GenerationTaskModel).filter_by(
+                        requirement_id=requirement_id,
+                        status='completed'
+                    ).first()
+                    
+                    if other_completed_tasks:
+                        # 还有其他完成的任务，保持completed状态
+                        pass
+                    else:
+                        # 没有其他完成的任务，重置状态
+                        requirement.status = RequirementStatus.PENDING
+                        db_session.commit()
+        
+        return jsonify({
+            "message": f"任务已删除{'，同时删除了 ' + str(deleted_case_count) + ' 条用例' if delete_cases else ''}",
+            "deleted_case_count": deleted_case_count
+        })
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/tasks/batch-delete', methods=['POST'])
+def batch_delete_tasks():
+    """
+    批量删除任务记录
+    POST /api/tasks/batch-delete?delete_cases=false
+    Body: { "task_ids": ["task_id1", "task_id2", ...] }
+    Query参数:
+      - delete_cases: 是否同时删除关联的用例 (true/false)
+    """
+    try:
+        data = request.get_json()
+        task_ids = data.get('task_ids', [])
+        
+        if not task_ids:
+            return jsonify({"error": "未指定要删除的任务ID"}), 400
+        
+        # 获取是否删除用例的参数
+        delete_cases = request.args.get('delete_cases', 'false').lower() == 'true'
+        
+        deleted_count = 0
+        total_deleted_cases = 0
+        requirement_ids_to_update = set()
+        
+        for task_id in task_ids:
+            try:
+                requirement_id_for_task = None
+                
+                # 从内存中删除（如果存在）
+                task = generation_service.get_task(task_id)
+                if task:
+                    # 如果任务还在进行中，先终止
+                    if task.status in ['pending', 'processing', 'awaiting_review']:
+                        with generation_service._lock:
+                            task.status = 'cancelled'
+                    
+                    requirement_id_for_task = task.requirement_id
+                    
+                    with generation_service._lock:
+                        if task_id in generation_service._tasks:
+                            del generation_service._tasks[task_id]
+                
+                # 从数据库中删除
+                if generation_service.db_session:
+                    from src.database.models import GenerationTask as GenerationTaskModel, TestCase
+                    
+                    task_model = db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+                    if task_model:
+                        # 如果内存中没有任务，从数据库模型获取requirement_id
+                        if not requirement_id_for_task:
+                            requirement_id_for_task = task_model.requirement_id
+                        
+                        requirement_ids_to_update.add(requirement_id_for_task)
+                        
+                        # 如果需要删除关联用例
+                        if delete_cases:
+                            deleted_case_count = db_session.query(TestCase).filter_by(
+                                requirement_id=requirement_id_for_task
+                            ).delete(synchronize_session=False)
+                            total_deleted_cases += deleted_case_count
+                        
+                        db_session.delete(task_model)
+                        deleted_count += 1
+            except Exception as e:
+                print(f"删除任务 {task_id} 失败: {e}")
+                continue
+        
+        db_session.commit()
+        
+        # 如果删除了用例，需要更新相关需求的状态
+        if delete_cases and total_deleted_cases > 0 and generation_service.db_session:
+            from src.database.models import Requirement, RequirementStatus, GenerationTask as GenerationTaskModel
+            
+            for req_id in requirement_ids_to_update:
+                requirement = db_session.query(Requirement).get(req_id)
+                if requirement:
+                    # 检查是否还有其他已完成的任务
+                    other_completed_tasks = db_session.query(GenerationTaskModel).filter_by(
+                        requirement_id=req_id,
+                        status='completed'
+                    ).first()
+                    
+                    if not other_completed_tasks:
+                        # 没有其他完成的任务，重置状态
+                        requirement.status = RequirementStatus.PENDING
+            
+            db_session.commit()
+        
+        return jsonify({
+            "message": f"成功删除 {deleted_count} 个任务{'，同时删除了 ' + str(total_deleted_cases) + ' 条用例' if delete_cases else ''}",
+            "deleted_count": deleted_count,
+            "deleted_case_count": total_deleted_cases
+        })
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/tasks/<task_id>/cases/preview', methods=['GET'])
+def preview_task_cases(task_id):
+    """
+    预览用例（支持暂存和已入库两种状态）
+    GET /api/tasks/<task_id>/cases/preview
+    """
+    try:
+        # 优先从内存中获取任务
+        task = generation_service.get_task(task_id)
+        
+        # 如果内存中没有，从数据库获取
+        if not task:
+            from src.database.models import GenerationTask as GenerationTaskModel
+            task_model = db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+            if not task_model:
+                return jsonify({"error": "任务不存在"}), 404
+            
+            # 将数据库中的任务转换为内存对象
+            from src.services.generation_service import GenerationTask
+            task = GenerationTask(
+                task_id=task_model.task_id,
+                requirement_id=task_model.requirement_id,
+                requirement_title=task_model.requirement_title,
+                status=task_model.status,
+                progress=task_model.progress,
+                message=task_model.message,
+                result=task_model.result,
+                error_message=task_model.error_message,
+                case_count=task_model.case_count,
+                duration=task_model.duration,
+                created_at=task_model.created_at.isoformat() if task_model.created_at else None,
+                started_at=task_model.started_at.isoformat() if task_model.started_at else None,
+                completed_at=task_model.completed_at.isoformat() if task_model.completed_at else None
+            )
+        
+        # 优先从内存中获取暂存的用例
+        test_cases = task.result.get('test_cases', []) if task.result else []
+        
+        # 如果内存中没有用例，从数据库获取
+        if not test_cases:
+            from src.database.models import TestCase
+            
+            cases_from_db = db_session.query(TestCase).filter_by(
+                requirement_id=task.requirement_id
+            ).all()
+            
+            test_cases = [{
+                'case_id': tc.case_id,
+                'module': tc.module,
+                'name': tc.name,
+                'test_point': tc.test_point,
+                'priority': tc.priority.value if hasattr(tc.priority, 'value') else tc.priority,
+                'case_type': tc.case_type,
+                'status': tc.status.value if hasattr(tc.status, 'value') else tc.status
+            } for tc in cases_from_db]
+        
+        # 确定数据来源
+        if task.result and task.result.get('test_cases'):
+            source = 'stashed'
+        else:
+            source = 'database'
+        
+        return jsonify({
+            "task_id": task_id,
+            "case_count": len(test_cases),
+            "test_cases": test_cases,
+            "source": source
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/tasks/<task_id>/cases/commit', methods=['POST'])
+def commit_cases(task_id):
+    """
+    全部入库
+    POST /api/tasks/<task_id>/cases/commit
+    """
+    try:
+        task = generation_service.get_task(task_id)
+        if not task:
+            return jsonify({"error": "任务不存在"}), 404
+        
+        if task.status != 'completed_pending_review':
+            return jsonify({"error": "任务状态不是待入库"}), 400
+        
+        test_cases = task.result.get('test_cases', [])
+        if not test_cases:
+            return jsonify({"error": "没有可入库的用例"}), 400
+        
+        # 保存用例到数据库
+        if generation_service.db_session:
+            generation_service._save_test_cases(task.requirement_id, test_cases)
+            
+            # 更新需求状态
+            from src.database.models import Requirement, RequirementStatus
+            requirement = db_session.query(Requirement).get(task.requirement_id)
+            if requirement:
+                requirement.status = RequirementStatus.COMPLETED
+                db_session.commit()
+        
+        # 更新任务状态
+        with generation_service._lock:
+            task.status = 'completed'
+            task.result['test_cases'] = []  # 清理暂存数据
+            task.result['committed'] = True
+        
+        # 同步到数据库
+        if generation_service.db_session:
+            from src.database.models import GenerationTask as GenerationTaskModel
+            task_model = db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+            if task_model:
+                task_model.status = 'completed'
+                task_model.result = task.result
+                task_model.completed_at = datetime.utcnow()
+                db_session.commit()
+        
+        return jsonify({
+            "message": f"成功入库 {len(test_cases)} 条用例",
+            "case_count": len(test_cases)
+        })
+        
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/tasks/<task_id>/cases/<case_id>', methods=['DELETE'])
+def delete_preview_case(task_id, case_id):
+    """
+    删除暂存的单条用例
+    DELETE /api/tasks/<task_id>/cases/<case_id>
+    """
+    try:
+        task = generation_service.get_task(task_id)
+        if not task:
+            return jsonify({"error": "任务不存在"}), 404
+        
+        test_cases = task.result.get('test_cases', [])
+        original_count = len(test_cases)
+        
+        # 删除指定用例
+        test_cases = [tc for tc in test_cases if tc.get('case_id') != case_id]
+        
+        if len(test_cases) == original_count:
+            return jsonify({"error": "用例不存在"}), 404
+        
+        # 更新暂存数据
+        with generation_service._lock:
+            task.result['test_cases'] = test_cases
+            task.case_count = len(test_cases)
+        
+        return jsonify({
+            "message": "用例已删除",
+            "case_count": len(test_cases)
+        })
+        
+    except Exception as e:
         return jsonify({"error": str(e)}), 500

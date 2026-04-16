@@ -1046,7 +1046,7 @@
             </div>
 
             <div class="info-box">
-                <p>◉ <strong>提示</strong>：配置LLM模型后，系统才能自动生成测试用例。支持通义千问、DeepSeek、OpenAI等多种模型。</p>
+                <p>◉ <strong>提示</strong>：配置LLM模型后，系统才能调用LLM模型生成测试用例。支持通义千问、KIMI、DeepSeek、OpenAI等多种模型。</p>
             </div>
 
             <!-- 配置列表 -->
@@ -1115,7 +1115,7 @@
 
                 <div class="form-group">
                     <label>配置名称</label>
-                    <input type="text" class="form-control" id="configName" placeholder="如: qwen-turbo-prod">
+                    <input type="text" class="form-control" id="configName" placeholder="{provider}-{qwen}">
                 </div>
 
                 <div class="form-group">
@@ -1298,7 +1298,7 @@
                         </div>
                     </div>
                     <div class="config-actions">
-                        <button class="btn btn-test" onclick="testConfigFromList(${c.id})">测试</button>
+                        <button class="btn btn-secondary" onclick="testConfigFromList(${c.id})">测试</button>
                         <button class="btn btn-secondary" onclick="editConfig(${c.id})">编辑</button>
                         ${!c.is_default ? `<button class="btn btn-secondary" onclick="setDefault(${c.id})">设为默认</button>` : `<button class="btn btn-secondary" onclick="unsetDefault(${c.id})">取消默认</button>`}
                         <button class="btn btn-secondary" onclick="deleteConfig(${c.id})">删除</button>

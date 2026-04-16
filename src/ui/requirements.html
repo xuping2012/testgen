@@ -1185,6 +1185,114 @@
         .sidebar {
             padding-bottom: 220px;
         }
+
+        /* Tab structure */
+        .tab-nav {
+            display: flex;
+            gap: 0;
+            margin-bottom: 30px;
+            border-bottom: 1px solid var(--dark-border);
+        }
+
+        .tab-btn {
+            padding: 12px 24px;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.3s;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-primary);
+        }
+
+        .tab-btn.active {
+            color: var(--neon-cyan);
+            border-bottom-color: var(--neon-cyan);
+        }
+
+        .tab-panel {
+            display: none;
+        }
+
+        .tab-panel.active {
+            display: block;
+        }
+
+        /* Progress tab styles */
+        .progress-filters {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+
+        .progress-filters select,
+        .progress-filters input {
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-border);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .progress-filters input {
+            flex: 1;
+        }
+
+        .progress-filters select:focus,
+        .progress-filters input:focus {
+            outline: none;
+            border-color: var(--neon-cyan);
+        }
+
+        .status-completed_pending_review {
+            background: rgba(210, 153, 34, 0.1);
+            color: #d29922;
+            border-color: rgba(210, 153, 34, 0.3);
+        }
+
+        .status-cancelled {
+            background: rgba(110, 118, 129, 0.1);
+            color: #8b949e;
+            border-color: rgba(110, 118, 129, 0.3);
+        }
+
+        .stage-item {
+            padding: 12px;
+            margin: 8px 0;
+            background: var(--dark-bg);
+            border-left: 3px solid var(--dark-border);
+        }
+
+        .stage-item.completed {
+            border-left-color: var(--neon-green);
+        }
+
+        .stage-item.active {
+            border-left-color: var(--neon-cyan);
+            background: rgba(0, 245, 255, 0.05);
+        }
+
+        .stage-item.failed {
+            border-left-color: #ff0055;
+        }
+
+        .case-item {
+            padding: 8px;
+            margin: 4px 0;
+            background: var(--dark-bg);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
     </style>
 </head>
 <body>
@@ -1225,40 +1333,95 @@
                 </div>
             </div>
 
-            <div class="card">
-                <div class="card-title">需求列表</div>
-                
-                <!-- 批量操作栏 -->
-                <div class="batch-bar" id="batchBar" style="display: none;">
-                    <div>
-                        已选择 <span class="selected-count" id="selectedCount">0</span> 项
+            <!-- Tab navigation -->
+            <div class="tab-nav">
+                <button class="tab-btn active" onclick="switchTab('requirements')">需求列表</button>
+                <button class="tab-btn" onclick="switchTab('progress')">生成进度</button>
+            </div>
+
+            <!-- Requirements tab panel -->
+            <div class="tab-panel active" id="tab-requirements">
+                <div class="card">
+                    <!-- <div class="card-title">需求列表</div> -->
+                    
+                    <!-- 批量操作栏 -->
+                    <div class="batch-bar" id="batchBar" style="display: none;">
+                        <div>
+                            已选择 <span class="selected-count" id="selectedCount">0</span> 项
+                        </div>
+                        <div class="batch-actions">
+                            <button class="btn btn-danger btn-sm" onclick="batchDelete()">批量删除</button>
+                        </div>
                     </div>
-                    <div class="batch-actions">
-                        <button class="btn btn-danger btn-sm" onclick="batchDelete()">批量删除</button>
-                    </div>
+                    
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" class="cyber-checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
+                                <th>ID</th>
+                                <th>需求标题</th>
+                                <th>状态</th>
+                                <th>创建时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="requirementList">
+                            <tr>
+                                <td colspan="6" class="empty-state">
+                                    <div class="empty-state-icon">◉</div>
+                                    <p>暂无需求，点击右上角新建需求</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div class="pagination" id="pagination"></div>
                 </div>
-                
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th><input type="checkbox" class="cyber-checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
-                            <th>ID</th>
-                            <th>需求标题</th>
-                            <th>状态</th>
-                            <th>创建时间</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody id="requirementList">
-                        <tr>
-                            <td colspan="6" class="empty-state">
-                                <div class="empty-state-icon">◉</div>
-                                <p>暂无需求，点击右上角新建需求</p>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-                <div class="pagination" id="pagination"></div>
+            </div>
+
+            <!-- Progress tab panel -->
+            <div class="tab-panel" id="tab-progress">
+                <div class="card">
+                    <!-- <div class="card-title">生成进度管理</div> -->
+                    
+                    <div class="progress-filters">
+                        <select id="statusFilter" onchange="loadTasks()">
+                            <option value="">全部状态</option>
+                            <option value="processing">进行中</option>
+                            <option value="completed">已完成</option>
+                            <option value="cancelled,failed">已终止</option>
+                        </select>
+                        <input type="text" id="searchInput" placeholder="搜索需求名称..." maxlength="50" style="max-width: 300px;" oninput="loadTasks()">
+                        <!-- <span id="taskCount" style="color: var(--text-secondary);"></span> -->
+                    </div>
+
+                    <!-- 批量操作按钮 -->
+                    <div id="batchActionsBar" style="display: none; margin-bottom: 15px; padding: 10px; background: rgba(255, 0, 85, 0.1); border: 1px solid rgba(255, 0, 85, 0.3); border-radius: 4px;">
+                        <span style="color: var(--text-secondary); margin-right: 15px;">已选择 <strong id="selectedCount">0</strong> 项</span>
+                        <button class="action-btn" onclick="batchDeleteTasks()" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);">批量删除</button>
+                        <button class="action-btn" onclick="clearSelection()" style="margin-left: 10px;">取消选择</button>
+                    </div>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 40px;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()"></th>
+                                <th>任务ID</th>
+                                <th>需求名称</th>
+                                <th>进度</th>
+                                <th>状态</th>
+                                <th>耗时</th>
+                                <th>用例数</th>
+                                <th>创建时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="taskTableBody">
+                            <tr><td colspan="9" style="text-align:center;">暂无任务</td></tr>
+                        </tbody>
+                    </table>
+
+                    <div class="pagination" id="progressPagination"></div>
+                </div>
             </div>
         </main>
     </div>
@@ -1439,12 +1602,80 @@
         </div>
     </div>
 
+    <!-- 带选项的确认弹窗 -->
+    <div class="confirm-modal" id="confirmOptionsModal">
+        <div class="confirm-box" style="max-width: 500px;">
+            <div class="confirm-header">
+                <div class="confirm-icon">!</div>
+                <div class="confirm-title">确认操作</div>
+            </div>
+            <div class="confirm-body">
+                <div class="confirm-message" id="confirmOptionsMessage">请选择操作选项：</div>
+                <div id="confirmOptionsList" style="margin-top: 15px;"></div>
+            </div>
+            <div class="confirm-footer">
+                <button class="confirm-btn confirm-btn-cancel" onclick="closeConfirmOptions()">取消</button>
+                <button class="confirm-btn confirm-btn-ok" id="confirmOptionsOkBtn" onclick="confirmOptionsOk()">确定</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 提示弹窗 -->
     <div class="toast-modal" id="toastModal">
         <div class="toast-box" id="toastBox">
             <div class="toast-icon" id="toastIcon">✓</div>
             <div class="toast-message" id="toastMessage">操作成功</div>
             <button class="toast-btn" onclick="closeToast()">确定</button>
+        </div>
+    </div>
+
+    <!-- 任务详情弹窗 -->
+    <div class="modal" id="detailModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="detailTitle">任务详情</h3>
+                <button class="close-btn" onclick="closeModalById('detailModal')">&times;</button>
+            </div>
+            <div id="detailContent"></div>
+        </div>
+    </div>
+
+    <!-- 用例预览弹窗 -->
+    <div class="modal" id="casesModal">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3 id="casesTitle">用例预览</h3>
+                <button class="close-btn" onclick="closeModalById('casesModal')">&times;</button>
+            </div>
+            <div id="casesContent"></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModalById('casesModal')">关闭</button>
+                <button class="btn btn-success" id="commitBtn" onclick="commitCases()">全部入库</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑分析结果弹窗 -->
+    <div class="modal" id="editModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>编辑分析结果</h3>
+                <button class="close-btn" onclick="closeModalById('editModal')">&times;</button>
+            </div>
+            <div id="editContent">
+                <div class="form-group">
+                    <label>功能模块（JSON格式）</label>
+                    <textarea class="form-control" id="editModules" rows="6" style="font-family: monospace;"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>测试点（JSON格式）</label>
+                    <textarea class="form-control" id="testPoints" rows="8" style="font-family: monospace;"></textarea>
+                </div>
+                <div style="text-align: right;">
+                    <button class="btn btn-secondary" onclick="closeModalById('editModal')">取消</button>
+                    <button class="btn btn-primary" onclick="saveAnalysis()">保存</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1474,6 +1705,50 @@
             if (confirmCallback) {
                 confirmCallback();
                 confirmCallback = null;
+            }
+        }
+
+        // 带选项的确认弹窗
+        let confirmOptionsCallback = null;
+        let selectedOptionValue = null;
+
+        function showConfirmWithOptions(message, options, onConfirm) {
+            document.getElementById('confirmOptionsMessage').textContent = message;
+            
+            // 生成选项列表
+            const optionsList = document.getElementById('confirmOptionsList');
+            optionsList.innerHTML = options.map((option, index) => `
+                <label style="display: block; padding: 10px; margin: 5px 0; border: 1px solid ${option.danger ? 'rgba(255, 0, 85, 0.3)' : 'var(--dark-border)'}; border-radius: 4px; cursor: pointer; ${index === 0 ? 'background: rgba(0, 255, 255, 0.05);' : ''}" 
+                       onmouseover="this.style.background='${option.danger ? 'rgba(255, 0, 85, 0.05)' : 'rgba(0, 255, 255, 0.05)'}'" 
+                       onmouseout="this.style.background='transparent'">
+                    <input type="radio" name="confirmOption" value="${option.value}" 
+                           ${index === 0 ? 'checked' : ''} 
+                           onchange="selectedOptionValue='${option.value}'"
+                           style="margin-right: 10px;">
+                    <strong style="${option.danger ? 'color: #ff0055;' : 'color: var(--neon-cyan);'}">${option.label}</strong>
+                    <br><small style="color: var(--text-secondary); margin-left: 25px;">${option.description}</small>
+                </label>
+            `).join('');
+            
+            // 默认选中第一个选项
+            selectedOptionValue = options[0].value;
+            confirmOptionsCallback = onConfirm;
+            
+            document.getElementById('confirmOptionsModal').classList.add('active');
+        }
+
+        function closeConfirmOptions() {
+            document.getElementById('confirmOptionsModal').classList.remove('active');
+            confirmOptionsCallback = null;
+            selectedOptionValue = null;
+        }
+
+        function confirmOptionsOk() {
+            document.getElementById('confirmOptionsModal').classList.remove('active');
+            if (confirmOptionsCallback && selectedOptionValue) {
+                confirmOptionsCallback(selectedOptionValue);
+                confirmOptionsCallback = null;
+                selectedOptionValue = null;
             }
         }
 
@@ -1526,7 +1801,16 @@
                     return;
                 }
 
-                tbody.innerHTML = data.items.map(req => `
+                // 获取进行中的任务列表
+                const processingTasks = await getProcessingTasks();
+                const processingReqIds = new Set(processingTasks.map(t => t.requirement_id));
+
+                tbody.innerHTML = data.items.map(req => {
+                    const hasProcessingTask = processingReqIds.has(req.id);
+                    const generateBtnDisabled = hasProcessingTask ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : '';
+                    const generateBtnText = hasProcessingTask ? '生成中...' : '生成';
+                    
+                    return `
                     <tr>
                         <td><input type="checkbox" class="cyber-checkbox" value="${req.id}" onchange="toggleSelect(${req.id})"></td>
                         <td>${req.id}</td>
@@ -1536,12 +1820,12 @@
                         <td>
                             <div class="action-btns">
                                 <button class="action-btn" onclick="viewRequirement(${req.id})">查看</button>
-                                <button class="action-btn generate" onclick="generateCases(${req.id})">生成</button>
+                                <button class="action-btn generate" onclick="generateCases(${req.id})" ${generateBtnDisabled}>${generateBtnText}</button>
                                 <button class="action-btn" onclick="deleteRequirement(${req.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);">删除</button>
                             </div>
                         </td>
                     </tr>
-                `).join('');
+                `}).join('');
 
                 // 恢复选中状态
                 selectedIds.forEach(id => {
@@ -1552,6 +1836,17 @@
                 renderPagination(data.total, data.page, data.limit);
             } catch (error) {
                 console.error('加载需求失败:', error);
+            }
+        }
+
+        async function getProcessingTasks() {
+            try {
+                const response = await fetch('/api/tasks?status=processing');
+                const data = await response.json();
+                return data.tasks || [];
+            } catch (error) {
+                console.error('获取进行中的任务失败:', error);
+                return [];
             }
         }
 
@@ -1885,6 +2180,14 @@
 
         async function generateCases(requirementId) {
             try {
+                // 检查是否已有进行中的任务
+                const processingTasks = await getProcessingTasks();
+                const hasProcessingTask = processingTasks.some(t => t.requirement_id === requirementId);
+                if (hasProcessingTask) {
+                    showToast('该需求已有生成任务进行中，请等待完成或前往进度管理页面查看', 'warning');
+                    return;
+                }
+                
                 currentRequirementId = requirementId;
                 
                 // 显示加载状态
@@ -2066,22 +2369,7 @@
                 // 关闭评审弹窗
                 closeReviewModal();
                 
-                // 显示进度弹窗
-                document.getElementById('progressFill').style.width = '25%';
-                document.getElementById('taskId').textContent = currentTaskId;
-                document.getElementById('taskStatus').textContent = 'processing';
-                document.getElementById('taskProgress').textContent = '25%';
-                document.getElementById('taskMessage').textContent = '正在继续生成...';
-                document.getElementById('retryContainer').style.display = 'none';
-                
-                // 重置所有workflow步骤状态
-                resetWorkflowSteps();
-                
-                // 更新workflow步骤显示（Phase 1已完成）
-                updateWorkflowStep('analysis', 'completed', '✅ 完成');
-                updateWorkflowStep('plan', 'completed', '✅ 完成');
-                
-                // 调用阶段2：RAG检索+LLM生成
+                // 调用阶段2：RAG检索+LLM生成（异步）
                 const response = await fetch('/api/generate/continue', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2093,8 +2381,10 @@
                 
                 const data = await response.json();
                 if (data.task_id) {
-                    openProgressModal();
-                    startProgressCheck();
+                    // 显示轻提示，不再阻塞等待
+                    showToast('用例生成中，可在「生成进度」查看进度', 'info');
+                    // 可选：自动跳转到进度页面
+                    // window.location.href = '/progress';
                 } else {
                     showToast(`继续生成失败：${data.error || '未知错误'}`, 'error');
                 }
@@ -2360,7 +2650,500 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             loadRequirements();
+            
+            // Check if we should auto-switch to progress tab
+            const activeTab = localStorage.getItem('activeTab');
+            if (activeTab === 'progress') {
+                localStorage.removeItem('activeTab');
+                const progressBtn = document.querySelectorAll('.tab-btn')[1];
+                if (progressBtn) {
+                    progressBtn.click();
+                }
+            }
         });
+
+        // ========== Tab switching ==========
+        function switchTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            // Update tab panels
+            document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+            
+            // Load progress data when switching to progress tab
+            if (tabName === 'progress') {
+                loadTasks();
+                startProgressPolling();
+            } else {
+                stopProgressPolling();
+            }
+        }
+
+        // ========== Progress tab functions ==========
+        let progressCurrentPage = 1;
+        let progressPollInterval = null;
+
+        async function loadTasks() {
+            const status = document.getElementById('statusFilter').value;
+            const search = document.getElementById('searchInput').value;
+            
+            let url = `/api/tasks?page=${progressCurrentPage}&limit=20`;
+            if (status) {
+                // 支持多值状态筛选（如 cancelled,failed）
+                url += `&status=${encodeURIComponent(status)}`;
+            }
+            if (search) url += `&search=${encodeURIComponent(search)}`;
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                renderTasks(data.tasks || []);
+                document.getElementById('taskCount').textContent = `共 ${data.total || 0} 条`;
+                renderProgressPagination(data.total || 0, data.page || 1, data.limit || 20);
+            } catch (error) {
+                console.error('加载任务失败:', error);
+            }
+        }
+
+        function renderTasks(tasks) {
+            const tbody = document.getElementById('taskTableBody');
+            if (!tasks.length) {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">暂无任务</td></tr>';
+                clearSelection();
+                return;
+            }
+            
+            tbody.innerHTML = tasks.map(task => {
+                const statusClass = `status-${task.status}`;
+                const statusText = getTaskStatusText(task.status);
+                const duration = formatDuration(task.duration);
+                const progress = Math.round(task.progress || 0);
+                const canDelete = (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled');
+                
+                return `
+                    <tr>
+                        <td>
+                            ${canDelete ? `<input type="checkbox" class="task-checkbox" value="${task.task_id}" onchange="updateBatchActionBar()">` : ''}
+                        </td>
+                        <td><code>${task.task_id}</code></td>
+                        <td>${task.requirement_title || '-'}</td>
+                        <td>
+                            <div class="progress-bar" style="width: 100px; height: 8px; background: var(--dark-bg); border-radius: 4px; overflow: hidden; border: 1px solid var(--dark-border);">
+                                <div class="progress-fill" style="width: ${progress}%"></div>
+                            </div>
+                            <small>${progress}%</small>
+                        </td>
+                        <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+                        <td>${duration}</td>
+                        <td>${task.case_count || 0}</td>
+                        <td>${formatTime(task.created_at)}</td>
+                        <td>
+                            <div class="action-btns">
+                                <button class="action-btn" onclick="showDetail('${task.task_id}')">详情</button>
+                                ${task.status === 'processing' ? `<button class="action-btn" onclick="cancelTask('${task.task_id}')" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);">终止</button>` : ''}
+                                ${(task.status === 'completed_pending_review' || task.status === 'completed') ? `<button class="action-btn generate" onclick="showCases('${task.task_id}')">查看用例</button>` : ''}
+                                ${(task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') ? `<button class="action-btn" onclick="regenerateTask('${task.task_id}')">重新生成</button>` : ''}
+                                ${(task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') ? `<button class="action-btn" onclick="deleteTask('${task.task_id}')" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);">删除</button>` : ''}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            
+            // 更新全选复选框状态
+            updateSelectAllCheckbox();
+            // 更新批量操作栏
+            updateBatchActionBar();
+        }
+
+        function getTaskStatusText(status) {
+            const map = {
+                'pending': '等待中',
+                'processing': '进行中',
+                'awaiting_review': '待评审',
+                'completed_pending_review': '待入库',
+                'completed': '已完成',
+                'failed': '已终止',
+                'cancelled': '已终止',
+                'discarded': '已丢弃'
+            };
+            return map[status] || status;
+        }
+
+        function formatDuration(seconds) {
+            if (!seconds) return '-';
+            if (seconds < 60) return `${Math.round(seconds)}s`;
+            return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+        }
+
+        function formatTime(isoStr) {
+            if (!isoStr) return '-';
+            const d = new Date(isoStr);
+            return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        }
+
+        function renderProgressPagination(total, page, limit) {
+            const pages = Math.ceil(total / limit);
+            const pagination = document.getElementById('progressPagination');
+            
+            if (pages <= 1) {
+                pagination.innerHTML = `<div class="pagination-info">共 ${total} 条记录</div>`;
+                return;
+            }
+            
+            let html = '<div class="pagination-container">';
+            html += `<div class="pagination-left"><span>共 ${total} 条</span></div>`;
+            html += '<div class="pagination-center">';
+            
+            if (page > 1) {
+                html += `<button class="page-btn" onclick="goProgressPage(${page - 1})">上一页</button>`;
+            } else {
+                html += `<button class="page-btn disabled" disabled>上一页</button>`;
+            }
+            
+            html += `<span style="padding: 0 12px; color: var(--text-secondary);">${page} / ${pages}</span>`;
+            
+            if (page < pages) {
+                html += `<button class="page-btn" onclick="goProgressPage(${page + 1})">下一页</button>`;
+            } else {
+                html += `<button class="page-btn disabled" disabled>下一页</button>`;
+            }
+            
+            html += '</div></div>';
+            pagination.innerHTML = html;
+        }
+
+        function goProgressPage(page) {
+            progressCurrentPage = page;
+            loadTasks();
+        }
+
+        async function showDetail(taskId) {
+            try {
+                const response = await fetch(`/api/generate/${taskId}`);
+                const task = await response.json();
+                
+                document.getElementById('detailTitle').textContent = `任务详情: ${task.requirement_title || taskId}`;
+                
+                const stages = [
+                    { name: '需求分析', key: 'analysis', range: [5, 15] },
+                    { name: '测试规划', key: 'plan', range: [15, 25] },
+                    { name: 'RAG检索', key: 'rag', range: [25, 40] },
+                    { name: 'LLM生成', key: 'generate', range: [40, 90] },
+                    { name: '结果预览', key: 'preview', range: [90, 100] }
+                ];
+                
+                const progress = task.progress || 0;
+                let stagesHtml = '<h4 style="margin: 16px 0 12px; color: var(--neon-cyan); font-size: 14px;">阶段明细</h4>';
+                stagesHtml += '<div style="border: 1px solid var(--dark-border); border-radius: 6px; overflow: hidden;">';
+                
+                stages.forEach((stage, index) => {
+                    let status = 'waiting';
+                    if (progress >= stage.range[1]) status = 'completed';
+                    else if (progress >= stage.range[0]) status = 'active';
+                    else if (task.status === 'failed' && progress < stage.range[1]) status = 'failed';
+                    
+                    const bgColor = status === 'completed' ? 'rgba(0, 255, 136, 0.1)' : 
+                                   status === 'active' ? 'rgba(0, 245, 255, 0.1)' : 
+                                   status === 'failed' ? 'rgba(255, 0, 85, 0.1)' : 'transparent';
+                    const borderColor = status === 'completed' ? '#00ff88' : 
+                                       status === 'active' ? '#00f5ff' : 
+                                       status === 'failed' ? '#ff0055' : 'var(--dark-border)';
+                    const textColor = status === 'completed' ? '#00ff88' : 
+                                     status === 'active' ? '#00f5ff' : 
+                                     status === 'failed' ? '#ff0055' : 'var(--text-secondary)';
+                    const icon = status === 'completed' ? '✓' : status === 'active' ? '⟳' : status === 'failed' ? '✗' : '○';
+                    const statusText = status === 'completed' ? '已完成' : 
+                                      status === 'active' ? '进行中' : 
+                                      status === 'failed' ? '失败' : '等待中';
+                    
+                    if (index > 0) stagesHtml += `<div style="height: 1px; background: var(--dark-border);"></div>`;
+                    
+                    stagesHtml += `
+                        <div style="padding: 12px 16px; background: ${bgColor}; border-left: 3px solid ${borderColor}; display: flex; justify-content: space-between; align-items: center;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span style="color: ${textColor}; font-size: 16px;">${icon}</span>
+                                <span style="color: var(--text-primary); font-weight: 500;">${stage.name}</span>
+                            </div>
+                            <span style="color: ${textColor}; font-size: 12px;">${statusText}</span>
+                        </div>
+                    `;
+                });
+                
+                stagesHtml += '</div>';
+                
+                if (task.error_message) {
+                    stagesHtml += `<div style="margin-top: 16px; padding: 12px; background: rgba(255, 0, 85, 0.1); border-left: 3px solid #ff0055;"><strong style="color: #ff0055;">错误信息:</strong><br><pre style="white-space: pre-wrap; color: var(--text-secondary);">${task.error_message}</pre></div>`;
+                }
+                
+                document.getElementById('detailContent').innerHTML = `
+                    <div style="margin-bottom: 16px;">
+                        <div><strong>任务ID:</strong> ${task.task_id}</div>
+                        <div><strong>需求ID:</strong> ${task.requirement_id}</div>
+                        <div><strong>状态:</strong> ${getTaskStatusText(task.status)}</div>
+                        <div><strong>进度:</strong> ${Math.round(progress)}%</div>
+                        <div><strong>消息:</strong> ${task.message || '-'}</div>
+                        <div><strong>用例数:</strong> ${task.case_count || 0}</div>
+                        <div><strong>创建时间:</strong> ${task.created_at}</div>
+                    </div>
+                    ${stagesHtml}
+                `;
+                
+                document.getElementById('detailModal').classList.add('active');
+            } catch (error) {
+                console.error('加载详情失败:', error);
+                showToast('加载详情失败', 'error');
+            }
+        }
+
+        async function showCases(taskId) {
+            currentTaskId = taskId;
+            try {
+                const response = await fetch(`/api/tasks/${taskId}/cases/preview`);
+                const data = await response.json();
+                
+                document.getElementById('casesTitle').textContent = `用例预览: ${data.case_count} 条`;
+                
+                // 根据数据来源显示/隐藏"全部入库"按钮
+                const commitBtn = document.getElementById('commitBtn');
+                if (data.source === 'database') {
+                    // 已入库的用例，隐藏"全部入库"按钮
+                    commitBtn.style.display = 'none';
+                } else {
+                    // 暂存的用例，显示"全部入库"按钮
+                    commitBtn.style.display = 'inline-block';
+                }
+                
+                if (!data.test_cases || !data.test_cases.length) {
+                    document.getElementById('casesContent').innerHTML = '<p style="text-align: center; color: var(--text-secondary);">暂无用例</p>';
+                } else {
+                    let html = '<div style="max-height: 400px; overflow-y: auto;">';
+                    data.test_cases.forEach(tc => {
+                        html += `
+                            <div class="case-item">
+                                <div>
+                                    <strong style="color: var(--neon-cyan);">${tc.case_id}</strong> - ${tc.module}
+                                    <br><small style="color: var(--text-secondary);">${tc.name}</small>
+                                </div>
+                                ${data.source === 'stashed' ? `<button class="action-btn" onclick="deleteCase('${taskId}', '${tc.case_id}')" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);">删除</button>` : ''}
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                    document.getElementById('casesContent').innerHTML = html;
+                }
+                
+                document.getElementById('casesModal').classList.add('active');
+            } catch (error) {
+                console.error('加载用例失败:', error);
+                showToast('加载用例失败', 'error');
+            }
+        }
+
+        async function deleteCase(taskId, caseId) {
+            showConfirm('确定删除该用例？', async () => {
+                try {
+                    const response = await fetch(`/api/tasks/${taskId}/cases/${caseId}`, { method: 'DELETE' });
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        showToast('用例已删除', 'success');
+                        showCases(taskId);
+                    } else {
+                        showToast('删除失败: ' + data.error, 'error');
+                    }
+                } catch (error) {
+                    showToast('删除失败: ' + error.message, 'error');
+                }
+            });
+        }
+
+        async function commitCases() {
+            if (!currentTaskId) return;
+            showConfirm('确定将所有用例入库？', async () => {
+                try {
+                    const response = await fetch(`/api/tasks/${currentTaskId}/cases/commit`, { method: 'POST' });
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        showToast(`成功入库 ${data.case_count} 条用例`, 'success');
+                        closeModalById('casesModal');
+                        loadTasks();
+                    } else {
+                        showToast('入库失败: ' + data.error, 'error');
+                    }
+                } catch (error) {
+                    showToast('入库失败: ' + error.message, 'error');
+                }
+            });
+        }
+
+        async function cancelTask(taskId) {
+            showConfirm('确定终止该任务？', async () => {
+                try {
+                    const response = await fetch(`/api/tasks/${taskId}/cancel`, { method: 'POST' });
+                    if (response.ok) {
+                        showToast('任务已终止', 'success');
+                        loadTasks();
+                    } else {
+                        showToast('终止失败', 'error');
+                    }
+                } catch (error) {
+                    showToast('终止失败: ' + error.message, 'error');
+                }
+            });
+        }
+
+        async function regenerateTask(taskId) {
+            showConfirm('确定重新生成？', async () => {
+                try {
+                    const response = await fetch(`/api/tasks/${taskId}/regenerate`, { method: 'POST' });
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        showToast('重新生成任务已启动', 'success');
+                        loadTasks();
+                    } else {
+                        showToast('重新生成失败: ' + data.error, 'error');
+                    }
+                } catch (error) {
+                    showToast('重新生成失败: ' + error.message, 'error');
+                }
+            });
+        }
+
+        async function deleteTask(taskId) {
+            showConfirm('确定删除该任务记录？\n\n如果是已完成的任务，将同时删除关联的测试用例。', async () => {
+                try {
+                    const response = await fetch(`/api/tasks/${taskId}?delete_cases=true`, { method: 'DELETE' });
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        let message = '任务已删除';
+                        if (data.deleted_case_count > 0) {
+                            message += `，同时删除了 ${data.deleted_case_count} 条用例`;
+                        }
+                        showToast(message, 'success');
+                        loadTasks();
+                    } else {
+                        showToast('删除失败: ' + (data.error || '未知错误'), 'error');
+                    }
+                } catch (error) {
+                    showToast('删除失败: ' + error.message, 'error');
+                }
+            });
+        }
+
+        // 全选/取消全选
+        function toggleSelectAll() {
+            const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+            const checkboxes = document.querySelectorAll('.task-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = selectAllCheckbox.checked;
+            });
+            updateBatchActionBar();
+        }
+
+        // 更新全选复选框状态
+        function updateSelectAllCheckbox() {
+            const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+            const checkboxes = document.querySelectorAll('.task-checkbox');
+            const checkedBoxes = document.querySelectorAll('.task-checkbox:checked');
+            
+            if (checkboxes.length === 0) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.disabled = true;
+            } else {
+                selectAllCheckbox.disabled = false;
+                selectAllCheckbox.checked = checkboxes.length === checkedBoxes.length && checkboxes.length > 0;
+            }
+        }
+
+        // 更新批量操作栏显示状态
+        function updateBatchActionBar() {
+            const checkedBoxes = document.querySelectorAll('.task-checkbox:checked');
+            const actionBar = document.getElementById('batchActionsBar');
+            const selectedCount = document.getElementById('selectedCount');
+            
+            selectedCount.textContent = checkedBoxes.length;
+            
+            if (checkedBoxes.length > 0) {
+                actionBar.style.display = 'block';
+            } else {
+                actionBar.style.display = 'none';
+            }
+            
+            updateSelectAllCheckbox();
+        }
+
+        // 清空选择
+        function clearSelection() {
+            const checkboxes = document.querySelectorAll('.task-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = false;
+            });
+            updateBatchActionBar();
+        }
+
+        // 批量删除任务
+        async function batchDeleteTasks() {
+            const checkedBoxes = document.querySelectorAll('.task-checkbox:checked');
+            const taskIds = Array.from(checkedBoxes).map(cb => cb.value);
+            
+            if (taskIds.length === 0) {
+                showToast('请先选择要删除的任务', 'warning');
+                return;
+            }
+            
+            showConfirm(`确定删除选中的 ${taskIds.length} 个任务记录？\n\n如果是已完成的任务，将同时删除关联的测试用例。`, async () => {
+                try {
+                    const response = await fetch('/api/tasks/batch-delete?delete_cases=true', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ task_ids: taskIds })
+                    });
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        let message = `成功删除 ${data.deleted_count} 个任务`;
+                        if (data.deleted_case_count > 0) {
+                            message += `，同时删除了 ${data.deleted_case_count} 条用例`;
+                        }
+                        showToast(message, 'success');
+                        clearSelection();
+                        loadTasks();
+                    } else {
+                        showToast('批量删除失败: ' + (data.error || '未知错误'), 'error');
+                    }
+                } catch (error) {
+                    showToast('批量删除失败: ' + error.message, 'error');
+                }
+            });
+        }
+
+        function closeModalById(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+
+        function startProgressPolling() {
+            stopProgressPolling();
+            pollInterval = setInterval(() => {
+                const hasProcessing = document.querySelector('.status-processing');
+                if (hasProcessing) {
+                    loadTasks();
+                }
+            }, 5000);
+        }
+
+        function stopProgressPolling() {
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+        }
     </script>
 </body>
 </html>

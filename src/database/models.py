@@ -95,15 +95,23 @@ class GenerationTask(Base):
     id = Column(Integer, primary_key=True)
     task_id = Column(String(100), unique=True, nullable=False)
     requirement_id = Column(Integer, ForeignKey('requirements.id'))
+    requirement_title = Column(String(500))  # 需求名称（冗余字段，便于列表展示）
     
     # 任务状态
-    status = Column(String(50), default="pending")  # pending/running/completed/failed
+    status = Column(String(50), default="pending")  # pending/processing/awaiting_review/completed_pending_review/completed/failed/cancelled/discarded
     progress = Column(Float, default=0.0)           # 进度 0-100
     message = Column(Text)                          # 状态消息
     
     # 结果
-    result = Column(JSON)                           # 生成结果
+    result = Column(JSON)                           # 生成结果（包含 test_cases 暂存区）
     error_message = Column(Text)                    # 错误信息
+    
+    # 分析快照（用于重新生成）
+    analysis_snapshot = Column(JSON)  # 保存需求分析结果：modules, test_points, business_flows 等
+    
+    # 统计信息
+    case_count = Column(Integer, default=0)         # 已生成的用例数
+    duration = Column(Float, default=0.0)           # 耗时（秒）
     
     # 时间戳
     created_at = Column(DateTime, default=datetime.utcnow)

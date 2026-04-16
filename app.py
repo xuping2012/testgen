@@ -132,6 +132,7 @@ def create_app():
     def defects_page():
         return send_from_directory(app.config['UI_FOLDER'], 'defects.html')
 
+
     @app.route('/<path:path>')
     def static_files(path):
         return send_from_directory(app.config['UI_FOLDER'], path)

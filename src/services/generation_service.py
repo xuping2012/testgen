@@ -29,8 +29,12 @@ class GenerationTask:
     status: str
     progress: float
     message: str
+    requirement_title: Optional[str] = None
     result: Optional[Dict[str, Any]] = None
     error_message: Optional[str] = None
+    analysis_snapshot: Optional[Dict[str, Any]] = None
+    case_count: int = 0
+    duration: float = 0.0
     created_at: Optional[str] = None
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
@@ -58,6 +62,47 @@ class GenerationService:
             print(f"[GenerationService] 初始化完成，LLM默认配置: {default_info.get('name', '无')} ({default_info.get('provider', '未知')})")
             print(f"[GenerationService] LLM适配器列表: {list(llm_manager.adapters.keys())}")
             print(f"[GenerationService] 默认适配器: {llm_manager.default_adapter}")
+        
+        # 从数据库加载未完成的任务
+        self._load_pending_tasks_from_db()
+    
+    def _load_pending_tasks_from_db(self):
+        """从数据库加载未完成的任务（status 为 pending/processing/awaiting_review）"""
+        if not self.db_session:
+            print("[GenerationService] 数据库会话不可用，跳过任务恢复")
+            return
+        
+        try:
+            from src.database.models import GenerationTask as GenerationTaskModel
+            
+            # 查询未完成的任务
+            pending_tasks = self.db_session.query(GenerationTaskModel).filter(
+                GenerationTaskModel.status.in_(['pending', 'processing', 'awaiting_review'])
+            ).all()
+            
+            if pending_tasks:
+                print(f"[GenerationService] 从数据库恢复 {len(pending_tasks)} 个未完成任务")
+                for task_model in pending_tasks:
+                    task = GenerationTask(
+                        task_id=task_model.task_id,
+                        requirement_id=task_model.requirement_id,
+                        requirement_title=task_model.requirement_title or '',
+                        status=task_model.status,
+                        progress=task_model.progress or 0.0,
+                        message=task_model.message or '',
+                        result=task_model.result or {},
+                        error_message=task_model.error_message,
+                        analysis_snapshot=task_model.analysis_snapshot or {},
+                        case_count=task_model.case_count or 0,
+                        duration=task_model.duration or 0.0,
+                        created_at=task_model.created_at.isoformat() if task_model.created_at else '',
+                        started_at=task_model.started_at.isoformat() if task_model.started_at else '',
+                        completed_at=task_model.completed_at.isoformat() if task_model.completed_at else ''
+                    )
+                    self._tasks[task_model.task_id] = task
+                    
+        except Exception as e:
+            print(f"[GenerationService] 恢复未完成任务失败: {e}")
     
     @staticmethod
     def init_default_prompts(db_session):
@@ -367,6 +412,176 @@ class GenerationService:
 6. **禁止使用任何占位符，必须使用具体测试数据**
 7. **重点参考RAG召回的历史用例和缺陷，确保不重复历史问题**
 8. 直接输出JSON数组，不要包含其他说明文字"""
+            },
+            {
+                "name": "需求分析模板",
+                "description": "用于需求分析的Prompt模板，识别功能模块、业务流程、测试点等",
+                "template_type": "analyze",
+                "template": """你是一位资深测试专家，擅长从需求文档中识别业务功能流程。
+
+## 需求文档
+{requirement_content}
+
+## 分析要求
+
+### 1. 业务流程识别（CoT思考链）
+请先识别业务功能流程：
+1. 寻找流程关键词（动词、顺序词、状态词）
+2. 识别流程参与者（Web端、app端、小程序端等）
+3. 识别流程闭环（正常流程、异常流程、状态变化）
+
+### 2. 功能模块划分
+- 按业务域划分，每个模块有独立的业务边界
+- 命名使用业务域名称
+- 模块数量依据需求文档客观分析
+
+### 3. 测试点定义
+- 测试点名称必须是具体的操作描述
+- 禁止与模块名重复
+- 禁止使用"功能"、"测试"等泛化词
+- 示例："密码输入"、"订单提交"、"支付验证"
+
+### 4. 业务规则提取
+- 提取所有业务规则和约束条件
+- 包括：输入约束、权限约束、状态约束
+
+### 5. 数据约束提取
+- 提取数据类型、长度、格式等约束
+- 提取数据关联关系
+
+### 6. 状态变化识别
+- 识别所有涉及状态变化的场景
+- 记录状态转换的触发条件
+
+### 7. 风险评估
+- 识别需求中的模糊点
+- 评估技术风险和业务风险
+
+## 输出格式
+
+输出JSON格式，包含以下字段：
+```json
+{{
+  "business_flows": [
+    {{"step": "步骤描述", "action": "操作", "state_change": "状态变化"}}
+  ],
+  "modules": [
+    {{"name": "模块名", "description": "模块描述", "risk_level": "High/Medium/Low"}}
+  ],
+  "business_rules": [
+    {{"content": "规则内容", "module": "所属模块", "type": "规则类型"}}
+  ],
+  "data_constraints": [
+    {{"content": "约束内容", "module": "所属模块"}}
+  ],
+  "state_changes": [
+    {{"from_state": "初始状态", "to_state": "目标状态", "trigger": "触发条件"}}
+  ],
+  "test_points": [
+    {{"name": "测试点名称", "module": "所属模块", "description": "描述"}}
+  ],
+  "risks": [
+    {{"content": "风险内容", "severity": "High/Medium/Low"}}
+  ],
+  "key_features": ["关键功能点1", "关键功能点2"],
+  "non_functional": {{
+    "performance": [],
+    "compatibility": [],
+    "security": [],
+    "usability": [],
+    "stability": []
+  }}
+}}
+```
+
+## 重要提示
+1. 测试点名称必须是具体的操作描述，不能与模块名重复
+2. 测试点数量根据实际子功能客观分析，不要机械化生成
+3. 业务流程步骤必须包含状态变化
+4. 直接输出JSON，不要包含其他说明文字"""
+            },
+            {
+                "name": "模块评审模板",
+                "description": "用于模块评审的Prompt模板，评审模块拆分的完整性和合理性",
+                "template_type": "review",
+                "template": """你是一位资深测试评审专家，负责对需求分析的模块拆分和测试点进行评审。
+
+## 需求文档
+{requirement_content}
+
+## 需求分析结果
+{analysis_result}
+
+## 评审要求
+
+### 1. 模块拆分评审
+- **完整性**：是否覆盖了需求中的所有功能点
+- **合理性**：模块边界是否清晰，是否有重叠或遗漏
+- **一致性**：模块命名是否统一，是否符合业务域命名规范
+- **独立性**：模块之间是否有清晰的业务边界
+
+### 2. 测试点评审
+- **完整性**：测试点是否覆盖了每个模块的所有子功能
+- **可测性**：测试点是否可测试，是否有明确的验证标准
+- **合理性**：测试点粒度是否合适，是否过大或过小
+- **追溯性**：每个测试点是否能追溯到具体的需求点
+
+### 3. 风险评审
+- 高风险模块是否有足够的测试覆盖
+- 依赖外部系统的异常是否考虑
+
+### 4. 非功能需求测试
+- 性能、安全、兼容性等非功能需求是否识别
+
+## 评审输出
+
+输出JSON格式的评审结果：
+```json
+{{
+  "module_review": {{
+    "completeness": {{
+      "score": 90,
+      "issues": ["问题1", "问题2"],
+      "suggestions": ["建议1", "建议2"]
+    }},
+    "rationality": {{
+      "score": 85,
+      "issues": [],
+      "suggestions": []
+    }},
+    "consistency": {{
+      "score": 95,
+      "issues": [],
+      "suggestions": []
+    }}
+  }},
+  "test_point_review": {{
+    "completeness": {{
+      "score": 88,
+      "issues": [],
+      "suggestions": []
+    }},
+    "testability": {{
+      "score": 92,
+      "issues": [],
+      "suggestions": []
+    }},
+    "missing_points": ["遗漏的测试点1", "遗漏的测试点2"]
+  }},
+  "risk_review": {{
+    "high_risks_covered": true,
+    "issues": [],
+    "suggestions": []
+  }},
+  "non_functional_review": {{
+    "performance": "评审意见",
+    "security": "评审意见",
+    "compatibility": "评审意见"
+  }},
+  "overall_score": 90,
+  "conclusion": "评审结论：通过/不通过，以及具体建议"
+}}
+```"""
             }
         ]
         
@@ -393,9 +608,21 @@ class GenerationService:
         """
         task_id = f"task_{uuid.uuid4().hex[:12]}"
         
+        # 获取需求标题
+        requirement_title = ''
+        if self.db_session:
+            try:
+                from src.database.models import Requirement
+                req = self.db_session.query(Requirement).get(requirement_id)
+                if req:
+                    requirement_title = req.title
+            except:
+                pass
+        
         task = GenerationTask(
             task_id=task_id,
             requirement_id=requirement_id,
+            requirement_title=requirement_title,
             status=TaskStatus.PENDING.value,
             progress=1.0,  # 初始进度为1%，避免显示0%
             message="🚀 任务已创建，即将开始生成...",
@@ -404,6 +631,9 @@ class GenerationService:
         
         with self._lock:
             self._tasks[task_id] = task
+        
+        # 同步到数据库
+        self._sync_task_to_db(task)
         
         return task_id
     
@@ -420,6 +650,8 @@ class GenerationService:
             task.started_at = datetime.utcnow().isoformat()
             task.progress = 1.0  # 立即设置初始进度为1%，避免显示0%
             task.message = "🚀 正在启动生成任务..."
+            # 同步到数据库
+            self._sync_task_to_db(task)
     
     def update_progress(self, task_id: str, progress: float, message: str):
         """更新任务进度"""
@@ -427,16 +659,72 @@ class GenerationService:
         if task:
             task.progress = min(progress, 100.0)
             task.message = message
+            # 同步到数据库
+            self._sync_task_to_db(task)
     
     def complete_task(self, task_id: str, result: Dict[str, Any]):
         """标记任务完成"""
         task = self.get_task(task_id)
         if task:
-            task.status = TaskStatus.COMPLETED.value
+            # 支持自定义状态（如 completed_pending_review）
+            custom_status = result.pop('status', None)
+            task.status = custom_status or TaskStatus.COMPLETED.value
             task.progress = 100.0
             task.result = result
             task.message = "生成完成"
             task.completed_at = datetime.utcnow().isoformat()
+            # 同步到数据库
+            self._sync_task_to_db(task)
+    
+    def _sync_task_to_db(self, task: GenerationTask):
+        """将内存中的任务状态同步到数据库"""
+        if not self.db_session:
+            return
+        
+        try:
+            from src.database.models import GenerationTask as GenerationTaskModel
+            
+            task_model = self.db_session.query(GenerationTaskModel).filter_by(task_id=task.task_id).first()
+            if not task_model:
+                # 如果数据库中不存在该任务，则创建
+                task_model = GenerationTaskModel(
+                    task_id=task.task_id,
+                    requirement_id=task.requirement_id
+                )
+                self.db_session.add(task_model)
+            
+            # 更新字段
+            task_model.status = task.status
+            task_model.progress = task.progress
+            task_model.message = task.message
+            task_model.result = task.result if hasattr(task, 'result') else None
+            task_model.error_message = task.error_message
+            task_model.case_count = getattr(task, 'case_count', 0) or 0
+            
+            # 时间字段
+            if task.started_at:
+                try:
+                    task_model.started_at = datetime.fromisoformat(task.started_at)
+                except:
+                    pass
+            if task.completed_at:
+                try:
+                    task_model.completed_at = datetime.fromisoformat(task.completed_at)
+                except:
+                    pass
+            
+            # 计算耗时
+            if task_model.started_at:
+                end_time = task_model.completed_at or datetime.utcnow()
+                task_model.duration = (end_time - task_model.started_at).total_seconds()
+            
+            self.db_session.commit()
+        except Exception as e:
+            print(f"[GenerationService] 同步任务到数据库失败: {e}")
+            try:
+                self.db_session.rollback()
+            except:
+                pass
     
     def fail_task(self, task_id: str, error_message: str):
         """标记任务失败"""
@@ -446,6 +734,8 @@ class GenerationService:
             task.error_message = error_message
             task.message = f"生成失败: {error_message}"
             task.completed_at = datetime.utcnow().isoformat()
+            # 同步到数据库
+            self._sync_task_to_db(task)
     
     def execute_phase1_analysis(self, task_id: str, requirement_content: str) -> Dict[str, Any]:
         """
@@ -643,32 +933,30 @@ class GenerationService:
                 
                 self.update_progress(task_id, 90.0, f"✅ LLM生成完成 - 生成{len(test_cases)}条用例")
                 
-                # 阶段3: 保存结果
-                self.update_progress(task_id, 92.0, "💾 正在保存测试用例到数据库...")
+                # 阶段3: 暂存结果（不直接入库）
+                self.update_progress(task_id, 92.0, "💾 正在暂存测试用例...")
                 
-                if test_cases and self.db_session:
-                    self._save_test_cases(requirement_id, test_cases)
-                    self.update_progress(task_id, 98.0, f"✅ 已保存{len(test_cases)}条测试用例到数据库")
+                # 将用例暂存到 task.result
+                if test_cases:
+                    with self._lock:
+                        task_obj = self._tasks.get(task_id)
+                        if task_obj:
+                            task_obj.result['test_cases'] = test_cases
+                            task_obj.case_count = len(test_cases)
+                    
+                    self.update_progress(task_id, 98.0, f"✅ 已暂存{len(test_cases)}条测试用例，待确认后入库")
                 
-                # 完成任务
-                self.update_progress(task_id, 100.0, "✅ 生成完成")
+                # 完成任务（状态为 completed_pending_review）
+                self.update_progress(task_id, 100.0, "✅ 生成完成，等待用户确认入库")
                 self.complete_task(task_id, {
                     "case_count": len(test_cases),
                     "total_count": len(test_cases),
-                    "rag_stats": rag_stats
+                    "rag_stats": rag_stats,
+                    "status": "completed_pending_review"
                 })
                 
-                # 更新需求状态
-                if self.db_session:
-                    try:
-                        from src.database.models import Requirement, RequirementStatus
-                        requirement = self.db_session.query(Requirement).get(requirement_id)
-                        if requirement:
-                            requirement.status = RequirementStatus.COMPLETED
-                            self.db_session.commit()
-                            print(f"需求状态已更新为: {requirement.status.value}")
-                    except Exception as e:
-                        print(f"更新需求状态失败: {e}")
+                # 注意：不再自动更新需求状态和保存用例到数据库
+                # 等待用户点击"全部入库"后再执行
                         
             except Exception as e:
                 self.fail_task(task_id, str(e))
@@ -1270,8 +1558,15 @@ class GenerationService:
         
         基于testcase-generator标准的需求分析方法
         """
-        # 构建分析prompt
-        analysis_prompt = f"""你是一位资深测试专家，擅长从需求文档中识别业务功能流程。
+        # 尝试从数据库加载分析模板
+        db_template = self._load_prompt_template('analyze')
+        
+        if db_template:
+            # 使用数据库模板
+            analysis_prompt = db_template.format(requirement_content=requirement_content)
+        else:
+            # 使用硬编码默认模板
+            analysis_prompt = f"""你是一位资深测试专家，擅长从需求文档中识别业务功能流程。
 
 ## 需求文档
 {requirement_content}
@@ -1357,7 +1652,8 @@ class GenerationService:
 """
         
         # 调用LLM
-        response = self.llm_manager.generate(
+        adapter = self.llm_manager.get_adapter()
+        response = adapter.generate(
             analysis_prompt,
             temperature=0.3,  # 低温以获得更结构化的输出
             max_tokens=8192,
@@ -1921,6 +2217,232 @@ class GenerationService:
         - 风险评审（高风险覆盖/依赖异常）
         
         识别测试项(ITEM)和测试点(POINT)
+        """
+        # 尝试使用LLM进行模块评审
+        if self.llm_manager:
+            try:
+                print("[模块评审] 尝试使用LLM进行模块评审...")
+                llm_review = self._llm_module_review(requirement_content, requirement_analysis)
+                if llm_review:
+                    print("[模块评审] LLM评审成功，使用LLM评审结果")
+                    return self._build_test_plan_from_llm_review(llm_review, requirement_analysis)
+                else:
+                    print("[模块评审] LLM评审结果为空，回退到规则评审")
+            except Exception as e:
+                print(f"[模块评审] LLM评审失败: {e}，回退到规则评审")
+        
+        # 回退到基于规则的评审
+        return self._rule_based_test_plan(requirement_content, requirement_analysis)
+    
+    def _llm_module_review(self, requirement_content: str, requirement_analysis: Dict[str, Any]) -> Dict:
+        """
+        使用LLM进行模块评审
+        
+        Returns:
+            评审结果JSON字典
+        """
+        # 尝试从数据库加载评审模板
+        db_template = self._load_prompt_template('review')
+        
+        if db_template:
+            # 将分析结果转为字符串
+            import json
+            analysis_str = json.dumps(requirement_analysis, ensure_ascii=False, indent=2)
+            review_prompt = db_template.format(
+                requirement_content=requirement_content,
+                analysis_result=analysis_str
+            )
+        else:
+            # 使用硬编码默认模板
+            import json
+            analysis_str = json.dumps(requirement_analysis, ensure_ascii=False, indent=2)
+            review_prompt = f"""你是一位资深测试评审专家，负责对需求分析的模块拆分和测试点进行评审。
+
+## 需求文档
+{requirement_content}
+
+## 需求分析结果
+{analysis_str}
+
+## 评审要求
+
+### 1. 模块拆分评审
+- **完整性**：是否覆盖了需求中的所有功能点
+- **合理性**：模块边界是否清晰，是否有重叠或遗漏
+- **一致性**：模块命名是否统一，是否符合业务域命名规范
+
+### 2. 测试点评审
+- **完整性**：测试点是否覆盖了每个模块的所有子功能
+- **可测性**：测试点是否可测试，是否有明确的验证标准
+- **遗漏点**：指出遗漏的测试点
+
+## 输出格式
+
+输出JSON格式的评审结果：
+```json
+{{
+  "module_review": {{
+    "completeness": {{
+      "score": 90,
+      "issues": ["问题1"],
+      "suggestions": ["建议1"]
+    }},
+    "rationality": {{
+      "score": 85,
+      "issues": [],
+      "suggestions": []
+    }}
+  }},
+  "test_point_review": {{
+    "completeness": {{
+      "score": 88,
+      "issues": [],
+      "suggestions": []
+    }},
+    "testability": {{
+      "score": 92,
+      "issues": [],
+      "suggestions": []
+    }},
+    "missing_points": ["遗漏的测试点1"]
+  }},
+  "overall_score": 90,
+  "conclusion": "评审结论"
+}}
+```"""
+        
+        # 调用LLM进行评审
+        adapter = self.llm_manager.get_adapter()
+        response = adapter.generate(
+            review_prompt,
+            temperature=0.3,
+            max_tokens=4096,
+            timeout=60
+        )
+        
+        if not response.success:
+            raise Exception(f"LLM评审失败: {response.error_message}")
+        
+        # 解析评审结果
+        import json
+        import re
+        
+        content = response.content
+        
+        # 尝试提取JSON
+        try:
+            review_result = json.loads(content)
+        except:
+            # 尝试从代码块中提取
+            json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', content)
+            if json_match:
+                review_result = json.loads(json_match.group(1))
+            else:
+                # 查找花括号
+                start = content.find('{')
+                end = content.rfind('}')
+                if start != -1 and end != -1:
+                    json_str = content[start:end+1]
+                    review_result = json.loads(json_str)
+                else:
+                    raise Exception("无法解析评审结果JSON")
+        
+        print(f"[模块评审] 评审完成 - 结论: {review_result.get('conclusion', 'N/A')}")
+        print(f"[模块评审] 总体评分: {review_result.get('overall_score', 'N/A')}/100")
+        
+        return review_result
+    
+    def _build_test_plan_from_llm_review(self, llm_review: Dict, requirement_analysis: Dict[str, Any]) -> str:
+        """
+        基于LLM评审结果构建测试规划
+        """
+        test_plan = "\n\n## 测试规划（基于LLM模块评审Agent）\n\n"
+        
+        # 获取分析结果
+        modules = requirement_analysis.get("modules", [])
+        business_rules = requirement_analysis.get("business_rules", [])
+        data_constraints = requirement_analysis.get("data_constraints", [])
+        business_flows = requirement_analysis.get("business_flows", [])
+        state_changes = requirement_analysis.get("state_changes", [])
+        test_points = requirement_analysis.get("test_points", [])
+        risks = requirement_analysis.get("risks", [])
+        
+        # ========== 1. LLM模块评审结果 ==========
+        test_plan += "### 一、模块拆分评审（LLM评审）\n\n"
+        
+        module_review = llm_review.get("module_review", {})
+        completeness = module_review.get("completeness", {})
+        rationality = module_review.get("rationality", {})
+        
+        test_plan += f"**完整性评分**: {completeness.get('score', 'N/A')}/100\n"
+        issues = completeness.get('issues', [])
+        if issues:
+            test_plan += "**完整性问题**:\n"
+            for issue in issues:
+                test_plan += f"- {issue}\n"
+            test_plan += "\n"
+        
+        suggestions = completeness.get('suggestions', [])
+        if suggestions:
+            test_plan += "**改进建议**:\n"
+            for suggestion in suggestions:
+                test_plan += f"- {suggestion}\n"
+            test_plan += "\n"
+        
+        test_plan += f"**合理性评分**: {rationality.get('score', 'N/A')}/100\n\n"
+        
+        # 为每个模块生成测试项
+        for module in modules[:5]:
+            module_name = module["name"] if isinstance(module, dict) else module
+            module_desc = module.get("description", "") if isinstance(module, dict) else ""
+            
+            test_plan += f"### 测试项：{module_name}\n"
+            if module_desc:
+                test_plan += f"**描述**: {module_desc}\n\n"
+            
+            test_plan += "- 测试点：正常流程验证\n"
+            if state_changes:
+                test_plan += f"- 测试点：状态流转验证（覆盖{len(state_changes)}个状态转换）\n"
+            
+            module_rules = [r for r in business_rules 
+                           if module_name in r.get("content", "") or module_name in str(r)]
+            if module_rules:
+                for rule in module_rules[:3]:
+                    rule_content = rule.get("content", rule) if isinstance(rule, dict) else str(rule)
+                    rule_desc = rule_content[:30] + ('...' if len(rule_content) > 30 else '')
+                    test_plan += f"- 测试点：业务规则验证 - {rule_desc}\n"
+            
+            test_plan += "- 测试点：边界值测试\n"
+            test_plan += "- 测试点：异常处理验证\n\n"
+        
+        # 添加LLM建议的遗漏测试点
+        test_point_review = llm_review.get("test_point_review", {})
+        missing_points = test_point_review.get("missing_points", [])
+        if missing_points:
+            test_plan += "### LLM建议补充的测试点\n\n"
+            for point in missing_points:
+                test_plan += f"- 测试点：{point}\n"
+            test_plan += "\n"
+        
+        # ========== 2. 测试点评审 ==========
+        test_plan += "### 二、测试点评审（LLM评审）\n\n"
+        
+        tp_completeness = test_point_review.get("completeness", {})
+        tp_testability = test_point_review.get("testability", {})
+        
+        test_plan += f"**完整性评分**: {tp_completeness.get('score', 'N/A')}/100\n"
+        test_plan += f"**可测性评分**: {tp_testability.get('score', 'N/A')}/100\n\n"
+        
+        # ========== 3. 总体评审结论 ==========
+        test_plan += "### 三、总体评审结论\n\n"
+        test_plan += f"**总体评分**: {llm_review.get('overall_score', 'N/A')}/100\n"
+        test_plan += f"**结论**: {llm_review.get('conclusion', 'N/A')}\n\n"
+        
+        return test_plan
+    
+    def _rule_based_test_plan(self, requirement_content: str, requirement_analysis: Dict[str, Any]) -> str:
+        """
+        基于规则的测试规划（回退方案）
         """
         test_plan = "\n\n## 测试规划（基于模块评审Agent方法论）\n\n"
         
@@ -2850,7 +3372,8 @@ class GenerationService:
         
         # 调用LLM进行评审
         try:
-            response = self.llm_manager.generate(
+            adapter = self.llm_manager.get_adapter()
+            response = adapter.generate(
                 review_prompt,
                 temperature=0.3,
                 max_tokens=4096,

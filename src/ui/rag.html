@@ -1039,19 +1039,7 @@
                 </div>
             </div>
 
-            <!-- 搜索 -->
-            <div class="card">
-                <div class="card-title">相似度搜索</div>
-                <div class="search-box">
-                    <input type="text" class="search-input" id="searchQuery" 
-                           placeholder="输入需求关键词，搜索相似的历史用例、需求和缺陷..."
-                           onkeypress="if(event.key === 'Enter') performSearch()">
-                    <button class="btn btn-primary" onclick="performSearch()">搜索</button>
-                </div>
-                <div id="searchResults"></div>
-            </div>
-
-            <!-- 数据录入 -->
+            <!-- 数据列表 -->
             <div class="card">
                 <div class="tabs">
                     <div class="tab active" onclick="switchTab('cases')">历史用例</div>
@@ -1209,123 +1197,6 @@
             } catch (error) {
                 console.error('加载统计失败:', error);
             }
-        }
-
-        async function performSearch() {
-            const query = document.getElementById('searchQuery').value.trim();
-            if (!query) {
-                showToast('请输入搜索关键词', 'info');
-                return;
-            }
-
-            try {
-                const response = await fetch('/api/rag/search', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query, top_k: 10 })
-                });
-
-                const data = await response.json();
-                console.log('搜索结果:', data); // Debug log
-                renderSearchResults(data.results);
-            } catch (error) {
-                console.error('搜索失败:', error);
-                showToast('搜索失败', 'error');
-            }
-        }
-
-        function renderSearchResults(results) {
-            const container = document.getElementById('searchResults');
-            if (!results) {
-                container.innerHTML = '<div class="empty-state">未找到相似数据</div>';
-                return;
-            }
-
-            // 将字典格式的结果转换为扁平化数组
-            let allResults = [];
-            
-            // 处理需求结果
-            if (results.requirements && results.requirements.length > 0) {
-                results.requirements.forEach(item => {
-                    allResults.push({
-                        ...item,
-                        type: 'requirement'
-                    });
-                });
-            }
-            
-            // 处理用例结果
-            if (results.cases && results.cases.length > 0) {
-                results.cases.forEach(item => {
-                    allResults.push({
-                        ...item,
-                        type: 'case'
-                    });
-                });
-            }
-            
-            // 处理缺陷结果
-            if (results.defects && results.defects.length > 0) {
-                results.defects.forEach(item => {
-                    allResults.push({
-                        ...item,
-                        type: 'defect'
-                    });
-                });
-            }
-            
-            // 按相似度分数排序
-            allResults.sort((a, b) => b.score - a.score);
-            
-            if (allResults.length === 0) {
-                container.innerHTML = '<div class="empty-state">未找到相似数据<br><br>提示：请先通过"录入数据"或"从数据库导入"按钮将数据添加到向量库，然后再进行搜索</div>';
-                return;
-            }
-
-            container.innerHTML = allResults.map(r => {
-                // 提取标题
-                let title = '';
-                if (r.type === 'case') {
-                    title = (r.metadata && r.metadata.name) ? r.metadata.name : '';
-                    if (!title && r.metadata && r.metadata.case_id) title = r.metadata.case_id;
-                    if (!title && r.content) {
-                        const firstLine = r.content.split('\n')[0];
-                        if (firstLine.startsWith('测试用例:')) {
-                            title = firstLine.substring(5).trim();
-                        } else if (firstLine.startsWith('测试用例：')) {
-                            title = firstLine.substring(5).trim();
-                        } else {
-                            title = firstLine.substring(0, 80);
-                        }
-                    }
-                    if (!title) title = r.id;
-                } else if (r.type === 'defect') {
-                    title = (r.metadata && r.metadata.title) ? r.metadata.title : '';
-                    if (!title && r.content) {
-                        const firstLine = r.content.split('\n')[0];
-                        if (firstLine.startsWith('缺陷标题:')) {
-                            title = firstLine.substring(5).trim();
-                        } else if (firstLine.startsWith('缺陷标题：')) {
-                            title = firstLine.substring(5).trim();
-                        } else {
-                            title = firstLine.substring(0, 80);
-                        }
-                    }
-                    if (!title) title = r.id;
-                } else {
-                    title = (r.metadata && r.metadata.title) ? r.metadata.title : r.id;
-                }
-                
-                return `
-                    <div class="result-item">
-                        <span class="result-type type-${r.type}">${getTypeLabel(r.type)}</span>
-                        <span class="result-score">${(r.score * 100).toFixed(1)}% 匹配度</span>
-                        <div style="font-weight: 600; margin-bottom: 8px; color: var(--text-primary);">${title}</div>
-                        <div class="result-content">${r.content.substring(0, 200)}...</div>
-                        <div class="result-meta">ID: ${r.id}${r.metadata && r.metadata.module ? ' | 模块: ' + r.metadata.module : ''}${r.metadata && r.metadata.requirement_title ? ' | 需求: ' + r.metadata.requirement_title : ''}</div>
-                    </div>
-                `;
-            }).join('');
         }
 
         function getTypeLabel(type) {
@@ -1921,10 +1792,6 @@
         document.addEventListener('DOMContentLoaded', () => {
             loadStats();
             loadDataList();
-        });
-
-        document.getElementById('searchQuery')?.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') performSearch();
         });
     </script>
 

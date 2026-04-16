@@ -41,6 +41,67 @@ def init_default_data(engine):
         # 创建默认Prompt模板
         default_templates = [
             PromptTemplate(
+                name="default_analyze",
+                description="默认需求分析模板",
+                template_type="analyze",
+                template="""你是一位资深测试专家，擅长从需求文档中识别业务功能流程。
+
+## 需求文档
+{requirement_content}
+
+## 分析要求
+
+### 1. 业务流程识别（CoT思考链）
+1. 寻找流程关键词（动词、顺序词、状态词）
+2. 识别流程参与者（Web端、app端、小程序端等）
+3. 识别流程闭环（正常流程、异常流程、状态变化）
+
+### 2. 功能模块划分
+- 按业务域划分，每个模块有独立的业务边界
+- 命名使用业务域名称
+
+### 3. 测试点定义
+- 测试点名称必须是具体的操作描述
+- 禁止与模块名重复
+- 禁止使用"功能"、"测试"等泛化词
+
+### 4. 业务规则和数据约束
+- 提取所有业务规则和约束条件
+- 提取数据类型、长度、格式等约束
+
+### 5. 状态变化识别
+- 识别所有涉及状态变化的场景
+
+### 6. 风险评估
+- 识别需求中的模糊点和技术风险
+
+## 输出格式
+
+输出JSON格式：
+{
+  "business_flows": ["流程步骤1", "流程步骤2"],
+  "modules": [{"name": "模块名", "description": "描述"}],
+  "business_rules": [{"content": "规则内容", "type": "类型"}],
+  "data_constraints": [{"content": "约束内容", "type": "类型"}],
+  "state_changes": ["状态变化1"],
+  "test_points": [{"name": "测试点", "module": "模块", "risk_level": "High/Medium/Low"}],
+  "risks": [{"content": "风险", "severity": "High/Medium/Low"}],
+  "key_features": ["关键功能1"],
+  "non_functional": {
+    "performance": [],
+    "compatibility": [],
+    "security": [],
+    "usability": [],
+    "stability": []
+  }
+}
+
+## 重要提示
+1. 测试点名称不能与模块名重复
+2. 直接输出JSON，不要包含其他说明文字""",
+                is_default=1
+            ),
+            PromptTemplate(
                 name="default_generate",
                 description="默认用例生成模板",
                 template_type="generate",
@@ -72,25 +133,59 @@ def init_default_data(engine):
             ),
             PromptTemplate(
                 name="default_review",
-                description="默认用例评审模板",
+                description="默认模块评审模板",
                 template_type="review",
-                template="""请评审以下测试用例的质量：
+                template="""你是一位资深测试评审专家，负责对需求分析的模块拆分和测试点进行评审。
 
-测试用例：
-{test_cases}
+## 需求文档
+{requirement_content}
 
-请从以下维度评审：
-1. 覆盖率：是否覆盖了所有需求点
-2. 准确性：测试步骤和预期结果是否准确
-3. 可执行性：用例是否可实际操作
-4. 完整性：前置条件、测试数据是否完整
+## 需求分析结果
+{analysis_result}
 
-输出JSON格式：
+## 评审要求
+
+### 1. 模块拆分评审
+- **完整性**：是否覆盖了需求中的所有功能点
+- **合理性**：模块边界是否清晰，是否有重叠或遗漏
+- **一致性**：模块命名是否统一，是否符合业务域命名规范
+
+### 2. 测试点评审
+- **完整性**：测试点是否覆盖了每个模块的所有子功能
+- **可测性**：测试点是否可测试，是否有明确的验证标准
+- **遗漏点**：指出遗漏的测试点
+
+## 输出格式
+
+输出JSON格式的评审结果：
 {
-    "passed": true/false,
-    "score": 0-100,
-    "issues": ["问题1", "问题2"],
-    "suggestions": ["建议1", "建议2"]
+  "module_review": {
+    "completeness": {
+      "score": 90,
+      "issues": ["问题1"],
+      "suggestions": ["建议1"]
+    },
+    "rationality": {
+      "score": 85,
+      "issues": [],
+      "suggestions": []
+    }
+  },
+  "test_point_review": {
+    "completeness": {
+      "score": 88,
+      "issues": [],
+      "suggestions": []
+    },
+    "testability": {
+      "score": 92,
+      "issues": [],
+      "suggestions": []
+    },
+    "missing_points": ["遗漏的测试点1"]
+  },
+  "overall_score": 90,
+  "conclusion": "评审结论"
 }""",
                 is_default=1
             ),
