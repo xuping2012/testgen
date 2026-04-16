@@ -1713,16 +1713,20 @@
         let selectedOptionValue = null;
 
         function showConfirmWithOptions(message, options, onConfirm) {
-            document.getElementById('confirmOptionsMessage').textContent = message;
+            document.getElementById('confirmOptionsMessage').innerHTML = message;
+            
+            // 找到推荐选项的索引
+            const recommendedIndex = options.findIndex(opt => opt.recommended);
+            const defaultIndex = recommendedIndex >= 0 ? recommendedIndex : 0;
             
             // 生成选项列表
             const optionsList = document.getElementById('confirmOptionsList');
             optionsList.innerHTML = options.map((option, index) => `
-                <label style="display: block; padding: 10px; margin: 5px 0; border: 1px solid ${option.danger ? 'rgba(255, 0, 85, 0.3)' : 'var(--dark-border)'}; border-radius: 4px; cursor: pointer; ${index === 0 ? 'background: rgba(0, 255, 255, 0.05);' : ''}" 
+                <label style="display: block; padding: 10px; margin: 5px 0; border: 1px solid ${option.danger ? 'rgba(255, 0, 85, 0.3)' : 'var(--dark-border)'}; border-radius: 4px; cursor: pointer; ${index === defaultIndex ? 'background: rgba(0, 255, 255, 0.05);' : ''}" 
                        onmouseover="this.style.background='${option.danger ? 'rgba(255, 0, 85, 0.05)' : 'rgba(0, 255, 255, 0.05)'}'" 
                        onmouseout="this.style.background='transparent'">
                     <input type="radio" name="confirmOption" value="${option.value}" 
-                           ${index === 0 ? 'checked' : ''} 
+                           ${index === defaultIndex ? 'checked' : ''} 
                            onchange="selectedOptionValue='${option.value}'"
                            style="margin-right: 10px;">
                     <strong style="${option.danger ? 'color: #ff0055;' : 'color: var(--neon-cyan);'}">${option.label}</strong>
@@ -1730,8 +1734,8 @@
                 </label>
             `).join('');
             
-            // 默认选中第一个选项
-            selectedOptionValue = options[0].value;
+            // 默认选中推荐选项或第一个选项
+            selectedOptionValue = options[defaultIndex].value;
             confirmOptionsCallback = onConfirm;
             
             document.getElementById('confirmOptionsModal').classList.add('active');
@@ -2684,6 +2688,7 @@
         // ========== Progress tab functions ==========
         let progressCurrentPage = 1;
         let progressPollInterval = null;
+        let selectedTaskIds = new Set(); // 保存选中的任务ID
 
         async function loadTasks() {
             const status = document.getElementById('statusFilter').value;
@@ -2722,11 +2727,12 @@
                 const duration = formatDuration(task.duration);
                 const progress = Math.round(task.progress || 0);
                 const canDelete = (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled');
+                const isChecked = selectedTaskIds.has(task.task_id) ? 'checked' : '';
                 
                 return `
                     <tr>
                         <td>
-                            ${canDelete ? `<input type="checkbox" class="task-checkbox" value="${task.task_id}" onchange="updateBatchActionBar()">` : ''}
+                            ${canDelete ? `<input type="checkbox" class="task-checkbox" value="${task.task_id}" ${isChecked} oninput="updateBatchActionBar()">` : ''}
                         </td>
                         <td><code>${task.task_id}</code></td>
                         <td>${task.requirement_title || '-'}</td>
@@ -3016,25 +3022,49 @@
         }
 
         async function deleteTask(taskId) {
-            showConfirm('确定删除该任务记录？\n\n如果是已完成的任务，将同时删除关联的测试用例。', async () => {
-                try {
-                    const response = await fetch(`/api/tasks/${taskId}?delete_cases=true`, { method: 'DELETE' });
-                    const data = await response.json();
-                    
-                    if (response.ok) {
-                        let message = '任务已删除';
-                        if (data.deleted_case_count > 0) {
-                            message += `，同时删除了 ${data.deleted_case_count} 条用例`;
-                        }
-                        showToast(message, 'success');
-                        loadTasks();
-                    } else {
-                        showToast('删除失败: ' + (data.error || '未知错误'), 'error');
+            // 获取任务详情，检查是否包含用例
+            const allTasks = getCurrentTasks();
+            const task = allTasks.find(t => t.task_id === taskId);
+            
+            if (task && task.status === 'completed' && task.case_count > 0) {
+                // 任务有用例，询问是否删除
+                showConfirmWithOptions(
+                    `该任务包含 ${task.case_count} 条测试用例（已入库）。<br><strong>请选择删除方式：</strong>`,
+                    [
+                        { label: '删除任务及关联用例', value: 'delete_with_cases', description: '同时删除已入库的测试用例', recommended: true },
+                        { label: '仅删除任务记录', value: 'delete_only', description: '保留已入库的用例' }
+                    ],
+                    async (choice) => {
+                        await executeSingleDelete(taskId, choice === 'delete_with_cases');
                     }
-                } catch (error) {
-                    showToast('删除失败: ' + error.message, 'error');
+                );
+            } else {
+                // 任务无用例，直接删除
+                showConfirm('确定删除该任务记录？', async () => {
+                    await executeSingleDelete(taskId, false);
+                });
+            }
+        }
+
+        // 执行单个删除
+        async function executeSingleDelete(taskId, deleteCases) {
+            try {
+                const response = await fetch(`/api/tasks/${taskId}?delete_cases=${deleteCases}`, { method: 'DELETE' });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    let message = '任务已删除';
+                    if (data.deleted_case_count > 0) {
+                        message += `，同时删除了 ${data.deleted_case_count} 条用例`;
+                    }
+                    showToast(message, 'success');
+                    loadTasks();
+                } else {
+                    showToast('删除失败: ' + (data.error || '未知错误'), 'error');
                 }
-            });
+            } catch (error) {
+                showToast('删除失败: ' + error.message, 'error');
+            }
         }
 
         // 全选/取消全选
@@ -3043,6 +3073,11 @@
             const checkboxes = document.querySelectorAll('.task-checkbox');
             checkboxes.forEach(cb => {
                 cb.checked = selectAllCheckbox.checked;
+                if (selectAllCheckbox.checked) {
+                    selectedTaskIds.add(cb.value);
+                } else {
+                    selectedTaskIds.delete(cb.value);
+                }
             });
             updateBatchActionBar();
         }
@@ -3068,9 +3103,13 @@
             const actionBar = document.getElementById('batchActionsBar');
             const selectedCount = document.getElementById('selectedCount');
             
-            selectedCount.textContent = checkedBoxes.length;
+            // 更新选中的ID集合
+            selectedTaskIds.clear();
+            checkedBoxes.forEach(cb => selectedTaskIds.add(cb.value));
             
-            if (checkedBoxes.length > 0) {
+            selectedCount.textContent = selectedTaskIds.size;
+            
+            if (selectedTaskIds.size > 0) {
                 actionBar.style.display = 'block';
             } else {
                 actionBar.style.display = 'none';
@@ -3085,43 +3124,87 @@
             checkboxes.forEach(cb => {
                 cb.checked = false;
             });
+            selectedTaskIds.clear();
             updateBatchActionBar();
         }
 
         // 批量删除任务
         async function batchDeleteTasks() {
-            const checkedBoxes = document.querySelectorAll('.task-checkbox:checked');
-            const taskIds = Array.from(checkedBoxes).map(cb => cb.value);
+            const taskIds = Array.from(selectedTaskIds);
             
             if (taskIds.length === 0) {
                 showToast('请先选择要删除的任务', 'warning');
                 return;
             }
             
-            showConfirm(`确定删除选中的 ${taskIds.length} 个任务记录？\n\n如果是已完成的任务，将同时删除关联的测试用例。`, async () => {
-                try {
-                    const response = await fetch('/api/tasks/batch-delete?delete_cases=true', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ task_ids: taskIds })
-                    });
-                    const data = await response.json();
-                    
-                    if (response.ok) {
-                        let message = `成功删除 ${data.deleted_count} 个任务`;
-                        if (data.deleted_case_count > 0) {
-                            message += `，同时删除了 ${data.deleted_case_count} 条用例`;
-                        }
-                        showToast(message, 'success');
-                        clearSelection();
-                        loadTasks();
-                    } else {
-                        showToast('批量删除失败: ' + (data.error || '未知错误'), 'error');
+            // 获取选中任务的详细信息，检查是否有用例
+            const allTasks = getCurrentTasks();
+            const selectedTasks = allTasks.filter(t => selectedTaskIds.has(t.task_id));
+            const tasksWithCases = selectedTasks.filter(t => t.status === 'completed' && t.case_count > 0);
+            
+            if (tasksWithCases.length > 0) {
+                // 有任务包含用例，询问是否删除
+                const totalCaseCount = tasksWithCases.reduce((sum, t) => sum + (t.case_count || 0), 0);
+                showConfirmWithOptions(
+                    `选中的 ${taskIds.length} 个任务中有 ${tasksWithCases.length} 个包含用例，共 ${totalCaseCount} 条用例。<br><strong>请选择删除方式：</strong>`,
+                    [
+                        { label: '删除任务及关联用例', value: 'delete_with_cases', description: '同时删除已入库的测试用例', recommended: true },
+                        { label: '仅删除任务记录', value: 'delete_only', description: '保留已入库的用例' }
+                    ],
+                    async (choice) => {
+                        await executeBatchDelete(taskIds, choice === 'delete_with_cases');
                     }
-                } catch (error) {
-                    showToast('批量删除失败: ' + error.message, 'error');
+                );
+            } else {
+                // 没有任务包含用例，直接删除
+                await executeBatchDelete(taskIds, false);
+            }
+        }
+
+        // 执行批量删除
+        async function executeBatchDelete(taskIds, deleteCases) {
+            try {
+                const response = await fetch(`/api/tasks/batch-delete?delete_cases=${deleteCases}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ task_ids: taskIds })
+                });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    let message = `成功删除 ${data.deleted_count} 个任务`;
+                    if (data.deleted_case_count > 0) {
+                        message += `，同时删除了 ${data.deleted_case_count} 条用例`;
+                    }
+                    showToast(message, 'success');
+                    clearSelection();
+                    loadTasks();
+                } else {
+                    showToast('批量删除失败: ' + (data.error || '未知错误'), 'error');
+                }
+            } catch (error) {
+                showToast('批量删除失败: ' + error.message, 'error');
+            }
+        }
+
+        // 获取当前显示的任务列表
+        function getCurrentTasks() {
+            // 从表格DOM中提取任务数据
+            const rows = document.querySelectorAll('#taskTableBody tr');
+            const tasks = [];
+            rows.forEach(row => {
+                const taskIdCell = row.querySelector('td:nth-child(2) code');
+                const caseCountCell = row.querySelector('td:nth-child(7)');
+                const statusCell = row.querySelector('.status-badge');
+                if (taskIdCell) {
+                    tasks.push({
+                        task_id: taskIdCell.textContent,
+                        case_count: parseInt(caseCountCell?.textContent || '0'),
+                        status: statusCell?.className.replace('status-badge ', '').replace('status-', '') || ''
+                    });
                 }
             });
+            return tasks;
         }
 
         function closeModalById(modalId) {
