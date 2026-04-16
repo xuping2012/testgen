@@ -227,7 +227,7 @@ class MinimaxAdapter(OpenAIAdapter):
 
 
 class IFlowAdapter(OpenAIAdapter):
-    """iFlow中转站适配器"""
+    """iFlow适配器(26年4月17日停止服务)"""
 
     def __init__(self, api_key: str, base_url: str = "https://apis.iflow.cn/v1", model_id: str = "qwen3-coder-plus", timeout: int = 120):
         super().__init__(
@@ -335,7 +335,7 @@ class LLMManager:
         "kimi": {"name": "KIMI", "default_base_url": "https://api.moonshot.cn/v1", "need_base_url": False},
         "zhipu": {"name": "智谱AI", "default_base_url": "https://open.bigmodel.cn/api/paas/v4", "need_base_url": False},
         "minimax": {"name": "Minimax", "default_base_url": "https://api.minimax.chat/v1", "need_base_url": False},
-        "iflow": {"name": "iFlow中转", "default_base_url": "https://apis.iflow.cn/v1", "need_base_url": False},
+        "iflow": {"name": "iFlow", "default_base_url": "https://apis.iflow.cn/v1", "need_base_url": False},
         "uniaix": {"name": "UniAIX中转", "default_base_url": "https://www.uniaix.com", "need_base_url": False},
     }
 
