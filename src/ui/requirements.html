@@ -337,14 +337,62 @@
         
         /* 分页 */
         .pagination {
-            display: flex;
-            justify-content: center;
-            gap: 10px;
             margin-top: 30px;
         }
         
+        .pagination-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 0;
+            border-top: 1px solid var(--dark-border);
+        }
+        
+        .pagination-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+        
+        .page-size-select {
+            padding: 8px 12px;
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .page-size-select:hover {
+            border-color: var(--neon-cyan);
+        }
+        
+        .page-size-select:focus {
+            outline: none;
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 10px rgba(0, 245, 255, 0.2);
+        }
+        
+        .pagination-center {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .pagination-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+        
         .page-btn {
-            padding: 10px 16px;
+            padding: 8px 14px;
             border: 1px solid var(--dark-border);
             background: transparent;
             color: var(--text-secondary);
@@ -352,9 +400,11 @@
             border-radius: 6px;
             transition: all 0.3s;
             font-family: monospace;
+            font-size: 13px;
+            min-width: 40px;
         }
         
-        .page-btn:hover {
+        .page-btn:hover:not(.disabled) {
             border-color: var(--neon-cyan);
             color: var(--neon-cyan);
         }
@@ -363,7 +413,43 @@
             background: var(--neon-cyan);
             color: var(--dark-bg);
             border-color: var(--neon-cyan);
-            box-shadow: 0 0 20px rgba(0, 245, 255, 0.4);
+            box-shadow: 0 0 15px rgba(0, 245, 255, 0.3);
+        }
+        
+        .page-btn.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        
+        .page-ellipsis {
+            color: var(--text-secondary);
+            padding: 0 4px;
+        }
+        
+        .page-jump-input {
+            width: 60px;
+            padding: 8px 10px;
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 13px;
+            text-align: center;
+            transition: all 0.3s;
+            font-family: monospace;
+        }
+        
+        .page-jump-input:focus {
+            outline: none;
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 10px rgba(0, 245, 255, 0.2);
+        }
+        
+        .pagination-info {
+            text-align: center;
+            padding: 16px 0;
+            color: var(--text-secondary);
+            font-size: 13px;
         }
         
         /* 表单 */
@@ -1364,6 +1450,7 @@
 
     <script>
         let currentPage = 1;
+        let currentLimit = 10;
         let currentTaskId = null;
         let currentRequirementId = null;
         let progressInterval = null;
@@ -1417,10 +1504,12 @@
             importRequirements(this);
         });
 
-        async function loadRequirements(page = 1) {
+        async function loadRequirements(page = 1, limit = null) {
             try {
                 currentPage = page;
-                const response = await fetch(`/api/requirements?page=${page}&limit=10`);
+                if (limit) currentLimit = limit;
+                
+                const response = await fetch(`/api/requirements?page=${page}&limit=${currentLimit}`);
                 const data = await response.json();
                 
                 const tbody = document.getElementById('requirementList');
@@ -1433,7 +1522,7 @@
                             </td>
                         </tr>
                     `;
-                    document.getElementById('pagination').innerHTML = '';
+                    document.getElementById('pagination').innerHTML = `<div class="pagination-info">共 0 条记录</div>`;
                     return;
                 }
 
@@ -1480,11 +1569,99 @@
             const totalPages = Math.ceil(total / limit);
             const pagination = document.getElementById('pagination');
             
-            let html = '';
-            for (let i = 1; i <= totalPages; i++) {
+            if (totalPages <= 1) {
+                pagination.innerHTML = `<div class="pagination-info">共 ${total} 条记录</div>`;
+                return;
+            }
+            
+            let html = '<div class="pagination-container">';
+            
+            // 左侧：每页条数选择 + 总记录数
+            html += '<div class="pagination-left">';
+            html += `<span>共 ${total} 条</span>`;
+            html += '<select class="page-size-select" onchange="changePageSize(this.value)">';
+            [10, 20, 50, 100, 200].forEach(size => {
+                html += `<option value="${size}" ${size === limit ? 'selected' : ''}>${size}条/页</option>`;
+            });
+            html += '</select>';
+            html += '</div>';
+            
+            // 中间：页码按钮
+            html += '<div class="pagination-center">';
+            
+            // 上一页
+            if (page > 1) {
+                html += `<button class="page-btn" onclick="loadRequirements(${page - 1})">上一页</button>`;
+            } else {
+                html += `<button class="page-btn disabled" disabled>上一页</button>`;
+            }
+            
+            // 页码逻辑（智能显示页码）
+            const maxVisible = 7;
+            let startPage = Math.max(1, page - Math.floor(maxVisible / 2));
+            let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+            
+            if (endPage - startPage < maxVisible - 1) {
+                startPage = Math.max(1, endPage - maxVisible + 1);
+            }
+            
+            // 第一页和省略号
+            if (startPage > 1) {
+                html += `<button class="page-btn" onclick="loadRequirements(1)">1</button>`;
+                if (startPage > 2) {
+                    html += '<span class="page-ellipsis">...</span>';
+                }
+            }
+            
+            // 页码按钮
+            for (let i = startPage; i <= endPage; i++) {
                 html += `<button class="page-btn ${i === page ? 'active' : ''}" onclick="loadRequirements(${i})">${i}</button>`;
             }
+            
+            // 最后一页和省略号
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    html += '<span class="page-ellipsis">...</span>';
+                }
+                html += `<button class="page-btn" onclick="loadRequirements(${totalPages})">${totalPages}</button>`;
+            }
+            
+            // 下一页
+            if (page < totalPages) {
+                html += `<button class="page-btn" onclick="loadRequirements(${page + 1})">下一页</button>`;
+            } else {
+                html += `<button class="page-btn disabled" disabled>下一页</button>`;
+            }
+            
+            html += '</div>';
+            
+            // 右侧：跳转到指定页
+            html += '<div class="pagination-right">';
+            html += `<span>跳至</span>`;
+            html += `<input type="number" class="page-jump-input" min="1" max="${totalPages}" value="${page}" onkeypress="if(event.key==='Enter')jumpToPage(this)" />`;
+            html += '</div>';
+            
+            html += '</div>';
             pagination.innerHTML = html;
+        }
+        
+        function changePageSize(newLimit) {
+            loadRequirementsPage(1, parseInt(newLimit));
+        }
+        
+        function jumpToPage(input) {
+            const page = parseInt(input.value);
+            const maxPage = parseInt(input.max);
+            if (page >= 1 && page <= maxPage) {
+                loadRequirements(page);
+            } else {
+                input.value = currentPage;
+            }
+        }
+        
+        function loadRequirementsPage(page, limit) {
+            const currentLimit = limit || parseInt(document.querySelector('.page-size-select')?.value || 10);
+            loadRequirements(page, currentLimit);
         }
 
         // 选择功能

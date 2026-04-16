@@ -916,9 +916,31 @@ class GenerationService:
                         self._save_test_cases(task_obj.requirement_id, test_cases)
                         print(f"用例保存完成")
                         
-                        self.update_progress(task_id, 98.0, f"✅ 已保存{len(test_cases)}条测试用例到数据库")
+                        self.update_progress(task_id, 95.0, f"✅ 已保存{len(test_cases)}条测试用例到数据库")
                         if progress_callback:
-                            progress_callback(98.0, f"✅ 已保存{len(test_cases)}条测试用例到数据库")
+                            progress_callback(95.0, f"✅ 已保存{len(test_cases)}条测试用例到数据库")
+
+                # ========== 阶段5.5: 质量评审 (98%) ==========
+                self.update_progress(task_id, 96.0, "🔍 正在执行质量评审...")
+                if progress_callback:
+                    progress_callback(96.0, "🔍 正在执行质量评审...")
+                
+                quality_review = None
+                if self.llm_manager and test_cases:
+                    try:
+                        quality_review = self._execute_quality_review(
+                            test_cases, 
+                            requirement_content,
+                            requirement_analysis
+                        )
+                        self.update_progress(task_id, 98.0, "✅ 质量评审完成")
+                        if progress_callback:
+                            progress_callback(98.0, "✅ 质量评审完成")
+                    except Exception as e:
+                        print(f"质量评审失败: {e}")
+                        self.update_progress(task_id, 98.0, "⚠️ 质量评审失败，继续完成")
+                        if progress_callback:
+                            progress_callback(98.0, "⚠️ 质量评审失败，继续完成")
 
                 # ========== 阶段6: 完成任务 (100%) ==========
                 result = {
@@ -926,6 +948,7 @@ class GenerationService:
                     "total_count": len(test_cases),
                     "rag_stats": rag_stats,
                     "analysis_result": structured_plan,
+                    "quality_review": quality_review,
                     "timestamp": datetime.utcnow().isoformat()
                 }
 
@@ -1196,14 +1219,17 @@ class GenerationService:
 
     def _analyze_requirement(self, requirement_content: str) -> Dict[str, Any]:
         """
-        需求分析Agent - 基于01_需求分析Agent.md
+        需求分析Agent - 使用LLM CoT进行深度需求分析
+        
+        优先使用LLM进行业务流程识别和测试点提取，
+        如果LLM不可用则回退到规则解析。
         
         分析需求文档，提取关键信息：
         - 功能模块清单（按业务域划分）
-        - 业务流程步骤
+        - 业务流程步骤（CoT思考链）
         - 约束条件清单
         - 状态变化清单
-        - 测试点清单
+        - 测试点清单（禁止与模块名重复）
         - 非功能需求
         
         Returns:
@@ -1220,6 +1246,204 @@ class GenerationService:
                 "items": [],  # 测试项（由_parse_test_plan填充）
                 "points": []  # 测试点（由_parse_test_plan填充）
             }
+        """
+        # 尝试使用LLM进行深度分析
+        if self.llm_manager:
+            try:
+                print("[需求分析] 尝试使用LLM CoT进行深度需求分析...")
+                llm_analysis = self._llm_based_analysis(requirement_content)
+                if llm_analysis and llm_analysis.get('modules'):
+                    print(f"[需求分析] LLM分析成功 - 识别到 {len(llm_analysis['modules'])} 个模块")
+                    return llm_analysis
+                else:
+                    print("[需求分析] LLM分析结果为空，回退到规则解析")
+            except Exception as e:
+                print(f"[需求分析] LLM分析失败: {e}，回退到规则解析")
+        
+        # 回退到规则解析
+        print("[需求分析] 使用规则解析进行需求分析")
+        return self._rule_based_analysis(requirement_content)
+    
+    def _llm_based_analysis(self, requirement_content: str) -> Dict[str, Any]:
+        """
+        使用LLM进行需求分析（CoT思考链）
+        
+        基于testcase-generator标准的需求分析方法
+        """
+        # 构建分析prompt
+        analysis_prompt = f"""你是一位资深测试专家，擅长从需求文档中识别业务功能流程。
+
+## 需求文档
+{requirement_content}
+
+## 分析要求
+
+### 1. 业务流程识别（CoT思考链）
+请先识别业务功能流程：
+1. 寻找流程关键词（动词、顺序词、状态词）
+2. 识别流程参与者（Web端、app端、小程序端等）
+3. 识别流程闭环（正常流程、异常流程、状态变化）
+
+输出格式：
+```
+业务流程识别结果：
+步骤1: [操作描述] → [状态变化]
+步骤2: [操作描述] → [状态变化]
+...
+```
+
+### 2. 功能模块划分
+- 按业务域划分，每个模块有独立的业务边界
+- 命名使用业务域名称
+- 模块数量依据需求文档客观分析
+
+### 3. 测试点划分
+- 按需求中的实际子功能/操作划分
+- **禁止测试点名称与功能模块名称相同**
+- 测试点应描述具体操作，禁止使用"功能"、"测试"等泛化词
+
+### 4. 业务规则和数据约束
+- 提取所有"必须"、"禁止"、"限制"等业务规则
+- 提取所有"长度"、"范围"、"最大"、"最小"等数据约束
+
+### 5. 风险评估
+- 识别需求中的模糊点
+- 识别缺失的关键信息
+
+## 输出格式
+请输出JSON格式的分析结果：
+```json
+{{
+  "business_flows": [
+    "步骤1: 用户输入SN码 → 系统校验格式",
+    "步骤2: 用户选择绑定位置 → 系统记录位置信息"
+  ],
+  "modules": [
+    {{
+      "name": "设备绑定管理",
+      "description": "设备绑定、解绑、预绑定等功能",
+      "sub_features": ["在线绑定", "离线预绑定", "设备解绑"]
+    }}
+  ],
+  "business_rules": [
+    {{"content": "SN码必须是23位数字字母组合", "type": "业务规则"}}
+  ],
+  "data_constraints": [
+    {{"content": "SN码长度：23位", "type": "数据约束"}}
+  ],
+  "state_changes": [
+    "待激活 → 在线 → 离线"
+  ],
+  "test_points": [
+    {{
+      "name": "SN码格式校验",
+      "module": "设备绑定管理",
+      "risk_level": "High",
+      "focus_points": ["格式验证", "边界值测试"]
+    }}
+  ],
+  "risks": [
+    {{"content": "需求未明确设备绑定超时时间", "severity": "Medium"}}
+  ],
+  "key_features": ["设备绑定", "权限管理"]
+}}
+```
+
+## 重要提示
+1. 测试点名称必须是具体的操作描述，不能与模块名重复
+2. 测试点数量根据实际子功能客观分析，不要机械化生成
+3. 业务流程步骤必须包含状态变化
+4. 直接输出JSON，不要包含其他说明文字
+"""
+        
+        # 调用LLM
+        response = self.llm_manager.generate(
+            analysis_prompt,
+            temperature=0.3,  # 低温以获得更结构化的输出
+            max_tokens=8192,
+            timeout=120
+        )
+        
+        if not response.success:
+            raise Exception(f"LLM分析失败: {response.error_message}")
+        
+        # 解析JSON结果
+        try:
+            import json
+            import re
+            
+            content = response.content
+            
+            # 尝试提取JSON
+            # 方法1：直接解析
+            try:
+                analysis_result = json.loads(content)
+                return self._normalize_llm_analysis(analysis_result)
+            except:
+                pass
+            
+            # 方法2：从代码块中提取
+            json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', content)
+            if json_match:
+                analysis_result = json.loads(json_match.group(1))
+                return self._normalize_llm_analysis(analysis_result)
+            
+            # 方法3：查找花括号
+            start = content.find('{')
+            end = content.rfind('}')
+            if start != -1 and end != -1:
+                json_str = content[start:end+1]
+                analysis_result = json.loads(json_str)
+                return self._normalize_llm_analysis(analysis_result)
+            
+            raise Exception("无法从LLM响应中提取JSON")
+            
+        except Exception as e:
+            print(f"[LLM分析] JSON解析失败: {e}")
+            print(f"LLM原始响应: {content[:500]}...")
+            raise
+    
+    def _normalize_llm_analysis(self, llm_result: Dict) -> Dict[str, Any]:
+        """
+        标准化LLM分析结果，确保字段完整
+        """
+        # 补充缺失的字段
+        defaults = {
+            "modules": llm_result.get("modules", []),
+            "business_flows": llm_result.get("business_flows", []),
+            "business_rules": llm_result.get("business_rules", []),
+            "state_changes": llm_result.get("state_changes", []),
+            "test_points": llm_result.get("test_points", []),
+            "non_functional": {
+                "performance": [],
+                "compatibility": [],
+                "security": [],
+                "usability": [],
+                "stability": []
+            },
+            "risks": llm_result.get("risks", []),
+            "key_features": llm_result.get("key_features", []),
+            "data_constraints": llm_result.get("data_constraints", []),
+            "items": [],
+            "points": []
+        }
+        
+        # 验证测试点名称不与模块名重复
+        module_names = {m.get('name', '') for m in defaults['modules']}
+        for point in defaults['test_points']:
+            point_name = point.get('name', '')
+            if point_name in module_names:
+                # 自动重命名
+                point['name'] = f"{point_name}（操作验证）"
+                print(f"[需求分析] 测试点名称与模块重复，已重命名: {point_name} -> {point['name']}")
+        
+        return defaults
+    
+    def _rule_based_analysis(self, requirement_content: str) -> Dict[str, Any]:
+        """
+        基于规则的需求分析（回退方案）
+        
+        原有的规则解析逻辑，作为LLM不可用时的备选
         """
         analysis = {
             "modules": [],
@@ -1282,7 +1506,7 @@ class GenerationService:
         # 如果没有识别到模块，基于内容特征智能推断
         if not analysis["modules"]:
             inferred_modules = self._infer_modules(requirement_content)
-            analysis["modules"] = inferred_modules  # _infer_modules already returns list of dicts
+            analysis["modules"] = inferred_modules
         
         # ========== 2. 提取业务流程步骤 ==========
         analysis["business_flows"] = self._extract_business_flows(requirement_content)
@@ -1892,11 +2116,81 @@ class GenerationService:
         
         return result
 
+    def _load_prompt_template(self, template_type: str) -> Optional[str]:
+        """
+        从数据库加载prompt模板
+        
+        Args:
+            template_type: 模板类型（如 'generate', 'generate_optimized', 'review'）
+            
+        Returns:
+            模板内容字符串，如果未找到则返回None
+        """
+        if not self.db_session:
+            return None
+        
+        try:
+            from src.database.models import PromptTemplate
+            template = self.db_session.query(PromptTemplate).filter(
+                PromptTemplate.template_type == template_type
+            ).first()
+            
+            if template:
+                print(f"[Prompt加载] 从数据库加载模板: {template.name} (类型: {template_type})")
+                return template.template
+            else:
+                print(f"[Prompt加载] 数据库中未找到模板: {template_type}")
+                return None
+        except Exception as e:
+            print(f"[Prompt加载] 加载模板失败: {e}")
+            return None
+    
     def _build_optimized_generation_prompt(self, requirement_content: str,
                                            rag_context: str,
                                            test_plan: str,
                                            requirement_analysis: Dict[str, Any]) -> str:
-        """构建优化的生成Prompt（包含RAG上下文和测试规划）"""
+        """
+        构建优化的生成Prompt（包含RAG上下文和测试规划）
+        
+        优先从数据库加载模板，如果未找到则使用硬编码默认值
+        """
+        # 尝试从数据库加载优化版模板
+        db_template = self._load_prompt_template('generate_optimized')
+        
+        if db_template:
+            # 使用数据库模板，替换占位符
+            try:
+                # 构建RAG上下文部分
+                rag_section = ""
+                if rag_context:
+                    rag_section = rag_context
+                
+                # 构建测试规划部分
+                test_plan_section = ""
+                if test_plan:
+                    test_plan_section = test_plan
+                
+                # 替换占位符
+                prompt = db_template.replace('{requirement_content}', requirement_content)
+                prompt = prompt.replace('{rag_context}', rag_section)
+                prompt = prompt.replace('{test_plan}', test_plan_section)
+                
+                print(f"[Prompt构建] 使用数据库模板生成prompt")
+                return prompt
+            except Exception as e:
+                print(f"[Prompt构建] 数据库模板替换失败，使用默认模板: {e}")
+                # 回退到硬编码默认值
+        
+        # 默认硬编码模板（回退方案）
+        return self._build_default_optimized_prompt(
+            requirement_content, rag_context, test_plan, requirement_analysis
+        )
+    
+    def _build_default_optimized_prompt(self, requirement_content: str,
+                                         rag_context: str,
+                                         test_plan: str,
+                                         requirement_analysis: Dict[str, Any]) -> str:
+        """构建默认的优化生成Prompt（硬编码回退方案）"""
         prompt = f"""你是一位资深的功能测试专家，拥有10年以上测试经验，擅长基于场景法和等价类划分设计测试用例。请根据以下需求文档、RAG召回的历史数据和测试规划，生成高质量、高覆盖率的测试用例。
 
 ## 需求文档
@@ -1972,7 +2266,30 @@ class GenerationService:
 
     def _build_generation_prompt(self, requirement_content: str,
                                   rag_context: str = "") -> str:
-        """构建生成Prompt"""
+        """
+        构建生成Prompt（基础版）
+        
+        优先从数据库加载模板，如果未找到则使用硬编码默认值
+        """
+        # 尝试从数据库加载基础版模板
+        db_template = self._load_prompt_template('generate')
+        
+        if db_template:
+            # 使用数据库模板，替换占位符
+            try:
+                rag_section = ""
+                if rag_context:
+                    rag_section = f"\n## 参考历史用例和缺陷\n{rag_context}\n"
+                
+                prompt = db_template.replace('{requirement_content}', requirement_content)
+                prompt = prompt.replace('{rag_context}', rag_section)
+                
+                print(f"[Prompt构建] 使用数据库基础版模板生成prompt")
+                return prompt
+            except Exception as e:
+                print(f"[Prompt构建] 基础版数据库模板替换失败，使用默认模板: {e}")
+        
+        # 默认硬编码模板（回退方案）
         prompt = f"""你是一位资深的功能测试专家，拥有10年以上测试经验。请根据以下需求文档，生成高质量、高覆盖率的测试用例。
 
 ## 需求文档
@@ -2043,6 +2360,146 @@ class GenerationService:
 """
 
         return prompt
+    
+    def _parse_markdown_cases(self, content: str) -> list:
+        """
+        解析Markdown文本协议格式的测试用例
+        
+        格式示例：
+        ## [P0] 用例标题
+        [测试类型] 功能
+        [前置条件] 前置条件描述
+        [测试步骤] 1. 步骤1。2. 步骤2。3. 步骤3
+        [预期结果] 1. 预期1。2. 预期2。3. 预期3
+        
+        Args:
+            content: LLM返回的Markdown内容
+            
+        Returns:
+            解析后的用例列表（JSON格式）
+        """
+        import re
+        
+        if not content or not content.strip():
+            return []
+        
+        print("尝试Markdown格式解析...")
+        
+        # 使用正则表达式匹配用例
+        # 匹配模式：## [优先级] 标题\n[测试类型] xxx\n[前置条件] xxx\n[测试步骤] xxx\n[预期结果] xxx
+        case_pattern = r'##\s*\[([Pp]\d+)\]\s*(.+?)\n\s*\[测试类型\]\s*(.+?)\n\s*\[前置条件\]\s*(.+?)\n\s*\[测试步骤\]\s*(.+?)\n\s*\[预期结果\]\s*(.+?)(?=\n##\s*\[|$)'
+        
+        matches = re.findall(case_pattern, content, re.DOTALL)
+        
+        if not matches:
+            # 尝试更宽松的匹配（可能没有前置条件）
+            case_pattern_loose = r'##\s*\[([Pp]\d+)\]\s*(.+?)\n\s*\[测试类型\]\s*(.+?)\n\s*(?:\[前置条件\]\s*(.+?)\n\s*)?\[测试步骤\]\s*(.+?)\n\s*\[预期结果\]\s*(.+?)(?=\n##\s*\[|$)'
+            matches = re.findall(case_pattern_loose, content, re.DOTALL)
+        
+        if not matches:
+            print("未找到匹配的Markdown用例格式")
+            return []
+        
+        print(f"找到 {len(matches)} 个Markdown格式用例")
+        
+        cases = []
+        for idx, match in enumerate(matches):
+            try:
+                priority = match[0].strip()
+                title = match[1].strip()
+                case_type = match[2].strip()
+                
+                # 前置条件（可能有也可能没有）
+                if len(match) == 6:
+                    preconditions = match[3].strip() if match[3] else ""
+                    test_steps_raw = match[4].strip()
+                    expected_results_raw = match[5].strip()
+                else:
+                    preconditions = ""
+                    test_steps_raw = match[3].strip() if match[3] else ""
+                    expected_results_raw = match[4].strip()
+                
+                # 解析测试步骤（格式：1. xxx。2. xxx。3. xxx）
+                test_steps = self._parse_step_or_result(test_steps_raw)
+                
+                # 解析预期结果（格式：1. xxx。2. xxx。3. xxx）
+                expected_results = self._parse_step_or_result(expected_results_raw)
+                
+                # 构建用例字典
+                case = {
+                    "case_id": f"TC_{idx+1:06d}",
+                    "module": "",  # 需要从上下文提取
+                    "test_point": "",  # 需要从标题推断
+                    "name": title,
+                    "preconditions": preconditions,
+                    "test_steps": test_steps,
+                    "expected_results": expected_results,
+                    "priority": priority.upper(),
+                    "requirement_clause": "",
+                    "case_type": case_type
+                }
+                
+                cases.append(case)
+                print(f"  成功解析用例 {idx+1}: {title[:50]}")
+                
+            except Exception as e:
+                print(f"  解析用例 {idx+1} 失败: {e}")
+                continue
+        
+        print(f"Markdown解析成功，返回 {len(cases)} 条用例")
+        return cases
+    
+    def _parse_step_or_result(self, text: str) -> list:
+        """
+        解析测试步骤或预期结果
+        
+        支持格式：
+        - 1. xxx。2. xxx。3. xxx
+        - 1. xxx\n2. xxx\n3. xxx
+        - 1、xxx。2、xxx
+        - xxx。yyy。zzz（无序号）
+        
+        Args:
+            text: 原始文本
+            
+        Returns:
+            解析后的列表
+        """
+        import re
+        
+        if not text or not text.strip():
+            return []
+        
+        # 清理文本
+        text = text.strip()
+        
+        # 尝试匹配带序号的格式：1. xxx 或 1、xxx
+        # 模式：数字 + [.或、] + 内容 + [。或\n]
+        pattern = r'(\d+)[.、]\s*([^。.\n]+(?:。[^\n]*)?)'
+        matches = re.findall(pattern, text)
+        
+        if matches:
+            # 提取内容，保留序号
+            items = [f"{num}. {content.strip('。.')}" for num, content in matches]
+            return items
+        
+        # 如果没有序号，按句号或换行分割
+        # 按句号分割
+        if '。' in text:
+            items = [item.strip() for item in text.split('。') if item.strip()]
+            # 添加序号
+            return [f"{i+1}. {item}" for i, item in enumerate(items)]
+        
+        # 按换行分割
+        if '\n' in text:
+            items = [item.strip() for item in text.split('\n') if item.strip()]
+            return [f"{i+1}. {item}" for i, item in enumerate(items)]
+        
+        # 只有单条内容
+        if text:
+            return [f"1. {text.strip('。.')}" ]
+        
+        return []
     
     def _parse_generated_cases(self, content: str) -> list:
         """解析LLM生成的用例"""
@@ -2155,6 +2612,15 @@ class GenerationService:
         except json.JSONDecodeError as e:
             print(f"花括号JSON解析失败: {e}")
         
+        # 尝试5: 解析Markdown文本协议格式（testcase-generator标准格式）
+        try:
+            markdown_cases = self._parse_markdown_cases(content)
+            if markdown_cases:
+                print(f"从Markdown格式解析到 {len(markdown_cases)} 条用例")
+                return markdown_cases
+        except Exception as e:
+            print(f"Markdown格式解析失败: {e}")
+        
         # 返回空列表
         print("所有解析方法均失败，返回空列表")
         print(f"提示：请检查 data/llm_response.log 查看LLM原始响应")
@@ -2265,6 +2731,166 @@ class GenerationService:
             print(f"LLM响应日志已保存到: {log_file}")
         except Exception as e:
             print(f"保存日志失败: {e}")
+    
+    def _execute_quality_review(self, test_cases: list, requirement_content: str, 
+                                requirement_analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        质量评审Agent - 对生成的测试用例进行质量评审
+        
+        基于testcase-generator标准的质量评审流程：
+        1. 引导错误过滤（一票否决）
+        2. 六大维度评估
+        3. 覆盖率量化
+        4. 重复检测
+        5. 待确认需求清单
+        6. 可扩展用例建议
+        
+        Args:
+            test_cases: 生成的测试用例列表
+            requirement_content: 原始需求内容
+            requirement_analysis: 需求分析结果
+            
+        Returns:
+            质量评审报告
+        """
+        print("[质量评审] 开始执行质量评审...")
+        
+        # 构建评审prompt
+        review_prompt = f"""你是一位资深质量评审专家，请对以下测试用例进行质量评审。
+
+## 需求文档
+{requirement_content[:3000]}...
+
+## 需求分析结果
+- 功能模块: {len(requirement_analysis.get('modules', []))}个
+- 业务规则: {len(requirement_analysis.get('business_rules', []))}条
+- 测试点: {len(requirement_analysis.get('test_points', []))}个
+
+## 生成的测试用例（共{len(test_cases)}条）
+
+"""
+        # 添加用例摘要（避免prompt过长）
+        for idx, case in enumerate(test_cases[:20], 1):  # 只显示前20条
+            review_prompt += f"{idx}. [{case.get('priority', 'N/A')}] {case.get('name', 'N/A')}\n"
+            if len(test_cases) > 20:
+                review_prompt += f"... (还有{len(test_cases)-20}条用例)\n"
+        
+        review_prompt += """
+## 评审要求
+
+### 1. 引导错误过滤检查（一票否决制）
+检查以下项，任何一项不合格则判定为"不合格"：
+- 数据占位符：搜索 `{`、`}`、包含`xxx`的占位符
+- 预期模糊：搜索"功能正常"、"显示正确"、"正常工作"
+- 步骤不对应：测试步骤序号与预期结果序号是否对应
+- P0+P1>50%：统计P0+P1占比是否超过50%
+
+### 2. 六大维度评估
+- PRD覆盖度：是否覆盖所有功能点和场景
+- 用例冗余性：是否存在重复或价值低的用例
+- 步骤清晰度：步骤是否具体可执行
+- 预期明确性：预期结果是否具备明确的可验证物
+- 场景完整性：是否包含边界值、异常流等
+- 优先级合理性：P0/P1/P2/P3划分是否合理
+
+### 3. 覆盖率量化
+- 功能需求覆盖率（目标≥95%）
+- 边界值覆盖率（目标100%）
+- 异常场景覆盖率（目标≥80%）
+
+### 4. 重复检测
+- 检测相似度≥90%的重复用例
+- 检测相似度70%-89%的语义相似用例
+
+### 5. 优先级分布检查
+- P0占比是否在10-15%范围内
+- P1占比是否在20-30%范围内
+- P2占比是否在35-45%范围内
+- P3占比是否在10-15%范围内
+- P0+P1是否≤40%
+
+## 输出格式
+请输出JSON格式的评审报告：
+```json
+{{
+  "pass": true/false,
+  "guideline_errors": [
+    {{"type": "占位符", "case_ids": ["TC_000001"], "description": "发现占位符"}}
+  ],
+  "six_dimension_scores": {{
+    "prd_coverage": 95,
+    "redundancy": 90,
+    "step_clarity": 85,
+    "expectation_clarity": 90,
+    "scenario_completeness": 88,
+    "priority_reasonableness": 92
+  }},
+  "coverage_metrics": {{
+    "functional_coverage": 95,
+    "boundary_coverage": 100,
+    "exception_coverage": 85
+  }},
+  "priority_distribution": {{
+    "P0": {{"count": 2, "percentage": 10}},
+    "P1": {{"count": 5, "percentage": 25}},
+    "P2": {{"count": 9, "percentage": 45}},
+    "P3": {{"count": 4, "percentage": 20}}
+  }},
+  "duplicates": [
+    {{"case1": "TC_000001", "case2": "TC_000005", "similarity": 95}}
+  ],
+  "improvement_suggestions": [
+    "建议增加XX场景的测试用例"
+  ],
+  "overall_score": 90,
+  "conclusion": "合格/不合格 + 具体说明"
+}}
+```
+"""
+        
+        # 调用LLM进行评审
+        try:
+            response = self.llm_manager.generate(
+                review_prompt,
+                temperature=0.3,
+                max_tokens=4096,
+                timeout=60
+            )
+            
+            if not response.success:
+                raise Exception(f"LLM评审失败: {response.error_message}")
+            
+            # 解析评审结果
+            import json
+            import re
+            
+            content = response.content
+            
+            # 尝试提取JSON
+            try:
+                review_result = json.loads(content)
+            except:
+                # 尝试从代码块中提取
+                json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', content)
+                if json_match:
+                    review_result = json.loads(json_match.group(1))
+                else:
+                    raise Exception("无法解析评审结果JSON")
+            
+            print(f"[质量评审] 评审完成 - 结论: {review_result.get('conclusion', 'N/A')}")
+            print(f"[质量评审] 总体评分: {review_result.get('overall_score', 'N/A')}/100")
+            
+            return review_result
+            
+        except Exception as e:
+            print(f"[质量评审] 评审失败: {e}")
+            # 返回简化的评审结果
+            return {
+                "pass": True,  # 默认通过，不阻塞流程
+                "overall_score": "N/A",
+                "conclusion": f"自动评审失败: {str(e)}",
+                "error": str(e)
+            }
 
 
 class IncrementalUpdateService:
@@ -2331,3 +2957,4 @@ class IncrementalUpdateService:
         thread.start()
         
         return new_task_id
+

@@ -705,6 +705,123 @@
             color: #ff0055;
             background: rgba(255, 0, 85, 0.1);
         }
+        
+        /* 分页 */
+        .pagination {
+            margin-top: 30px;
+        }
+        
+        .pagination-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 0;
+            border-top: 1px solid var(--dark-border);
+        }
+        
+        .pagination-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+        
+        .page-size-select {
+            padding: 8px 12px;
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .page-size-select:hover {
+            border-color: var(--neon-cyan);
+        }
+        
+        .page-size-select:focus {
+            outline: none;
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 10px rgba(0, 245, 255, 0.2);
+        }
+        
+        .pagination-center {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .pagination-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+        
+        .page-btn {
+            padding: 8px 14px;
+            border: 1px solid var(--dark-border);
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.3s;
+            font-family: monospace;
+            font-size: 13px;
+            min-width: 40px;
+        }
+        
+        .page-btn:hover:not(.disabled) {
+            border-color: var(--neon-cyan);
+            color: var(--neon-cyan);
+        }
+        
+        .page-btn.active {
+            background: var(--neon-cyan);
+            color: var(--dark-bg);
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 15px rgba(0, 245, 255, 0.3);
+        }
+        
+        .page-btn.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        
+        .page-ellipsis {
+            color: var(--text-secondary);
+            padding: 0 4px;
+        }
+        
+        .page-jump-input {
+            width: 60px;
+            padding: 8px 10px;
+            background: var(--dark-bg);
+            border: 1px solid var(--dark-border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 13px;
+            text-align: center;
+            transition: all 0.3s;
+            font-family: monospace;
+        }
+        
+        .page-jump-input:focus {
+            outline: none;
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 10px rgba(0, 245, 255, 0.2);
+        }
+        
+        .pagination-info {
+            text-align: center;
+            padding: 16px 0;
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
 
         /* Theme: Fresh/Light (小清新) */
         body.theme-fresh {
@@ -947,6 +1064,7 @@
                         <p>通过上方"录入数据"或"从数据库导入"按钮添加数据到向量库</p>
                     </div>
                 </div>
+                <div class="pagination" id="ragPagination"></div>
             </div>
         </main>
     </div>
@@ -979,14 +1097,14 @@
                 </div>
                 <div class="form-group">
                     <label id="metadataLabel">元数据 <span style="color: var(--text-secondary); font-size: 11px;">（可选，前置条件、操作步骤、预期结果）</span></label>
-                    <textarea class="form-control" id="dataMetadata" rows="6"
+                    <textarea class="form-control" id="dataMetadata" rows="10"
                               placeholder="输入可选的详细信息，如：&#10;前置条件：系统已启动，存在有效用户账号&#10;操作步骤：&#10;1. 打开登录页面&#10;2. 输入用户名和密码&#10;3. 点击登录按钮&#10;&#10;预期结果：&#10;登录成功，跳转到首页"></textarea>
                 </div>
-                <div style="background: rgba(0, 245, 255, 0.1); border: 1px solid var(--neon-cyan); border-radius: 8px; padding: 16px; margin-top: 20px;">
+                <!-- <div style="background: rgba(0, 245, 255, 0.1); border: 1px solid var(--neon-cyan); border-radius: 8px; padding: 16px; margin-top: 20px;">
                     <p style="color: var(--neon-cyan); margin: 0; font-size: 14px;" id="formHint">
                         ◉ 提示：数据ID将自动生成。历史用例的标题作为主要检索内容，元数据包含前置条件、操作步骤和预期结果。
                     </p>
-                </div>
+                </div> -->
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal()">取消</button>
@@ -1003,14 +1121,14 @@
                 <button class="close-btn" onclick="closeImportModal()">&times;</button>
             </div>
             <div class="modal-body">
-                <div style="background: rgba(0, 245, 255, 0.05); border: 1px solid var(--neon-cyan); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+                <!-- <div style="background: rgba(0, 245, 255, 0.05); border: 1px solid var(--neon-cyan); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
                     <p style="color: var(--neon-cyan); margin: 0; font-size: 13px;">
                         ◉ 自动加载用例管理中<strong>已评审</strong>的用例（状态=已评审），搜索支持按需求标题、用例标题模糊匹配
                     </p>
-                </div>
+                </div> -->
                 <div class="form-group">
                     <label>搜索用例</label>
-                    <input type="text" class="search-input" id="importSearch" oninput="filterDatabaseItems()" placeholder="输入需求标题或用例标题关键词搜索...">
+                    <input type="text" class="search-input" id="importSearch" oninput="filterDatabaseItems()" placeholder="输入需求或用例关键词搜索">
                 </div>
                 <div class="form-group">
                     <label>可导入的用例列表 (<span id="selectedCount">0</span> 已选择)</label>
@@ -1077,6 +1195,9 @@
     <script>
         let currentTab = 'cases';
         let selectedType = 'case';
+        let ragCurrentPage = 1;
+        let ragLimit = 10;
+        let ragAllItems = [];
 
         async function loadStats() {
             try {
@@ -1223,7 +1344,7 @@
             loadDataList();
         }
 
-        function loadDataList() {
+        function loadDataList(page = 1) {
             const container = document.getElementById('dataList');
             
             // Map tab names to API types
@@ -1238,99 +1359,187 @@
             // Show loading
             container.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
             
-            // Fetch data from API
-            fetch('/api/rag/list?type=' + apiType + '&limit=50')
+            // Fetch data from API - get all data at once for client-side pagination
+            fetch('/api/rag/list?type=' + apiType + '&limit=1000')
                 .then(res => res.json())
                 .then(data => {
-                    const items = data.items || [];
-                    if (items.length === 0) {
-                        container.innerHTML = `
-                            <div class="empty-state">
-                                <div style="font-size: 48px; margin-bottom: 16px; opacity: 0.3;">◈</div>
-                                <p>暂无${getTypeLabel(currentTab)}数据，请通过上方"录入数据"或"从数据库导入"按钮添加数据</p>
-                            </div>
-                        `;
-                        return;
-                    }
-                    
-                    container.innerHTML = items.map(item => {
-                        const meta = item.metadata || {};
-                        const itemType = currentTab === 'cases' ? 'case' : currentTab === 'defects' ? 'defect' : 'requirement';
-                        
-                        // 提取标题：优先使用名称/标题，其次从content提取
-                        let title = '';
-                        if (currentTab === 'cases') {
-                            // 从metadata中提取name（新数据会有这个字段）
-                            title = (meta && meta.name) ? meta.name : '';
-                            
-                            // 如果name为空，从content的第一行提取用例标题
-                            if (!title && item.content) {
-                                const lines = item.content.split('\n');
-                                const firstLine = lines[0] ? lines[0].trim() : '';
-                                // 从 "测试用例: xxx" 或 "测试用例：xxx" 中提取
-                                if (firstLine.startsWith('测试用例:')) {
-                                    title = firstLine.substring(5).trim();
-                                } else if (firstLine.startsWith('测试用例：')) {
-                                    title = firstLine.substring(5).trim();
-                                }
-                            }
-                            
-                            // 如果还是没有标题，使用case_id
-                            if (!title && meta && meta.case_id) {
-                                title = meta.case_id;
-                            }
-                            
-                            // 最后的fallback
-                            if (!title) title = '未命名用例';
-                        } else if (currentTab === 'defects') {
-                            // 从metadata中提取title
-                            title = (meta && meta.title) ? meta.title : '';
-                            if (!title && item.content) {
-                                const firstLine = item.content.split('\n')[0];
-                                if (firstLine.startsWith('缺陷标题:')) {
-                                    title = firstLine.substring(5).trim();
-                                } else if (firstLine.startsWith('缺陷标题：')) {
-                                    title = firstLine.substring(5).trim();
-                                } else {
-                                    title = firstLine.substring(0, 50);
-                                }
-                            }
-                            if (!title) title = item.id || '未命名缺陷';
-                        } else {
-                            // 需求文档
-                            title = (meta && meta.title) ? meta.title : '';
-                            if (!title && item.content) {
-                                const firstLine = item.content.split('\n')[0];
-                                title = firstLine.substring(0, 50);
-                            }
-                            if (!title) title = item.id || '未命名需求';
-                        }
-                        
-                        // 简要信息
-                        const briefInfo = [];
-                        if (meta.module) briefInfo.push('模块: ' + meta.module);
-                        if (meta.priority) briefInfo.push('优先级: ' + meta.priority);
-                        if (meta.status) briefInfo.push('状态: ' + meta.status);
-                        if (meta.requirement_title) briefInfo.push('需求: ' + meta.requirement_title);
-                        
-                        return `
-                            <div class="result-item" style="cursor: pointer;" onclick="viewItem('${item.id}', '${currentTab}')">
-                                <span class="result-type type-${itemType}">${getTypeLabel(currentTab)}</span>
-                                <button class="delete-btn" onclick="event.stopPropagation(); deleteItem('${item.id}', '${currentTab}')">删除</button>
-                                <div class="result-content" style="font-weight: 600; margin-bottom: 8px;">${title}</div>
-                                <div class="result-meta">
-                                    ID: ${item.id}
-                                    ${briefInfo.length > 0 ? ' | ' + briefInfo.join(' | ') : ''}
-                                    <span style="color: var(--neon-cyan); margin-left: 10px;">点击查看详情 →</span>
-                                </div>
-                            </div>
-                        `;
-                    }).join('');
+                    ragAllItems = data.items || [];
+                    renderRagData(page);
                 })
                 .catch(err => {
                     console.error('Failed to load data:', err);
                     container.innerHTML = '<div class="empty-state"><p>加载数据失败</p></div>';
                 });
+        }
+        
+        function renderRagData(page = 1) {
+            const container = document.getElementById('dataList');
+            const total = ragAllItems.length;
+            const totalPages = Math.ceil(total / ragLimit);
+            
+            if (page < 1) page = 1;
+            if (page > totalPages && totalPages > 0) page = totalPages;
+            ragCurrentPage = page;
+            
+            if (total === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div style="font-size: 48px; margin-bottom: 16px; opacity: 0.3;">◈</div>
+                        <p>暂无${getTypeLabel(currentTab)}数据，请通过上方"录入数据"或"从数据库导入"按钮添加数据</p>
+                    </div>
+                `;
+                document.getElementById('ragPagination').innerHTML = `<div class="pagination-info">共 0 条记录</div>`;
+                return;
+            }
+            
+            // Client-side pagination
+            const startIndex = (page - 1) * ragLimit;
+            const endIndex = Math.min(startIndex + ragLimit, total);
+            const pageItems = ragAllItems.slice(startIndex, endIndex);
+            
+            container.innerHTML = pageItems.map(item => {
+                const meta = item.metadata || {};
+                const itemType = currentTab === 'cases' ? 'case' : currentTab === 'defects' ? 'defect' : 'requirement';
+                
+                // 提取标题：优先使用名称/标题，其次从content提取
+                let title = '';
+                if (currentTab === 'cases') {
+                    title = (meta && meta.name) ? meta.name : '';
+                    if (!title && item.content) {
+                        const lines = item.content.split('\n');
+                        const firstLine = lines[0] ? lines[0].trim() : '';
+                        if (firstLine.startsWith('测试用例:')) {
+                            title = firstLine.substring(5).trim();
+                        } else if (firstLine.startsWith('测试用例：')) {
+                            title = firstLine.substring(5).trim();
+                        }
+                    }
+                    if (!title && meta && meta.case_id) {
+                        title = meta.case_id;
+                    }
+                    if (!title) title = '未命名用例';
+                } else if (currentTab === 'defects') {
+                    title = (meta && meta.title) ? meta.title : '';
+                    if (!title && item.content) {
+                        const firstLine = item.content.split('\n')[0];
+                        if (firstLine.startsWith('缺陷标题:')) {
+                            title = firstLine.substring(5).trim();
+                        } else if (firstLine.startsWith('缺陷标题：')) {
+                            title = firstLine.substring(5).trim();
+                        } else {
+                            title = firstLine.substring(0, 50);
+                        }
+                    }
+                    if (!title) title = item.id || '未命名缺陷';
+                } else {
+                    title = (meta && meta.title) ? meta.title : '';
+                    if (!title && item.content) {
+                        const firstLine = item.content.split('\n')[0];
+                        title = firstLine.substring(0, 50);
+                    }
+                    if (!title) title = item.id || '未命名需求';
+                }
+                
+                // 简要信息
+                const briefInfo = [];
+                if (meta.module) briefInfo.push('模块: ' + meta.module);
+                if (meta.priority) briefInfo.push('优先级: ' + meta.priority);
+                if (meta.status) briefInfo.push('状态: ' + meta.status);
+                if (meta.requirement_title) briefInfo.push('需求: ' + meta.requirement_title);
+                
+                return `
+                    <div class="result-item" style="cursor: pointer;" onclick="viewItem('${item.id}', '${currentTab}')">
+                        <span class="result-type type-${itemType}">${getTypeLabel(currentTab)}</span>
+                        <button class="delete-btn" onclick="event.stopPropagation(); deleteItem('${item.id}', '${currentTab}')">删除</button>
+                        <div class="result-content" style="font-weight: 600; margin-bottom: 8px;">${title}</div>
+                        <div class="result-meta">
+                            ID: ${item.id}
+                            ${briefInfo.length > 0 ? ' | ' + briefInfo.join(' | ') : ''}
+                            <span style="color: var(--neon-cyan); margin-left: 10px;">点击查看详情 →</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            renderRagPagination(total, ragCurrentPage, ragLimit);
+        }
+        
+        function renderRagPagination(total, page, limit) {
+            const totalPages = Math.ceil(total / limit);
+            const pagination = document.getElementById('ragPagination');
+            
+            if (totalPages <= 1) {
+                pagination.innerHTML = `<div class="pagination-info">共 ${total} 条记录</div>`;
+                return;
+            }
+            
+            let html = '<div class="pagination-container">';
+            
+            html += '<div class="pagination-left">';
+            html += `<span>共 ${total} 条</span>`;
+            html += '<select class="page-size-select" onchange="changeRagPageSize(this.value)">';
+            [10, 20, 50, 100, 200].forEach(size => {
+                html += `<option value="${size}" ${size === limit ? 'selected' : ''}>${size}条/页</option>`;
+            });
+            html += '</select>';
+            html += '</div>';
+            
+            html += '<div class="pagination-center">';
+            if (page > 1) {
+                html += `<button class="page-btn" onclick="loadDataList(${page - 1})">上一页</button>`;
+            } else {
+                html += `<button class="page-btn disabled" disabled>上一页</button>`;
+            }
+            
+            const maxVisible = 7;
+            let startPage = Math.max(1, page - Math.floor(maxVisible / 2));
+            let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+            if (endPage - startPage < maxVisible - 1) {
+                startPage = Math.max(1, endPage - maxVisible + 1);
+            }
+            
+            if (startPage > 1) {
+                html += `<button class="page-btn" onclick="loadDataList(1)">1</button>`;
+                if (startPage > 2) html += '<span class="page-ellipsis">...</span>';
+            }
+            
+            for (let i = startPage; i <= endPage; i++) {
+                html += `<button class="page-btn ${i === page ? 'active' : ''}" onclick="loadDataList(${i})">${i}</button>`;
+            }
+            
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) html += '<span class="page-ellipsis">...</span>';
+                html += `<button class="page-btn" onclick="loadDataList(${totalPages})">${totalPages}</button>`;
+            }
+            
+            if (page < totalPages) {
+                html += `<button class="page-btn" onclick="loadDataList(${page + 1})">下一页</button>`;
+            } else {
+                html += `<button class="page-btn disabled" disabled>下一页</button>`;
+            }
+            html += '</div>';
+            
+            html += '<div class="pagination-right">';
+            html += `<span>跳至</span>`;
+            html += `<input type="number" class="page-jump-input" min="1" max="${totalPages}" value="${page}" onkeypress="if(event.key==='Enter')jumpToRagPage(this)" />`;
+            html += '</div>';
+            html += '</div>';
+            pagination.innerHTML = html;
+        }
+        
+        function changeRagPageSize(newLimit) {
+            ragLimit = parseInt(newLimit);
+            loadDataList(1);
+        }
+        
+        function jumpToRagPage(input) {
+            const page = parseInt(input.value);
+            const maxPage = parseInt(input.max);
+            if (page >= 1 && page <= maxPage) {
+                loadDataList(page);
+            } else {
+                input.value = ragCurrentPage;
+            }
         }
 
         function openAddModal() {

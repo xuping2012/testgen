@@ -59,6 +59,15 @@ python -m pytest tests/test_complete_rag_workflow.py -v
 
 # Run specific test class
 python -m pytest tests/test_api.py::TestGenerationAPI -v
+
+# Run case loading tests
+python -m pytest tests/test_case_loading_after_generation.py -v
+
+# Run case import tests
+python -m pytest tests/test_case_import.py -v
+
+# Run system tests
+python -m pytest tests/test_system.py -v
 ```
 
 ### Code Quality
