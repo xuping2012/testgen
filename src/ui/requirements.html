@@ -900,10 +900,13 @@
             z-index: 9999;
             justify-content: center;
             align-items: center;
+            opacity: 0;
+            transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .confirm-modal.active {
             display: flex;
+            opacity: 1;
         }
 
         .confirm-box {
@@ -914,7 +917,7 @@
             max-width: 420px;
             position: relative;
             overflow: hidden;
-            animation: confirmSlideIn 0.2s ease-out;
+            animation: confirmSlideIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         @keyframes confirmSlideIn {
@@ -925,6 +928,17 @@
             to {
                 opacity: 1;
                 transform: scale(1) translateY(0);
+            }
+        }
+
+        @keyframes confirmFadeOut {
+            from {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+            to {
+                opacity: 0;
+                transform: scale(0.95) translateY(-20px);
             }
         }
 
@@ -1029,9 +1043,14 @@
             z-index: 9999;
             justify-content: center;
             align-items: center;
+            opacity: 0;
+            transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        .toast-modal.active { display: flex; }
+        .toast-modal.active {
+            display: flex;
+            opacity: 1;
+        }
 
         .toast-box {
             background: var(--dark-card);
@@ -1041,12 +1060,17 @@
             max-width: 360px;
             padding: 24px;
             text-align: center;
-            animation: toastSlideIn 0.2s ease-out;
+            animation: toastSlideIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         @keyframes toastSlideIn {
             from { opacity: 0; transform: scale(0.9); }
             to { opacity: 1; transform: scale(1); }
+        }
+
+        @keyframes toastFadeOut {
+            from { opacity: 1; transform: scale(1); }
+            to { opacity: 0; transform: scale(0.9); }
         }
 
         .toast-box.success { border-color: var(--neon-green); }
@@ -1350,7 +1374,7 @@
                             已选择 <span class="selected-count" id="selectedCount">0</span> 项
                         </div>
                         <div class="batch-actions">
-                            <button class="btn btn-danger btn-sm" onclick="batchDelete()">批量删除</button>
+                            <button class="btn btn-danger btn-sm" onclick="batchDelete()" title="批量删除" aria-label="批量删除">🗑️</button>
                         </div>
                     </div>
                     
@@ -1386,7 +1410,7 @@
                     <div class="progress-filters">
                         <select id="statusFilter" onchange="loadTasks()">
                             <option value="">全部状态</option>
-                            <option value="processing">进行中</option>
+                            <option value="running">进行中</option>
                             <option value="completed">已完成</option>
                             <option value="cancelled,failed">已终止</option>
                         </select>
@@ -1396,8 +1420,8 @@
 
                     <!-- 批量操作按钮 -->
                     <div id="batchActionsBar" style="display: none; margin-bottom: 15px; padding: 10px; background: rgba(255, 0, 85, 0.1); border: 1px solid rgba(255, 0, 85, 0.3); border-radius: 4px;">
-                        <span style="color: var(--text-secondary); margin-right: 15px;">已选择 <strong id="selectedCount">0</strong> 项</span>
-                        <button class="action-btn" onclick="batchDeleteTasks()" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);">批量删除</button>
+                        <span style="color: var(--text-secondary); margin-right: 15px;">已选择 <strong id="selectedTaskCount">0</strong> 项</span>
+                        <button class="action-btn" onclick="batchDeleteTasks()" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="批量删除" aria-label="批量删除">🗑️</button>
                         <button class="action-btn" onclick="clearSelection()" style="margin-left: 10px;">取消选择</button>
                     </div>
 
@@ -1640,21 +1664,6 @@
         </div>
     </div>
 
-    <!-- 用例预览弹窗 -->
-    <div class="modal" id="casesModal">
-        <div class="modal-content modal-lg">
-            <div class="modal-header">
-                <h3 id="casesTitle">用例预览</h3>
-                <button class="close-btn" onclick="closeModalById('casesModal')">&times;</button>
-            </div>
-            <div id="casesContent"></div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModalById('casesModal')">关闭</button>
-                <button class="btn btn-success" id="commitBtn" onclick="commitCases()">全部入库</button>
-            </div>
-        </div>
-    </div>
-
     <!-- 编辑分析结果弹窗 -->
     <div class="modal" id="editModal">
         <div class="modal-content">
@@ -1823,9 +1832,9 @@
                         <td>${new Date(req.created_at).toLocaleString()}</td>
                         <td>
                             <div class="action-btns">
-                                <button class="action-btn" onclick="viewRequirement(${req.id})">查看</button>
-                                <button class="action-btn generate" onclick="generateCases(${req.id})" ${generateBtnDisabled}>${generateBtnText}</button>
-                                <button class="action-btn" onclick="deleteRequirement(${req.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);">删除</button>
+                                <button class="action-btn" onclick="viewRequirement(${req.id})" title="查看" aria-label="查看">👁️</button>
+                                <button class="action-btn generate" onclick="generateCases(${req.id})" ${generateBtnDisabled} title="${generateBtnText}" aria-label="${generateBtnText}">▶️</button>
+                                <button class="action-btn" onclick="deleteRequirement(${req.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="删除需求" aria-label="删除需求">🗑️</button>
                             </div>
                         </td>
                     </tr>
@@ -1833,7 +1842,7 @@
 
                 // 恢复选中状态
                 selectedIds.forEach(id => {
-                    const checkbox = document.querySelector(`input[value="${id}"]`);
+                    const checkbox = document.querySelector(`#requirementList input[value="${id}"]`);
                     if (checkbox) checkbox.checked = true;
                 });
 
@@ -1975,7 +1984,8 @@
 
         function toggleSelectAll() {
             const selectAll = document.getElementById('selectAll');
-            const checkboxes = document.querySelectorAll('.cyber-checkbox[value]');
+            // 只选择需求列表中的checkbox（在requirementList内的）
+            const checkboxes = document.querySelectorAll('#requirementList .cyber-checkbox');
             
             if (selectAll.checked) {
                 checkboxes.forEach(cb => {
@@ -2687,6 +2697,7 @@
 
         // ========== Progress tab functions ==========
         let progressCurrentPage = 1;
+        let progressLimit = 20;
         let progressPollInterval = null;
         let selectedTaskIds = new Set(); // 保存选中的任务ID
 
@@ -2694,7 +2705,7 @@
             const status = document.getElementById('statusFilter').value;
             const search = document.getElementById('searchInput').value;
             
-            let url = `/api/tasks?page=${progressCurrentPage}&limit=20`;
+            let url = `/api/tasks?page=${progressCurrentPage}&limit=${progressLimit}`;
             if (status) {
                 // 支持多值状态筛选（如 cancelled,failed）
                 url += `&status=${encodeURIComponent(status)}`;
@@ -2707,7 +2718,7 @@
                 
                 renderTasks(data.tasks || []);
                 document.getElementById('taskCount').textContent = `共 ${data.total || 0} 条`;
-                renderProgressPagination(data.total || 0, data.page || 1, data.limit || 20);
+                renderProgressPagination(data.total || 0, data.page || 1, data.limit || progressLimit);
             } catch (error) {
                 console.error('加载任务失败:', error);
             }
@@ -2716,7 +2727,9 @@
         function renderTasks(tasks) {
             const tbody = document.getElementById('taskTableBody');
             if (!tasks.length) {
-                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">暂无任务</td></tr>';
+                const currentStatus = document.getElementById('statusFilter').value;
+                let emptyMsg = '暂无任务';
+                tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color: var(--text-secondary); padding: 30px;">${emptyMsg}</td></tr>`;
                 clearSelection();
                 return;
             }
@@ -2726,7 +2739,7 @@
                 const statusText = getTaskStatusText(task.status);
                 const duration = formatDuration(task.duration);
                 const progress = Math.round(task.progress || 0);
-                const canDelete = (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled');
+                const canDelete = (task.status !== 'running' && task.status !== 'processing' && task.status !== 'pending' && task.status !== 'awaiting_review');
                 const isChecked = selectedTaskIds.has(task.task_id) ? 'checked' : '';
                 
                 return `
@@ -2748,11 +2761,10 @@
                         <td>${formatTime(task.created_at)}</td>
                         <td>
                             <div class="action-btns">
-                                <button class="action-btn" onclick="showDetail('${task.task_id}')">详情</button>
-                                ${task.status === 'processing' ? `<button class="action-btn" onclick="cancelTask('${task.task_id}')" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);">终止</button>` : ''}
-                                ${(task.status === 'completed_pending_review' || task.status === 'completed') ? `<button class="action-btn generate" onclick="showCases('${task.task_id}')">查看用例</button>` : ''}
-                                ${(task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') ? `<button class="action-btn" onclick="regenerateTask('${task.task_id}')">重新生成</button>` : ''}
-                                ${(task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') ? `<button class="action-btn" onclick="deleteTask('${task.task_id}')" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);">删除</button>` : ''}
+                                <button class="action-btn" onclick="showDetail('${task.task_id}')" title="查看详情" aria-label="查看详情">👁️</button>
+                                ${(task.status === 'processing' || task.status === 'running') ? `<button class="action-btn" onclick="cancelTask('${task.task_id}')" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="终止任务" aria-label="终止任务">⏹️</button>` : ''}
+                                ${(task.status === 'failed' || task.status === 'cancelled') ? `<button class="action-btn" onclick="regenerateTask('${task.task_id}')" title="重新生成" aria-label="重新生成">🔄</button>` : ''}
+                                ${(task.status !== 'running' && task.status !== 'processing' && task.status !== 'pending' && task.status !== 'awaiting_review') ? `<button class="action-btn" onclick="deleteTask('${task.task_id}')" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="删除任务" aria-label="删除任务">🗑️</button>` : ''}
                             </div>
                         </td>
                     </tr>
@@ -2788,12 +2800,22 @@
         function formatTime(isoStr) {
             if (!isoStr) return '-';
             const d = new Date(isoStr);
-            return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            const hour = String(d.getHours()).padStart(2, '0');
+            const minute = String(d.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day} ${hour}:${minute}`;
         }
 
         function renderProgressPagination(total, page, limit) {
             const pages = Math.ceil(total / limit);
             const pagination = document.getElementById('progressPagination');
+            
+            if (total === 0) {
+                pagination.innerHTML = `<div class="pagination-info">共 0 条记录</div>`;
+                return;
+            }
             
             if (pages <= 1) {
                 pagination.innerHTML = `<div class="pagination-info">共 ${total} 条记录</div>`;
@@ -2801,30 +2823,96 @@
             }
             
             let html = '<div class="pagination-container">';
-            html += `<div class="pagination-left"><span>共 ${total} 条</span></div>`;
+            
+            // 左侧：每页条数选择 + 总记录数
+            html += '<div class="pagination-left">';
+            html += `<span>共 ${total} 条</span>`;
+            html += '<select class="page-size-select" onchange="changeProgressPageSize(this.value)">';
+            [10, 20, 50, 100].forEach(size => {
+                html += `<option value="${size}" ${size === limit ? 'selected' : ''}>${size}条/页</option>`;
+            });
+            html += '</select>';
+            html += '</div>';
+            
+            // 中间：页码按钮
             html += '<div class="pagination-center">';
             
+            // 上一页
             if (page > 1) {
                 html += `<button class="page-btn" onclick="goProgressPage(${page - 1})">上一页</button>`;
             } else {
                 html += `<button class="page-btn disabled" disabled>上一页</button>`;
             }
             
-            html += `<span style="padding: 0 12px; color: var(--text-secondary);">${page} / ${pages}</span>`;
+            // 页码逻辑（智能显示页码）
+            const maxVisible = 7;
+            let startPage = Math.max(1, page - Math.floor(maxVisible / 2));
+            let endPage = Math.min(pages, startPage + maxVisible - 1);
             
+            if (endPage - startPage < maxVisible - 1) {
+                startPage = Math.max(1, endPage - maxVisible + 1);
+            }
+            
+            // 第一页和省略号
+            if (startPage > 1) {
+                html += `<button class="page-btn" onclick="goProgressPage(1)">1</button>`;
+                if (startPage > 2) {
+                    html += '<span class="page-ellipsis">...</span>';
+                }
+            }
+            
+            // 页码按钮
+            for (let i = startPage; i <= endPage; i++) {
+                html += `<button class="page-btn ${i === page ? 'active' : ''}" onclick="goProgressPage(${i})">${i}</button>`;
+            }
+            
+            // 最后一页和省略号
+            if (endPage < pages) {
+                if (endPage < pages - 1) {
+                    html += '<span class="page-ellipsis">...</span>';
+                }
+                html += `<button class="page-btn" onclick="goProgressPage(${pages})">${pages}</button>`;
+            }
+            
+            // 下一页
             if (page < pages) {
                 html += `<button class="page-btn" onclick="goProgressPage(${page + 1})">下一页</button>`;
             } else {
                 html += `<button class="page-btn disabled" disabled>下一页</button>`;
             }
             
-            html += '</div></div>';
+            html += '</div>';
+            
+            // 右侧：跳转到指定页
+            html += '<div class="pagination-right">';
+            html += `<span>跳至</span>`;
+            html += `<input type="number" class="page-jump-input" min="1" max="${pages}" value="${page}" onkeypress="if(event.key==='Enter')jumpToProgressPage(this)" />`;
+            html += '</div>';
+            
+            html += '</div>';
             pagination.innerHTML = html;
+        }
+
+        function changeProgressPageSize(newLimit) {
+            progressCurrentPage = 1;
+            progressLimit = parseInt(newLimit);
+            loadTasks();
         }
 
         function goProgressPage(page) {
             progressCurrentPage = page;
             loadTasks();
+        }
+
+        function jumpToProgressPage(input) {
+            const page = parseInt(input.value);
+            const maxPage = parseInt(input.max);
+            if (page >= 1 && page <= maxPage) {
+                progressCurrentPage = page;
+                loadTasks();
+            } else {
+                input.value = progressCurrentPage;
+            }
         }
 
         async function showDetail(taskId) {
@@ -2839,7 +2927,7 @@
                     { name: '测试规划', key: 'plan', range: [15, 25] },
                     { name: 'RAG检索', key: 'rag', range: [25, 40] },
                     { name: 'LLM生成', key: 'generate', range: [40, 90] },
-                    { name: '结果预览', key: 'preview', range: [90, 100] }
+                    { name: '保存完成', key: 'save', range: [90, 100] }
                 ];
                 
                 const progress = task.progress || 0;
@@ -2885,6 +2973,41 @@
                     stagesHtml += `<div style="margin-top: 16px; padding: 12px; background: rgba(255, 0, 85, 0.1); border-left: 3px solid #ff0055;"><strong style="color: #ff0055;">错误信息:</strong><br><pre style="white-space: pre-wrap; color: var(--text-secondary);">${task.error_message}</pre></div>`;
                 }
                 
+                // 构建快照信息HTML（已隐藏需求分析快照）
+                let snapshotHtml = '';
+                // 需求分析快照已隐藏，不再显示
+                // if (task.analysis_snapshot) {
+                //     const snapshot = task.analysis_snapshot;
+                //     const modules = snapshot.modules || [];
+                //     const points = snapshot.points || [];
+                //     const itemCounts = snapshot.item_count || 0;
+                //     const pointCount = snapshot.point_count || 0;
+                //     
+                //     snapshotHtml = `
+                //         <div style="margin-top: 16px;">
+                //             <h4 style="margin: 16px 0 12px; color: var(--neon-cyan); font-size: 14px;">需求分析快照</h4>
+                //             <div style="border: 1px solid var(--dark-border); border-radius: 6px; padding: 12px;">
+                //                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                //                     <div><strong>测试项数:</strong> ${itemCounts}</div>
+                //                     <div><strong>测试点数:</strong> ${pointCount}</div>
+                //                 </div>
+                //                 ${modules.length > 0 ? `
+                //                     <div style="margin-bottom: 8px;">
+                //                         <strong>功能模块:</strong>
+                //                         <div style="margin-top: 4px; padding: 8px; background: var(--dark-bg); border-radius: 4px; max-height: 150px; overflow-y: auto; font-size: 13px; white-space: pre-wrap;">${typeof modules === 'string' ? modules : JSON.stringify(modules, null, 2)}</div>
+                //                     </div>
+                //                 ` : ''}
+                //                 ${points ? `
+                //                     <div>
+                //                         <strong>测试点:</strong>
+                //                         <div style="margin-top: 4px; padding: 8px; background: var(--dark-bg); border-radius: 4px; max-height: 150px; overflow-y: auto; font-size: 13px; white-space: pre-wrap;">${typeof points === 'string' ? points : JSON.stringify(points, null, 2)}</div>
+                //                     </div>
+                //                 ` : ''}
+                //             </div>
+                //         </div>
+                //     `;
+                // }
+                
                 document.getElementById('detailContent').innerHTML = `
                     <div style="margin-bottom: 16px;">
                         <div><strong>任务ID:</strong> ${task.task_id}</div>
@@ -2896,6 +3019,7 @@
                         <div><strong>创建时间:</strong> ${task.created_at}</div>
                     </div>
                     ${stagesHtml}
+                    ${snapshotHtml}
                 `;
                 
                 document.getElementById('detailModal').classList.add('active');
@@ -2903,88 +3027,6 @@
                 console.error('加载详情失败:', error);
                 showToast('加载详情失败', 'error');
             }
-        }
-
-        async function showCases(taskId) {
-            currentTaskId = taskId;
-            try {
-                const response = await fetch(`/api/tasks/${taskId}/cases/preview`);
-                const data = await response.json();
-                
-                document.getElementById('casesTitle').textContent = `用例预览: ${data.case_count} 条`;
-                
-                // 根据数据来源显示/隐藏"全部入库"按钮
-                const commitBtn = document.getElementById('commitBtn');
-                if (data.source === 'database') {
-                    // 已入库的用例，隐藏"全部入库"按钮
-                    commitBtn.style.display = 'none';
-                } else {
-                    // 暂存的用例，显示"全部入库"按钮
-                    commitBtn.style.display = 'inline-block';
-                }
-                
-                if (!data.test_cases || !data.test_cases.length) {
-                    document.getElementById('casesContent').innerHTML = '<p style="text-align: center; color: var(--text-secondary);">暂无用例</p>';
-                } else {
-                    let html = '<div style="max-height: 400px; overflow-y: auto;">';
-                    data.test_cases.forEach(tc => {
-                        html += `
-                            <div class="case-item">
-                                <div>
-                                    <strong style="color: var(--neon-cyan);">${tc.case_id}</strong> - ${tc.module}
-                                    <br><small style="color: var(--text-secondary);">${tc.name}</small>
-                                </div>
-                                ${data.source === 'stashed' ? `<button class="action-btn" onclick="deleteCase('${taskId}', '${tc.case_id}')" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);">删除</button>` : ''}
-                            </div>
-                        `;
-                    });
-                    html += '</div>';
-                    document.getElementById('casesContent').innerHTML = html;
-                }
-                
-                document.getElementById('casesModal').classList.add('active');
-            } catch (error) {
-                console.error('加载用例失败:', error);
-                showToast('加载用例失败', 'error');
-            }
-        }
-
-        async function deleteCase(taskId, caseId) {
-            showConfirm('确定删除该用例？', async () => {
-                try {
-                    const response = await fetch(`/api/tasks/${taskId}/cases/${caseId}`, { method: 'DELETE' });
-                    const data = await response.json();
-                    
-                    if (response.ok) {
-                        showToast('用例已删除', 'success');
-                        showCases(taskId);
-                    } else {
-                        showToast('删除失败: ' + data.error, 'error');
-                    }
-                } catch (error) {
-                    showToast('删除失败: ' + error.message, 'error');
-                }
-            });
-        }
-
-        async function commitCases() {
-            if (!currentTaskId) return;
-            showConfirm('确定将所有用例入库？', async () => {
-                try {
-                    const response = await fetch(`/api/tasks/${currentTaskId}/cases/commit`, { method: 'POST' });
-                    const data = await response.json();
-                    
-                    if (response.ok) {
-                        showToast(`成功入库 ${data.case_count} 条用例`, 'success');
-                        closeModalById('casesModal');
-                        loadTasks();
-                    } else {
-                        showToast('入库失败: ' + data.error, 'error');
-                    }
-                } catch (error) {
-                    showToast('入库失败: ' + error.message, 'error');
-                }
-            });
         }
 
         async function cancelTask(taskId) {
@@ -3022,49 +3064,21 @@
         }
 
         async function deleteTask(taskId) {
-            // 获取任务详情，检查是否包含用例
-            const allTasks = getCurrentTasks();
-            const task = allTasks.find(t => t.task_id === taskId);
-            
-            if (task && task.status === 'completed' && task.case_count > 0) {
-                // 任务有用例，询问是否删除
-                showConfirmWithOptions(
-                    `该任务包含 ${task.case_count} 条测试用例（已入库）。<br><strong>请选择删除方式：</strong>`,
-                    [
-                        { label: '删除任务及关联用例', value: 'delete_with_cases', description: '同时删除已入库的测试用例', recommended: true },
-                        { label: '仅删除任务记录', value: 'delete_only', description: '保留已入库的用例' }
-                    ],
-                    async (choice) => {
-                        await executeSingleDelete(taskId, choice === 'delete_with_cases');
+            showConfirm('确定删除该任务记录？', async () => {
+                try {
+                    const response = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        showToast('任务已删除', 'success');
+                        loadTasks();
+                    } else {
+                        showToast('删除失败: ' + (data.error || '未知错误'), 'error');
                     }
-                );
-            } else {
-                // 任务无用例，直接删除
-                showConfirm('确定删除该任务记录？', async () => {
-                    await executeSingleDelete(taskId, false);
-                });
-            }
-        }
-
-        // 执行单个删除
-        async function executeSingleDelete(taskId, deleteCases) {
-            try {
-                const response = await fetch(`/api/tasks/${taskId}?delete_cases=${deleteCases}`, { method: 'DELETE' });
-                const data = await response.json();
-                
-                if (response.ok) {
-                    let message = '任务已删除';
-                    if (data.deleted_case_count > 0) {
-                        message += `，同时删除了 ${data.deleted_case_count} 条用例`;
-                    }
-                    showToast(message, 'success');
-                    loadTasks();
-                } else {
-                    showToast('删除失败: ' + (data.error || '未知错误'), 'error');
+                } catch (error) {
+                    showToast('删除失败: ' + error.message, 'error');
                 }
-            } catch (error) {
-                showToast('删除失败: ' + error.message, 'error');
-            }
+            });
         }
 
         // 全选/取消全选
@@ -3101,7 +3115,7 @@
         function updateBatchActionBar() {
             const checkedBoxes = document.querySelectorAll('.task-checkbox:checked');
             const actionBar = document.getElementById('batchActionsBar');
-            const selectedCount = document.getElementById('selectedCount');
+            const selectedCount = document.getElementById('selectedTaskCount');
             
             // 更新选中的ID集合
             selectedTaskIds.clear();
@@ -3137,54 +3151,26 @@
                 return;
             }
             
-            // 获取选中任务的详细信息，检查是否有用例
-            const allTasks = getCurrentTasks();
-            const selectedTasks = allTasks.filter(t => selectedTaskIds.has(t.task_id));
-            const tasksWithCases = selectedTasks.filter(t => t.status === 'completed' && t.case_count > 0);
-            
-            if (tasksWithCases.length > 0) {
-                // 有任务包含用例，询问是否删除
-                const totalCaseCount = tasksWithCases.reduce((sum, t) => sum + (t.case_count || 0), 0);
-                showConfirmWithOptions(
-                    `选中的 ${taskIds.length} 个任务中有 ${tasksWithCases.length} 个包含用例，共 ${totalCaseCount} 条用例。<br><strong>请选择删除方式：</strong>`,
-                    [
-                        { label: '删除任务及关联用例', value: 'delete_with_cases', description: '同时删除已入库的测试用例', recommended: true },
-                        { label: '仅删除任务记录', value: 'delete_only', description: '保留已入库的用例' }
-                    ],
-                    async (choice) => {
-                        await executeBatchDelete(taskIds, choice === 'delete_with_cases');
+            showConfirm(`确定删除选中的 ${taskIds.length} 个任务记录？`, async () => {
+                try {
+                    const response = await fetch('/api/tasks/batch-delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ task_ids: taskIds })
+                    });
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        showToast(`成功删除 ${data.deleted_count} 个任务`, 'success');
+                        clearSelection();
+                        loadTasks();
+                    } else {
+                        showToast('批量删除失败: ' + (data.error || '未知错误'), 'error');
                     }
-                );
-            } else {
-                // 没有任务包含用例，直接删除
-                await executeBatchDelete(taskIds, false);
-            }
-        }
-
-        // 执行批量删除
-        async function executeBatchDelete(taskIds, deleteCases) {
-            try {
-                const response = await fetch(`/api/tasks/batch-delete?delete_cases=${deleteCases}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ task_ids: taskIds })
-                });
-                const data = await response.json();
-                
-                if (response.ok) {
-                    let message = `成功删除 ${data.deleted_count} 个任务`;
-                    if (data.deleted_case_count > 0) {
-                        message += `，同时删除了 ${data.deleted_case_count} 条用例`;
-                    }
-                    showToast(message, 'success');
-                    clearSelection();
-                    loadTasks();
-                } else {
-                    showToast('批量删除失败: ' + (data.error || '未知错误'), 'error');
+                } catch (error) {
+                    showToast('批量删除失败: ' + error.message, 'error');
                 }
-            } catch (error) {
-                showToast('批量删除失败: ' + error.message, 'error');
-            }
+            });
         }
 
         // 获取当前显示的任务列表

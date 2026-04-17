@@ -390,12 +390,36 @@
 
         /* 引用来源面板 */
         .citation-list { list-style: none; padding: 0; margin: 0; }
-        .citation-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #1e1e2e; border-radius: 6px; margin-bottom: 6px; cursor: pointer; transition: background 0.2s; }
-        .citation-item:hover { background: rgba(0,245,255,0.05); }
-        .citation-type-icon { font-size: 14px; width: 20px; text-align: center; }
-        .citation-source-id { font-size: 12px; color: var(--neon-cyan); font-family: monospace; }
-        .citation-count { font-size: 11px; color: #666; margin-left: auto; }
-        .citation-empty { color: #555; font-size: 13px; padding: 12px 0; text-align: center; }
+        .citation-item { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border: 1px solid #1e1e2e; border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s; background: rgba(255,255,255,0.02); }
+        .citation-item:hover { background: rgba(0,245,255,0.06); border-color: rgba(0,245,255,0.3); box-shadow: 0 0 12px rgba(0,245,255,0.15); }
+        .citation-type-icon { font-size: 18px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: rgba(0,245,255,0.1); border-radius: 6px; }
+        .citation-content { flex: 1; min-width: 0; }
+        .citation-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+        .citation-source-id { font-size: 12px; color: var(--neon-cyan); font-family: monospace; font-weight: 600; }
+        .citation-type-name { font-size: 11px; color: #888; padding: 2px 8px; background: rgba(136,136,136,0.1); border-radius: 4px; }
+        .citation-count { font-size: 11px; color: #666; margin-left: auto; white-space: nowrap; }
+        .citation-preview { font-size: 12px; color: #aaa; line-height: 1.5; margin-top: 6px; padding: 8px; background: rgba(0,0,0,0.2); border-radius: 6px; border-left: 2px solid var(--neon-cyan); }
+        .citation-preview-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .citation-actions { display: flex; gap: 8px; margin-top: 8px; }
+        .citation-action-btn { padding: 4px 10px; font-size: 11px; border: 1px solid rgba(0,245,255,0.3); background: transparent; color: var(--neon-cyan); border-radius: 4px; cursor: pointer; transition: all 0.2s; }
+        .citation-action-btn:hover { background: var(--neon-cyan); color: var(--dark-bg); box-shadow: 0 0 8px rgba(0,245,255,0.3); }
+        .citation-empty { color: #555; font-size: 13px; padding: 16px 0; text-align: center; }
+
+        /* RAG详情模态框 */
+        .rag-detail-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 3000; justify-content: center; align-items: center; }
+        .rag-detail-modal.active { display: flex; }
+        .rag-detail-content { background: var(--dark-card); border: 1px solid var(--dark-border); border-radius: 12px; width: 90%; max-width: 900px; max-height: 85vh; overflow-y: auto; position: relative; }
+        .rag-detail-content::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 2px; background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink)); }
+        .rag-detail-header { padding: 24px 30px; border-bottom: 1px solid var(--dark-border); display: flex; justify-content: space-between; align-items: center; }
+        .rag-detail-header h3 { color: var(--neon-cyan); font-size: 20px; letter-spacing: 2px; }
+        .rag-detail-body { padding: 30px; }
+        .rag-detail-section { margin-bottom: 24px; }
+        .rag-detail-section-title { font-size: 14px; color: var(--neon-cyan); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; border-left: 3px solid var(--neon-cyan); padding-left: 12px; }
+        .rag-detail-text { font-size: 13px; color: #ccc; line-height: 1.8; padding: 16px; background: rgba(0,0,0,0.3); border-radius: 8px; white-space: pre-wrap; word-wrap: break-word; }
+        .rag-detail-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+        .rag-meta-item { padding: 12px; background: rgba(0,245,255,0.05); border: 1px solid rgba(0,245,255,0.2); border-radius: 8px; }
+        .rag-meta-label { font-size: 11px; color: #888; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
+        .rag-meta-value { font-size: 14px; color: var(--text-primary); font-family: monospace; }
 
         /* 置信度排序箭头 */
         .sortable { cursor: pointer; user-select: none; }
@@ -1285,7 +1309,7 @@
 
                 <!-- 引用来源面板 -->
                 <div id="citationsPanel" style="margin-top:16px;">
-                    <label style="display:block; margin-bottom:8px;">引用来源</label>
+                    <label style="display:block; margin-bottom:8px;">引用来源 <span id="citationCount" style="font-size:11px; color:#888; font-weight:normal;"></span></label>
                     <ul class="citation-list" id="modalCitationList">
                         <li class="citation-empty">暂无引用来源信息</li>
                     </ul>
@@ -1321,6 +1345,19 @@
             <div class="toast-icon" id="toastIcon">✓</div>
             <div class="toast-message" id="toastMessage">操作成功</div>
             <button class="toast-btn" onclick="closeToast()">确定</button>
+        </div>
+    </div>
+
+    <!-- RAG数据详情模态框 -->
+    <div class="rag-detail-modal" id="ragDetailModal">
+        <div class="rag-detail-content">
+            <div class="rag-detail-header">
+                <h3>// RAG数据详情</h3>
+                <button class="close-btn" onclick="closeRagDetailModal()">&times;</button>
+            </div>
+            <div class="rag-detail-body" id="ragDetailBody">
+                <!-- 动态填充内容 -->
+            </div>
         </div>
     </div>
 
@@ -1460,21 +1497,21 @@
                     <td>
                         <div class="action-btns">
                             ${c.status === 'pending_review' ? `
-                                <button class="action-btn" onclick="viewCase(${c.id})">查看</button>
-                                <button class="action-btn" onclick="editCase(${c.id})">编辑</button>
+                                <button class="action-btn" onclick="viewCase(${c.id})" title="查看" aria-label="查看">👁️</button>
+                                <button class="action-btn" onclick="editCase(${c.id})" title="编辑" aria-label="编辑">✏️</button>
                                 <button class="action-btn approve" onclick="approveCase(${c.id})">通过</button>
                                 <button class="action-btn reject" onclick="rejectCase(${c.id})">拒绝</button>
-                                <button class="action-btn" onclick="deleteCase(${c.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);">删除</button>
+                                <button class="action-btn" onclick="deleteCase(${c.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="删除" aria-label="删除">🗑️</button>
                             ` : ''}
                             ${c.status === 'approved' ? `
-                                <button class="action-btn" onclick="viewCase(${c.id})">查看</button>
+                                <button class="action-btn" onclick="viewCase(${c.id})" title="查看" aria-label="查看">👁️</button>
                                 <button class="action-btn" onclick="activateCase(${c.id})">激活</button>
-                                <button class="action-btn" onclick="deleteCase(${c.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);">删除</button>
+                                <button class="action-btn" onclick="deleteCase(${c.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="删除" aria-label="删除">🗑️</button>
                             ` : ''}
                             ${c.status === 'rejected' ? `
-                                <button class="action-btn" onclick="viewCase(${c.id})">查看</button>
+                                <button class="action-btn" onclick="viewCase(${c.id})" title="查看" aria-label="查看">👁️</button>
                                 <button class="action-btn" onclick="activateCase(${c.id})">激活</button>
-                                <button class="action-btn" onclick="deleteCase(${c.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);">删除</button>
+                                <button class="action-btn" onclick="deleteCase(${c.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="删除" aria-label="删除">🗑️</button>
                             ` : ''}
                         </div>
                     </td>
@@ -1766,20 +1803,45 @@
 
         function renderModalCitations(citations) {
             const list = document.getElementById('modalCitationList');
+            const countEl = document.getElementById('citationCount');
+            
             if (!citations || citations.length === 0) {
                 list.innerHTML = '<li class="citation-empty">暂无引用来源信息</li>';
+                countEl.textContent = '';
                 return;
             }
+            
             const typeIcons = { historical_case: '📋', defect: '🐛', requirement: '📄', llm_generated: '🤖', unknown: '❓' };
             const typeNames = { historical_case: '历史用例', defect: '历史缺陷', requirement: '需求', llm_generated: 'AI生成', unknown: '未知' };
-            list.innerHTML = citations.map(cit => {
+            
+            // 更新引用数量
+            countEl.textContent = `(${citations.length}个来源)`;
+            
+            list.innerHTML = citations.map((cit, index) => {
                 const icon = typeIcons[cit.source_type] || '❓';
                 const typeName = typeNames[cit.source_type] || cit.source_type;
-                return `<li class="citation-item">
-                    <span class="citation-type-icon">${icon}</span>
-                    <span class="citation-source-id">${cit.source_id || ''}</span>
-                    <span style="font-size:11px;color:#666;">${typeName}</span>
-                    <span class="citation-count">×${cit.count || 1}</span>
+                const sourceId = cit.source_id || '';
+                const count = cit.count || 1;
+                
+                // 提取内容预览（从citations的第1项开始存储详情）
+                const preview = cit.content_preview || cit.preview || cit.description || '';
+                const similarity = cit.similarity_score || cit.similarity || null;
+                
+                return `<li class="citation-item" onclick="viewRagDetail(${index}, '${sourceId}', '${cit.source_type}')">
+                    <div class="citation-type-icon">${icon}</div>
+                    <div class="citation-content">
+                        <div class="citation-header">
+                            <span class="citation-source-id">${sourceId}</span>
+                            <span class="citation-type-name">${typeName}</span>
+                            ${similarity ? `<span style="font-size:11px;color:#00ff88;">相似度: ${Math.round(similarity * 100)}%</span>` : ''}
+                            <span class="citation-count">×${count}</span>
+                        </div>
+                        ${preview ? `<div class="citation-preview"><div class="citation-preview-text">${preview}</div></div>` : ''}
+                        <div class="citation-actions">
+                            <button class="citation-action-btn" onclick="event.stopPropagation(); viewRagDetail(${index}, '${sourceId}', '${cit.source_type}')">🔍 查看详情</button>
+                            ${cit.source_type !== 'llm_generated' && cit.source_type !== 'unknown' ? `<button class="citation-action-btn" onclick="event.stopPropagation(); searchRagData('${sourceId}', '${cit.source_type}')">🔎 RAG检索</button>` : ''}
+                        </div>
+                    </div>
                 </li>`;
             }).join('');
         }
@@ -1787,6 +1849,151 @@
         function closeModal() {
             document.getElementById('caseModal').classList.remove('active');
             currentCaseId = null;
+        }
+
+        // 查看RAG数据详情
+        async function viewRagDetail(index, sourceId, sourceType) {
+            const ragModal = document.getElementById('ragDetailModal');
+            const ragBody = document.getElementById('ragDetailBody');
+            
+            ragBody.innerHTML = '<div style="text-align:center; padding:40px; color:#888;">加载中...</div>';
+            ragModal.classList.add('active');
+            
+            try {
+                // 尝试从RAG检索API获取数据
+                const response = await fetch('/api/rag/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        query: sourceId,
+                        collection: getCollectionName(sourceType),
+                        top_k: 1
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data && data.results && data.results.length > 0) {
+                    const item = data.results[0];
+                    const metadata = item.metadata || {};
+                    const content = item.content || item.document || '';
+                    const similarity = item.similarity || item.score || 0;
+                    
+                    ragBody.innerHTML = `
+                        <div class="rag-detail-section">
+                            <div class="rag-detail-section-title">基本信息</div>
+                            <div class="rag-detail-meta">
+                                <div class="rag-meta-item">
+                                    <div class="rag-meta-label">来源ID</div>
+                                    <div class="rag-meta-value">${sourceId}</div>
+                                </div>
+                                <div class="rag-meta-item">
+                                    <div class="rag-meta-label">来源类型</div>
+                                    <div class="rag-meta-value">${getSourceTypeName(sourceType)}</div>
+                                </div>
+                                <div class="rag-meta-item">
+                                    <div class="rag-meta-label">相似度</div>
+                                    <div class="rag-meta-value">${Math.round(similarity * 100)}%</div>
+                                </div>
+                                ${metadata.module ? `<div class="rag-meta-item">
+                                    <div class="rag-meta-label">所属模块</div>
+                                    <div class="rag-meta-value">${metadata.module}</div>
+                                </div>` : ''}
+                            </div>
+                        </div>
+                        
+                        <div class="rag-detail-section">
+                            <div class="rag-detail-section-title">内容详情</div>
+                            <div class="rag-detail-text">${escapeHtml(content)}</div>
+                        </div>
+                        
+                        ${metadata.name || metadata.title ? `
+                        <div class="rag-detail-section">
+                            <div class="rag-detail-section-title">附加信息</div>
+                            <div class="rag-detail-meta">
+                                ${metadata.name ? `<div class="rag-meta-item">
+                                    <div class="rag-meta-label">名称</div>
+                                    <div class="rag-meta-value">${escapeHtml(metadata.name)}</div>
+                                </div>` : ''}
+                                ${metadata.title ? `<div class="rag-meta-item">
+                                    <div class="rag-meta-label">标题</div>
+                                    <div class="rag-meta-value">${escapeHtml(metadata.title)}</div>
+                                </div>` : ''}
+                                ${metadata.priority ? `<div class="rag-meta-item">
+                                    <div class="rag-meta-label">优先级</div>
+                                    <div class="rag-meta-value">${metadata.priority}</div>
+                                </div>` : ''}
+                            </div>
+                        </div>` : ''}
+                    `;
+                } else {
+                    ragBody.innerHTML = `
+                        <div style="text-align:center; padding:40px;">
+                            <div style="font-size:48px; margin-bottom:20px;">🔍</div>
+                            <div style="color:#888; font-size:14px;">未找到匹配的RAG数据</div>
+                            <div style="color:#666; font-size:12px; margin-top:12px;">来源ID: ${sourceId}</div>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('加载RAG详情失败:', error);
+                ragBody.innerHTML = `
+                    <div style="text-align:center; padding:40px;">
+                        <div style="font-size:48px; margin-bottom:20px;">⚠️</div>
+                        <div style="color:#ff4466; font-size:14px;">加载RAG详情失败</div>
+                        <div style="color:#666; font-size:12px; margin-top:12px;">${error.message}</div>
+                    </div>
+                `;
+            }
+        }
+
+        // RAG检索
+        async function searchRagData(sourceId, sourceType) {
+            // 关闭用例详情模态框
+            closeModal();
+            
+            // 跳转到RAG检索页面
+            const collectionName = getCollectionName(sourceType);
+            window.location.href = `rag.html?search=${encodeURIComponent(sourceId)}&collection=${collectionName}`;
+        }
+
+        // 关闭RAG详情模态框
+        function closeRagDetailModal() {
+            document.getElementById('ragDetailModal').classList.remove('active');
+        }
+
+        // 获取集合名称
+        function getCollectionName(sourceType) {
+            const map = {
+                'historical_case': 'historical_cases',
+                'defect': 'defects',
+                'requirement': 'requirements'
+            };
+            return map[sourceType] || 'historical_cases';
+        }
+
+        // 获取来源类型名称
+        function getSourceTypeName(sourceType) {
+            const map = {
+                'historical_case': '历史用例',
+                'defect': '历史缺陷',
+                'requirement': '需求',
+                'llm_generated': 'AI生成',
+                'unknown': '未知'
+            };
+            return map[sourceType] || sourceType;
+        }
+
+        // HTML转义
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, m => map[m]);
         }
 
         async function saveCase() {

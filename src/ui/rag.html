@@ -1008,8 +1008,8 @@
             <div class="header">
                 <h1>RAG检索</h1>
                 <div style="display: flex; gap: 10px;">
-                    <button class="btn btn-secondary" onclick="openImportModal()">从数据库导入</button>
-                    <button class="btn btn-primary" onclick="openAddModal()">+ 录入数据</button>
+                    <button class="btn btn-secondary" onclick="openImportModal()" title="从数据库导入" aria-label="从数据库导入">📥 从数据库导入</button>
+                    <button class="btn btn-primary" onclick="openAddModal()" title="录入数据" aria-label="录入数据">➕ 录入数据</button>
                 </div>
             </div>
             
@@ -1178,6 +1178,23 @@
             max-height: 60px;
             overflow: hidden;
         }
+        .db-item-imported {
+            background: rgba(0, 255, 136, 0.03);
+        }
+        .db-item-imported .db-item-checkbox {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .imported-badge {
+            display: inline-block;
+            margin-left: 8px;
+            padding: 2px 8px;
+            font-size: 11px;
+            color: #00ff88;
+            background: rgba(0, 255, 136, 0.1);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            border-radius: 3px;
+        }
     </style>
 
     <script>
@@ -1321,7 +1338,7 @@
                 return `
                     <div class="result-item" style="cursor: pointer;" onclick="viewItem('${item.id}', '${currentTab}')">
                         <span class="result-type type-${itemType}">${getTypeLabel(currentTab)}</span>
-                        <button class="delete-btn" onclick="event.stopPropagation(); deleteItem('${item.id}', '${currentTab}')">删除</button>
+                        <button class="delete-btn" onclick="event.stopPropagation(); deleteItem('${item.id}', '${currentTab}')" title="删除" aria-label="删除">🗑️</button>
                         <div class="result-content" style="font-weight: 600; margin-bottom: 8px;">${title}</div>
                         <div class="result-meta">
                             ID: ${item.id}
@@ -1543,6 +1560,7 @@
         // 存储所有数据和选中项
         let allDatabaseItems = [];
         let selectedItemIds = new Set();
+        let importedCaseIds = new Set(); // 已导入向量库的用例ID
 
         // 加载已评审的用例
         async function loadApprovedCases() {
@@ -1550,11 +1568,17 @@
             container.innerHTML = '<div class="empty-state" style="padding: 40px;"><p>加载中...</p></div>';
             
             try {
-                // 只加载已评审通过的用例 (approved status = 已评审)
-                const response = await fetch('/api/cases?status=approved&limit=1000');
-                const data = await response.json();
+                // 并行加载用例列表和已导入ID
+                const [casesRes, importedRes] = await Promise.all([
+                    fetch('/api/cases?status=approved&limit=1000'),
+                    fetch('/api/rag/imported-ids?type=cases')
+                ]);
                 
-                allDatabaseItems = data.items || [];
+                const casesData = await casesRes.json();
+                const importedData = await importedRes.json();
+                
+                allDatabaseItems = casesData.items || [];
+                importedCaseIds = new Set(importedData.ids || []);
                 
                 if (allDatabaseItems.length === 0) {
                     container.innerHTML = '<div class="empty-state" style="padding: 40px;"><p>暂无已评审的用例<br><br>请先在用例管理中评审用例，将状态改为"已评审"</p></div>';
@@ -1579,14 +1603,19 @@
                 const module = item.module || '未分类';
                 const priority = item.priority || 'P2';
                 const isSelected = selectedItemIds.has(itemId);
+                const isImported = importedCaseIds.has(itemId);
                 
                 return `
-                    <div class="db-item" onclick="toggleItem(${itemId})">
+                    <div class="db-item ${isImported ? 'db-item-imported' : ''}" onclick="${isImported ? '' : `toggleItem(${itemId})`}">
                         <input type="checkbox" class="db-item-checkbox" 
                                ${isSelected ? 'checked' : ''} 
-                               onclick="event.stopPropagation(); toggleItem(${itemId})">
+                               ${isImported ? 'disabled' : ''}
+                               onclick="event.stopPropagation(); ${isImported ? '' : `toggleItem(${itemId})`}">
                         <div class="db-item-content">
-                            <div class="db-item-title">${caseTitle}</div>
+                            <div class="db-item-title">
+                                ${caseTitle}
+                                ${isImported ? '<span class="imported-badge">✓ 已导入</span>' : ''}
+                            </div>
                             <div class="db-item-meta">需求: ${requirementTitle} | 模块: ${module} | 优先级: ${priority}</div>
                         </div>
                     </div>
@@ -1619,6 +1648,9 @@
 
         // 切换单个项的选择状态
         function toggleItem(itemId) {
+            // 已导入的用例不可选择
+            if (importedCaseIds.has(itemId)) return;
+            
             if (selectedItemIds.has(itemId)) {
                 selectedItemIds.delete(itemId);
             } else {
@@ -1635,7 +1667,11 @@
 
         // 全选
         function selectAllItems() {
-            allDatabaseItems.forEach(item => selectedItemIds.add(item.id));
+            allDatabaseItems.forEach(item => {
+                if (!importedCaseIds.has(item.id)) {
+                    selectedItemIds.add(item.id);
+                }
+            });
             updateSelectedCount();
             renderDatabaseItems(allDatabaseItems);
         }
@@ -1673,7 +1709,15 @@
                 const data = await response.json();
                 
                 if (response.ok) {
-                    closeImportModal();
+                    // 更新已导入ID集合
+                    ids.forEach(id => importedCaseIds.add(id));
+                    // 清除已选择项
+                    selectedItemIds.clear();
+                    updateSelectedCount();
+                    // 刷新列表显示
+                    renderDatabaseItems(allDatabaseItems);
+                    // 刷新RAG数据列表
+                    loadDataList();
                     loadStats();
                     showToast(`成功导入 ${data.imported_count} 条用例到RAG`, 'success');
                 } else {

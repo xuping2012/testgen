@@ -39,6 +39,15 @@ def create_app():
     print("正在初始化数据库...")
     engine = init_database("data/testgen.db")
     db_session = get_session(engine)
+
+    # ==================== 初始化FTS5增量更新监听器 ====================
+    print("正在设置FTS5增量更新监听器...")
+    try:
+        from src.database.fts5_listeners import setup_fts5_listeners
+        setup_fts5_listeners(engine)
+        print("  FTS5监听器已设置")
+    except Exception as e:
+        print(f"  FTS5监听器设置失败: {e}")
     
     # ==================== 初始化LLM管理器 ====================
     print("正在初始化LLM管理器...")

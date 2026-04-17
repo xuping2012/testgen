@@ -15,6 +15,7 @@ from enum import Enum
 
 class TaskStatus(Enum):
     """任务状态"""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -24,6 +25,7 @@ class TaskStatus(Enum):
 @dataclass
 class GenerationTask:
     """生成任务"""
+
     task_id: str
     requirement_id: int
     status: str
@@ -38,77 +40,182 @@ class GenerationTask:
     created_at: Optional[str] = None
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
 
 class GenerationService:
     """用例生成服务 - 管理异步生成任务"""
-    
+
     def __init__(self, db_session=None, llm_manager=None, vector_store=None):
         self.db_session = db_session
         self.llm_manager = llm_manager
         self.vector_store = vector_store
-        
+
         # 内存中的任务存储（生产环境应使用Redis等）
         self._tasks: Dict[str, GenerationTask] = {}
         self._lock = threading.Lock()
         self.callbacks: Dict[str, Callable] = {}
-        
+
+        # RAG增强组件（延迟初始化）
+        self._hybrid_retriever = None
+        self._query_optimizer = None
+        self._dynamic_retriever = None
+        self._confidence_calculator = None
+        self._citation_parser = None
+        self._retrieval_evaluator = None
+
+        # 检索模式配置
+        self.retrieval_mode = "hybrid"  # vector_only / keyword_only / hybrid
+        self.rrf_k = 60.0  # RRF融合参数
+
         # 调试：输出llm_manager的默认配置
         if llm_manager:
             default_info = llm_manager.get_config_info()
-            print(f"[GenerationService] 初始化完成，LLM默认配置: {default_info.get('name', '无')} ({default_info.get('provider', '未知')})")
-            print(f"[GenerationService] LLM适配器列表: {list(llm_manager.adapters.keys())}")
+            print(
+                f"[GenerationService] 初始化完成，LLM默认配置: {default_info.get('name', '无')} ({default_info.get('provider', '未知')})"
+            )
+            print(
+                f"[GenerationService] LLM适配器列表: {list(llm_manager.adapters.keys())}"
+            )
             print(f"[GenerationService] 默认适配器: {llm_manager.default_adapter}")
-        
+
         # 从数据库加载未完成的任务
         self._load_pending_tasks_from_db()
-    
+
+    def _init_rag_components(self):
+        """延迟初始化RAG增强组件"""
+        # 先初始化DynamicRetriever（HybridRetriever需要它）
+        if self._dynamic_retriever is None:
+            try:
+                from src.services.dynamic_retriever import DynamicRetriever
+
+                self._dynamic_retriever = DynamicRetriever()
+                print("[RAG组件] DynamicRetriever 初始化完成")
+            except Exception as e:
+                print(f"[RAG组件] DynamicRetriever 初始化失败: {e}")
+
+        if self._hybrid_retriever is None:
+            try:
+                from src.services.hybrid_retriever import HybridRetriever
+
+                db_path = "data/testgen.db"
+                self._hybrid_retriever = HybridRetriever(
+                    vector_store=self.vector_store,
+                    db_path=db_path,
+                    mode=self.retrieval_mode,
+                    rrf_k=self.rrf_k,
+                    dynamic_retriever=self._dynamic_retriever,
+                )
+                print("[RAG组件] HybridRetriever 初始化完成")
+            except Exception as e:
+                print(f"[RAG组件] HybridRetriever 初始化失败: {e}")
+
+        if self._query_optimizer is None and self.llm_manager:
+            try:
+                from src.services.query_optimizer import QueryOptimizer
+
+                self._query_optimizer = QueryOptimizer(
+                    llm_manager=self.llm_manager,
+                    vector_store=self.vector_store,
+                )
+                print("[RAG组件] QueryOptimizer 初始化完成")
+            except Exception as e:
+                print(f"[RAG组件] QueryOptimizer 初始化失败: {e}")
+
+        if self._confidence_calculator is None:
+            try:
+                from src.services.confidence_calculator import ConfidenceCalculator
+
+                self._confidence_calculator = ConfidenceCalculator()
+                print("[RAG组件] ConfidenceCalculator 初始化完成")
+            except Exception as e:
+                print(f"[RAG组件] ConfidenceCalculator 初始化失败: {e}")
+
+        if self._citation_parser is None:
+            try:
+                from src.services.citation_parser import CitationParser
+
+                self._citation_parser = CitationParser(
+                    vector_store=self.vector_store,
+                )
+                print("[RAG组件] CitationParser 初始化完成")
+            except Exception as e:
+                print(f"[RAG组件] CitationParser 初始化失败: {e}")
+
+        if self._retrieval_evaluator is None:
+            try:
+                from src.services.retrieval_evaluator import RetrievalEvaluator
+
+                self._retrieval_evaluator = RetrievalEvaluator()
+                print("[RAG组件] RetrievalEvaluator 初始化完成")
+            except Exception as e:
+                print(f"[RAG组件] RetrievalEvaluator 初始化失败: {e}")
+
     def _load_pending_tasks_from_db(self):
         """从数据库加载未完成的任务（status 为 pending/processing/awaiting_review）"""
         if not self.db_session:
             print("[GenerationService] 数据库会话不可用，跳过任务恢复")
             return
-        
+
         try:
             from src.database.models import GenerationTask as GenerationTaskModel
-            
+
             # 查询未完成的任务
-            pending_tasks = self.db_session.query(GenerationTaskModel).filter(
-                GenerationTaskModel.status.in_(['pending', 'processing', 'awaiting_review'])
-            ).all()
-            
+            pending_tasks = (
+                self.db_session.query(GenerationTaskModel)
+                .filter(
+                    GenerationTaskModel.status.in_(
+                        ["pending", "processing", "awaiting_review"]
+                    )
+                )
+                .all()
+            )
+
             if pending_tasks:
-                print(f"[GenerationService] 从数据库恢复 {len(pending_tasks)} 个未完成任务")
+                print(
+                    f"[GenerationService] 从数据库恢复 {len(pending_tasks)} 个未完成任务"
+                )
                 for task_model in pending_tasks:
                     task = GenerationTask(
                         task_id=task_model.task_id,
                         requirement_id=task_model.requirement_id,
-                        requirement_title=task_model.requirement_title or '',
+                        requirement_title=task_model.requirement_title or "",
                         status=task_model.status,
                         progress=task_model.progress or 0.0,
-                        message=task_model.message or '',
+                        message=task_model.message or "",
                         result=task_model.result or {},
                         error_message=task_model.error_message,
                         analysis_snapshot=task_model.analysis_snapshot or {},
                         case_count=task_model.case_count or 0,
                         duration=task_model.duration or 0.0,
-                        created_at=task_model.created_at.isoformat() if task_model.created_at else '',
-                        started_at=task_model.started_at.isoformat() if task_model.started_at else '',
-                        completed_at=task_model.completed_at.isoformat() if task_model.completed_at else ''
+                        created_at=(
+                            task_model.created_at.isoformat()
+                            if task_model.created_at
+                            else ""
+                        ),
+                        started_at=(
+                            task_model.started_at.isoformat()
+                            if task_model.started_at
+                            else ""
+                        ),
+                        completed_at=(
+                            task_model.completed_at.isoformat()
+                            if task_model.completed_at
+                            else ""
+                        ),
                     )
                     self._tasks[task_model.task_id] = task
-                    
+
         except Exception as e:
             print(f"[GenerationService] 恢复未完成任务失败: {e}")
-    
+
     @staticmethod
     def init_default_prompts(db_session):
         """初始化默认Prompt模板到数据库"""
         from src.database.models import PromptTemplate
-        
+
         # 定义默认模板 - 基于agents目录的标准规范
         default_prompts = [
             {
@@ -248,7 +355,7 @@ class GenerationService:
 4. 预期结果要明确可验证，禁止模糊描述
 5. **P0+P1合计≤40%，P2应占最大比例**
 6. **禁止使用任何占位符，必须使用具体测试数据**
-7. 直接输出JSON数组，不要包含其他说明文字"""
+7. 直接输出JSON数组，不要包含其他说明文字""",
             },
             {
                 "name": "优化版测试用例生成模板",
@@ -385,6 +492,12 @@ class GenerationService:
 - **重点参考RAG召回的历史缺陷**，确保覆盖已知问题场景
 - 结合历史经验优化用例设计，提高采纳率
 
+## 7. 引用标注要求（必须遵守）
+- 当你参考了历史用例、缺陷或需求来设计某个测试点时，必须在该用例的test_steps或expected_results末尾添加引用标注
+- 引用格式：`[citation: #CASE-XXX]`（历史用例）、`[citation: #DEFECT-XXX]`（历史缺陷）、`[citation: #REQ-XXX]`（相似需求）、`[citation: LLM]`（模型推理）
+- 每个引用必须对应RAG召回中的真实数据，禁止编造引用
+- 如果没有参考任何历史数据，可以不添加引用
+
 # 输出格式
 
 输出JSON数组，每个用例包含以下字段：
@@ -411,7 +524,7 @@ class GenerationService:
 5. **P0+P1合计≤40%，P2应占最大比例**
 6. **禁止使用任何占位符，必须使用具体测试数据**
 7. **重点参考RAG召回的历史用例和缺陷，确保不重复历史问题**
-8. 直接输出JSON数组，不要包含其他说明文字"""
+8. 直接输出JSON数组，不要包含其他说明文字""",
             },
             {
                 "name": "需求分析模板",
@@ -498,7 +611,7 @@ class GenerationService:
 1. 测试点名称必须是具体的操作描述，不能与模块名重复
 2. 测试点数量根据实际子功能客观分析，不要机械化生成
 3. 业务流程步骤必须包含状态变化
-4. 直接输出JSON，不要包含其他说明文字"""
+4. 直接输出JSON，不要包含其他说明文字""",
             },
             {
                 "name": "模块评审模板",
@@ -581,10 +694,10 @@ class GenerationService:
   "overall_score": 90,
   "conclusion": "评审结论：通过/不通过，以及具体建议"
 }}
-```"""
-            }
+```""",
+            },
         ]
-        
+
         # 插入数据库
         for prompt_data in default_prompts:
             template = PromptTemplate(
@@ -592,33 +705,34 @@ class GenerationService:
                 description=prompt_data["description"],
                 template_type=prompt_data["template_type"],
                 template=prompt_data["template"],
-                is_default=1
+                is_default=1,
             )
             db_session.add(template)
-    
+
     def create_task(self, requirement_id: int) -> str:
         """
         创建新的生成任务
-        
+
         Args:
             requirement_id: 需求ID
-            
+
         Returns:
             任务ID
         """
         task_id = f"task_{uuid.uuid4().hex[:12]}"
-        
+
         # 获取需求标题
-        requirement_title = ''
+        requirement_title = ""
         if self.db_session:
             try:
                 from src.database.models import Requirement
+
                 req = self.db_session.query(Requirement).get(requirement_id)
                 if req:
                     requirement_title = req.title
             except:
                 pass
-        
+
         task = GenerationTask(
             task_id=task_id,
             requirement_id=requirement_id,
@@ -626,22 +740,22 @@ class GenerationService:
             status=TaskStatus.PENDING.value,
             progress=1.0,  # 初始进度为1%，避免显示0%
             message="🚀 任务已创建，即将开始生成...",
-            created_at=datetime.utcnow().isoformat()
+            created_at=datetime.utcnow().isoformat(),
         )
-        
+
         with self._lock:
             self._tasks[task_id] = task
-        
+
         # 同步到数据库
         self._sync_task_to_db(task)
-        
+
         return task_id
-    
+
     def get_task(self, task_id: str) -> Optional[GenerationTask]:
         """获取任务状态"""
         with self._lock:
             return self._tasks.get(task_id)
-    
+
     def start_task(self, task_id: str):
         """标记任务开始执行"""
         task = self.get_task(task_id)
@@ -652,7 +766,7 @@ class GenerationService:
             task.message = "🚀 正在启动生成任务..."
             # 同步到数据库
             self._sync_task_to_db(task)
-    
+
     def update_progress(self, task_id: str, progress: float, message: str):
         """更新任务进度"""
         task = self.get_task(task_id)
@@ -661,13 +775,13 @@ class GenerationService:
             task.message = message
             # 同步到数据库
             self._sync_task_to_db(task)
-    
+
     def complete_task(self, task_id: str, result: Dict[str, Any]):
         """标记任务完成"""
         task = self.get_task(task_id)
         if task:
             # 支持自定义状态（如 completed_pending_review）
-            custom_status = result.pop('status', None)
+            custom_status = result.pop("status", None)
             task.status = custom_status or TaskStatus.COMPLETED.value
             task.progress = 100.0
             task.result = result
@@ -675,32 +789,39 @@ class GenerationService:
             task.completed_at = datetime.utcnow().isoformat()
             # 同步到数据库
             self._sync_task_to_db(task)
-    
+
     def _sync_task_to_db(self, task: GenerationTask):
         """将内存中的任务状态同步到数据库"""
         if not self.db_session:
             return
-        
+
         try:
             from src.database.models import GenerationTask as GenerationTaskModel
-            
-            task_model = self.db_session.query(GenerationTaskModel).filter_by(task_id=task.task_id).first()
+
+            task_model = (
+                self.db_session.query(GenerationTaskModel)
+                .filter_by(task_id=task.task_id)
+                .first()
+            )
             if not task_model:
                 # 如果数据库中不存在该任务，则创建
                 task_model = GenerationTaskModel(
-                    task_id=task.task_id,
-                    requirement_id=task.requirement_id
+                    task_id=task.task_id, requirement_id=task.requirement_id
                 )
                 self.db_session.add(task_model)
-            
+
             # 更新字段
             task_model.status = task.status
             task_model.progress = task.progress
             task_model.message = task.message
-            task_model.result = task.result if hasattr(task, 'result') else None
+            task_model.result = task.result if hasattr(task, "result") else None
             task_model.error_message = task.error_message
-            task_model.case_count = getattr(task, 'case_count', 0) or 0
-            
+            task_model.case_count = getattr(task, "case_count", 0) or 0
+
+            # 同步分析快照
+            if hasattr(task, "analysis_snapshot") and task.analysis_snapshot:
+                task_model.analysis_snapshot = task.analysis_snapshot
+
             # 时间字段
             if task.started_at:
                 try:
@@ -712,12 +833,12 @@ class GenerationService:
                     task_model.completed_at = datetime.fromisoformat(task.completed_at)
                 except:
                     pass
-            
+
             # 计算耗时
             if task_model.started_at:
                 end_time = task_model.completed_at or datetime.utcnow()
                 task_model.duration = (end_time - task_model.started_at).total_seconds()
-            
+
             self.db_session.commit()
         except Exception as e:
             print(f"[GenerationService] 同步任务到数据库失败: {e}")
@@ -725,7 +846,7 @@ class GenerationService:
                 self.db_session.rollback()
             except:
                 pass
-    
+
     def fail_task(self, task_id: str, error_message: str):
         """标记任务失败"""
         task = self.get_task(task_id)
@@ -736,11 +857,13 @@ class GenerationService:
             task.completed_at = datetime.utcnow().isoformat()
             # 同步到数据库
             self._sync_task_to_db(task)
-    
-    def execute_phase1_analysis(self, task_id: str, requirement_content: str) -> Dict[str, Any]:
+
+    def execute_phase1_analysis(
+        self, task_id: str, requirement_content: str
+    ) -> Dict[str, Any]:
         """
         阶段1：需求分析 + 测试规划（同步执行）
-        
+
         Returns:
             {
                 "requirement_id": 1,
@@ -754,81 +877,114 @@ class GenerationService:
         self.start_task(task_id)
         task_obj = self.get_task(task_id)
         requirement_id = task_obj.requirement_id if task_obj else 0
-        
+
         # 阶段1: 需求分析
         self.update_progress(task_id, 5.0, "📋 开始需求分析...")
         requirement_analysis = self._analyze_requirement(requirement_content)
-        
+
         self.update_progress(task_id, 10.0, "🔍 正在解析需求文档结构...")
-        
+
         # 保存分析后的Markdown格式内容到需求表
         if self.db_session:
             try:
                 from src.database.models import Requirement
+
                 requirement = self.db_session.query(Requirement).get(requirement_id)
                 if requirement:
-                    analyzed_md = self._build_analyzed_markdown(requirement_analysis, requirement_content)
+                    analyzed_md = self._build_analyzed_markdown(
+                        requirement_analysis, requirement_content
+                    )
                     requirement.analyzed_content = analyzed_md
                     self.db_session.commit()
                     print(f"已保存需求分析Markdown格式到需求ID: {requirement_id}")
             except Exception as e:
                 print(f"保存需求分析Markdown失败: {e}")
-        
-        self.update_progress(task_id, 15.0, 
-            f"✅ 需求分析完成 - 识别到{len(requirement_analysis.get('modules', []))}个模块")
-        
+
+        self.update_progress(
+            task_id,
+            15.0,
+            f"✅ 需求分析完成 - 识别到{len(requirement_analysis.get('modules', []))}个模块",
+        )
+
         # 阶段2: 测试规划（移到RAG之前）
         self.update_progress(task_id, 20.0, "📝 开始测试规划...")
         test_plan = self._create_test_plan(requirement_content, requirement_analysis)
-        
+
         # 解析测试规划为结构化的ITEM和POINT
         structured_plan = self._parse_test_plan(test_plan)
-        
-        self.update_progress(task_id, 25.0, 
-            f"✅ 测试规划完成 - 识别到{len(structured_plan.get('items', []))}个测试项，{len(structured_plan.get('points', []))}个测试点")
-        
+
+        self.update_progress(
+            task_id,
+            25.0,
+            f"✅ 测试规划完成 - 识别到{len(structured_plan.get('items', []))}个测试项，{len(structured_plan.get('points', []))}个测试点",
+        )
+
         # 构建返回结果
         result = {
             "requirement_id": requirement_id,
-            "modules": requirement_analysis.get('modules', []),
-            "items": structured_plan.get('items', []),
-            "points": structured_plan.get('points', []),
+            "modules": requirement_analysis.get("modules", []),
+            "items": structured_plan.get("items", []),
+            "points": structured_plan.get("points", []),
             "test_plan": test_plan,
-            "requirement_md": self._build_analyzed_markdown(requirement_analysis, requirement_content),
-            "business_rules": requirement_analysis.get('business_rules', []),
-            "data_constraints": requirement_analysis.get('data_constraints', []),
-            "risk_assessment": structured_plan.get('risk_assessment', {})
+            "requirement_md": self._build_analyzed_markdown(
+                requirement_analysis, requirement_content
+            ),
+            "business_rules": requirement_analysis.get("business_rules", []),
+            "data_constraints": requirement_analysis.get("data_constraints", []),
+            "risk_assessment": structured_plan.get("risk_assessment", {}),
         }
-        
+
         # 更新任务状态为等待评审
         task = self.get_task(task_id)
         if task:
-            task.status = 'awaiting_review'
+            task.status = "awaiting_review"
             task.progress = 25.0
             task.message = "✅ 分析完成，请评审后继续"
             task.result = result
-        
+            # 保存分析快照，供后续任务详情展示
+            task.analysis_snapshot = {
+                "modules": requirement_analysis.get("modules", []),
+                "items": structured_plan.get("items", []),
+                "points": structured_plan.get("points", []),
+                "item_count": len(structured_plan.get("items", [])),
+                "point_count": len(structured_plan.get("points", [])),
+                "business_rules": requirement_analysis.get("business_rules", []),
+                "risk_assessment": structured_plan.get("risk_assessment", {}),
+            }
+            self._sync_task_to_db(task)
+
         return result
-    
-    def execute_phase2_generation(self, task_id: str, reviewed_plan: Optional[Dict] = None):
+
+    def execute_phase2_generation(
+        self, task_id: str, reviewed_plan: Optional[Dict] = None
+    ):
         """
         阶段2：RAG检索 + LLM生成（异步执行）
-        
+
         Args:
             task_id: 任务ID
             reviewed_plan: 用户评审后可能编辑过的测试规划
         """
+
         def run_phase2():
             try:
                 task_obj = self.get_task(task_id)
                 if not task_obj:
                     return
-                
+
+                # 立即更新状态为running，避免显示为待评审
+                with self._lock:
+                    task_obj.status = "running"
+                    task_obj.started_at = datetime.utcnow().isoformat()
+                    task_obj.message = "🚀 正在启动生成任务..."
+                    self._sync_task_to_db(task_obj)
+
                 requirement_id = task_obj.requirement_id
-                
+
                 # 从数据库获取需求内容
                 if self.db_session:
                     from src.database.models import Requirement
+
                     requirement = self.db_session.query(Requirement).get(requirement_id)
                     if not requirement:
                         self.fail_task(task_id, "需求不存在")
@@ -837,104 +993,115 @@ class GenerationService:
                 else:
                     self.fail_task(task_id, "数据库会话不可用")
                     return
-                
+
                 # 阶段1: RAG召回 (30%)
                 self.update_progress(task_id, 30.0, "🔎 开始RAG召回...")
-                
+
                 rag_context = ""
                 rag_stats = {"cases": 0, "defects": 0, "requirements": 0}
-                
+
                 if self.vector_store:
                     try:
-                        self.update_progress(task_id, 35.0, "🔎 正在召回相似历史用例...")
-                        
+                        self.update_progress(
+                            task_id, 35.0, "🔎 正在召回相似历史用例..."
+                        )
+
                         # 使用增强RAG检索器
-                        rag_context, rag_stats = self._perform_rag_recall(
-                            requirement_content, 
+                        rag_context, rag_stats, rag_context_data = self._perform_rag_recall(
+                            requirement_content,
                             {},  # 不需要requirement_analysis，已有reviewed_plan
                             top_k_cases=5,
                             top_k_defects=3,
-                            top_k_requirements=3
+                            top_k_requirements=3,
                         )
-                        
+
                         recall_summary = f"✅ RAG召回完成 - "
-                        if rag_stats['cases'] > 0:
+                        if rag_stats["cases"] > 0:
                             recall_summary += f"用例:{rag_stats['cases']}条 "
-                        if rag_stats['defects'] > 0:
+                        if rag_stats["defects"] > 0:
                             recall_summary += f"缺陷:{rag_stats['defects']}条 "
-                        if rag_stats['requirements'] > 0:
+                        if rag_stats["requirements"] > 0:
                             recall_summary += f"需求:{rag_stats['requirements']}条"
-                        
+
                         self.update_progress(task_id, 40.0, recall_summary)
                     except Exception as e:
                         print(f"RAG召回失败: {e}")
                         self.update_progress(task_id, 40.0, "⚠️ RAG召回失败，继续生成")
                 else:
-                    self.update_progress(task_id, 40.0, "⚠️ 向量库未初始化，跳过RAG召回")
-                
+                    self.update_progress(
+                        task_id, 40.0, "⚠️ 向量库未初始化，跳过RAG召回"
+                    )
+
                 # 阶段2: LLM生成测试用例 (50%-80%)
                 self.update_progress(task_id, 50.0, "🤖 开始生成测试用例...")
-                
+
                 test_cases = []
                 if self.llm_manager:
                     self.update_progress(task_id, 55.0, "🤖 正在初始化适配器...")
-                    
+
                     # 输出当前使用的默认配置信息
                     default_config_info = self.llm_manager.get_config_info()
-                    print(f"[LLM生成] 使用默认配置: {default_config_info.get('name')} ({default_config_info.get('provider')})")
+                    print(
+                        f"[LLM生成] 使用默认配置: {default_config_info.get('name')} ({default_config_info.get('provider')})"
+                    )
                     print(f"[LLM生成] Base URL: {default_config_info.get('base_url')}")
                     print(f"[LLM生成] Model ID: {default_config_info.get('model_id')}")
-                    
+
                     adapter = self.llm_manager.get_adapter()
-                    
+
                     self.update_progress(task_id, 60.0, "🤖 正在构建Prompt上下文...")
-                    
+
                     # 使用评审后的测试规划（如果有）或重新生成
-                    test_plan = reviewed_plan.get('test_plan', '') if reviewed_plan else ''
+                    test_plan = (
+                        reviewed_plan.get("test_plan", "") if reviewed_plan else ""
+                    )
                     if not test_plan:
                         test_plan = self._create_test_plan(requirement_content, {})
-                    
+
                     # 构建优化的Prompt
                     prompt = self._build_optimized_generation_prompt(
-                        requirement_content, 
-                        rag_context, 
-                        test_plan,
-                        reviewed_plan or {}
+                        requirement_content, rag_context, test_plan, reviewed_plan or {}
                     )
-                    
+
                     self.update_progress(task_id, 65.0, "🤖 正在生成用例...")
-                    
+
                     # 调用LLM生成（带故障切换）
-                    response = self._generate_with_failover(
-                        adapter, prompt, task_id
+                    response = self._generate_with_failover(adapter, prompt, task_id)
+
+                    self.update_progress(
+                        task_id, 80.0, "🤖 LLM响应已接收，正在解析结果..."
                     )
-                    
-                    self.update_progress(task_id, 80.0, "🤖 LLM响应已接收，正在解析结果...")
-                    
+
                     if not response.success:
                         self._log_llm_response(prompt, response)
                         raise Exception(f"LLM生成失败: {response.error_message}")
-                    
+
                     self.update_progress(task_id, 85.0, "🤖 正在解析LLM返回的响应...")
-                    
+
                     # 打印原始响应以便调试
                     print(f"LLM原始响应长度: {len(response.content)}")
                     print(f"LLM原始响应前1000字符: {response.content[:1000]}...")
-                    
+
                     # 解析生成的用例
                     test_cases = self._parse_generated_cases(response.content)
                     print(f"解析到用例数量: {len(test_cases)}")
                     if not test_cases:
                         self._log_llm_response(prompt, response)
-                        raise Exception(f"LLM返回的用例数据为空（响应长度: {len(response.content)}字符）")
+                        raise Exception(
+                            f"LLM返回的用例数据为空（响应长度: {len(response.content)}字符）"
+                        )
                 else:
                     self.update_progress(task_id, 60.0, "🤖 使用模拟数据生成...")
                     test_cases = self._mock_generate_cases(requirement_content)
 
-                self.update_progress(task_id, 90.0, f"✅ LLM生成完成 - 生成{len(test_cases)}条用例")
+                self.update_progress(
+                    task_id, 90.0, f"✅ LLM生成完成 - 生成{len(test_cases)}条用例"
+                )
 
                 # 阶段3: 置信度计算 + 来源标注解析
-                self.update_progress(task_id, 91.0, "🔍 正在计算置信度和解析引用来源...")
+                self.update_progress(
+                    task_id, 91.0, "🔍 正在计算置信度和解析引用来源..."
+                )
                 confidence_stats = {}
                 citation_batch_stats = {}
                 try:
@@ -945,10 +1112,12 @@ class GenerationService:
                     parser = CitationParser(vector_store=self.vector_store)
 
                     # 解析引用来源
-                    test_cases, citation_batch_stats = parser.parse_all_cases(test_cases)
+                    test_cases, citation_batch_stats = parser.parse_all_cases(
+                        test_cases
+                    )
 
                     # 计算置信度
-                    confidence_levels = {'A': 0, 'B': 0, 'C': 0, 'D': 0}
+                    confidence_levels = {"A": 0, "B": 0, "C": 0, "D": 0}
                     requires_review_count = 0
                     for case in test_cases:
                         conf_result = calculator.calculate(
@@ -956,68 +1125,101 @@ class GenerationService:
                             requirement_content,
                             rag_results=rag_stats,
                         )
-                        case['confidence_score'] = conf_result.get('confidence_score')
-                        case['confidence_level'] = conf_result.get('confidence_level')
-                        case['confidence_breakdown'] = conf_result.get('breakdown', {})
+                        case["confidence_score"] = conf_result.get("confidence_score")
+                        case["confidence_level"] = conf_result.get("confidence_level")
+                        case["confidence_breakdown"] = conf_result.get("breakdown", {})
                         # 低置信度用例标记需要人工审核
-                        if conf_result.get('requires_human_review'):
-                            case['requires_human_review'] = True
+                        if conf_result.get("requires_human_review"):
+                            case["requires_human_review"] = True
                             requires_review_count += 1
-                        level = conf_result.get('confidence_level')
+                        level = conf_result.get("confidence_level")
                         if level in confidence_levels:
                             confidence_levels[level] += 1
 
                     confidence_stats = {
-                        'by_level': confidence_levels,
-                        'requires_review_count': requires_review_count,
+                        "by_level": confidence_levels,
+                        "requires_review_count": requires_review_count,
                     }
-                    print(f"[置信度] 计算完成: {confidence_levels}, 需人工审核: {requires_review_count}条")
+                    print(
+                        f"[置信度] 计算完成: {confidence_levels}, 需人工审核: {requires_review_count}条"
+                    )
                 except Exception as e:
                     print(f"[置信度/引用] 计算失败，忽略继续: {e}")
-                    confidence_stats = {'error': str(e)}
-                    citation_batch_stats = {'error': str(e)}
+                    confidence_stats = {"error": str(e)}
+                    citation_batch_stats = {"error": str(e)}
 
-                # 阶段4: 暂存结果（不直接入库）
-                self.update_progress(task_id, 92.0, "💾 正在暂存测试用例...")
+                # 阶段4: 直接保存用例到数据库（不再暂存）
+                self.update_progress(task_id, 92.0, "💾 正在保存测试用例到数据库...")
 
-                # 将用例暂存到 task.result
-                if test_cases:
-                    with self._lock:
-                        task_obj = self._tasks.get(task_id)
+                try:
+                    if test_cases:
+                        task_obj = self.get_task(task_id)
                         if task_obj:
-                            task_obj.result['test_cases'] = test_cases
-                            task_obj.case_count = len(test_cases)
+                            self._save_test_cases(task_obj.requirement_id, test_cases)
+                            print(
+                                f"[直接保存] 成功保存 {len(test_cases)} 条用例到数据库"
+                            )
 
-                    self.update_progress(task_id, 98.0, f"✅ 已暂存{len(test_cases)}条测试用例，待确认后入库")
+                        self.update_progress(
+                            task_id,
+                            98.0,
+                            f"✅ 已保存{len(test_cases)}条测试用例到数据库",
+                        )
+                    else:
+                        self.update_progress(task_id, 98.0, "⚠️ 没有生成任何用例")
+                except Exception as e:
+                    print(f"[直接保存] 保存用例失败: {e}")
+                    self.fail_task(task_id, f"保存用例失败: {str(e)}")
+                    return
 
-                # 完成任务（状态为 completed_pending_review）
-                self.update_progress(task_id, 100.0, "✅ 生成完成，等待用户确认入库")
-                self.complete_task(task_id, {
-                    "case_count": len(test_cases),
-                    "total_count": len(test_cases),
-                    "rag_stats": rag_stats,
-                    "confidence_stats": confidence_stats,
-                    "citation_stats": citation_batch_stats,
-                    "status": "completed_pending_review"
-                })
+                # 完成任务（状态为 completed）
+                self.update_progress(task_id, 100.0, "✅ 生成完成")
+                self.complete_task(
+                    task_id,
+                    {
+                        "case_count": len(test_cases),
+                        "total_count": len(test_cases),
+                        "rag_stats": rag_stats,
+                        "confidence_stats": confidence_stats,
+                        "citation_stats": citation_batch_stats,
+                    },
+                )
 
-                # 注意：不再自动更新需求状态和保存用例到数据库
-                # 等待用户点击"全部入库"后再执行
-                        
+                # 更新需求状态为"已完成"
+                if self.db_session:
+                    try:
+                        from src.database.models import Requirement, RequirementStatus
+
+                        task_obj = self.get_task(task_id)
+                        if task_obj:
+                            requirement = self.db_session.query(Requirement).get(
+                                task_obj.requirement_id
+                            )
+                            if requirement:
+                                requirement.status = RequirementStatus.COMPLETED
+                                self.db_session.commit()
+                                print(f"需求状态已更新为: {requirement.status.value}")
+                    except Exception as e:
+                        print(f"更新需求状态失败: {e}")
+
             except Exception as e:
                 self.fail_task(task_id, str(e))
-        
+
         # 在后台线程执行
         thread = threading.Thread(target=run_phase2)
         thread.daemon = True
         thread.start()
-    
-    def execute_generation(self, task_id: str, requirement_content: str,
-                          progress_callback: Optional[Callable] = None,
-                          skip_analysis: bool = False):
+
+    def execute_generation(
+        self,
+        task_id: str,
+        requirement_content: str,
+        progress_callback: Optional[Callable] = None,
+        skip_analysis: bool = False,
+    ):
         """
         执行生成任务（在后台线程中运行）
-        
+
         完整RAG架构流程：
         【阶段1】需求分析 (15%) - 拆分功能模块，提取测试点
         【阶段2】RAG召回 (30%) - 召回业务知识、历史用例、历史缺陷
@@ -1025,102 +1227,119 @@ class GenerationService:
         【阶段4】LLM生成 (70%) - 基于RAG上下文生成测试用例
         【阶段5】保存结果 (90%) - 持久化到数据库
         【阶段6】完成任务 (100%)
-        
+
         Args:
             task_id: 任务ID
             requirement_content: 需求内容
             progress_callback: 进度回调函数
             skip_analysis: 跳过分析（已存在分析结果时使用）
         """
+
         def run_generation():
             try:
                 self.start_task(task_id)
                 task_obj = self.get_task(task_id)
                 requirement_id = task_obj.requirement_id if task_obj else 0
-                
+
                 # ========== 阶段1: 需求分析 (15%) ==========
                 self.update_progress(task_id, 5.0, "📋 开始需求分析...")
                 if progress_callback:
                     progress_callback(5.0, "📋 开始需求分析...")
-                
+
                 if not skip_analysis:
                     self.update_progress(task_id, 10.0, "🔍 正在解析文档...")
                     if progress_callback:
                         progress_callback(10.0, "🔍 正在解析文档...")
-                    
+
                     # 提取需求关键信息
-                    requirement_analysis = self._analyze_requirement(requirement_content)
-                    
+                    requirement_analysis = self._analyze_requirement(
+                        requirement_content
+                    )
+
                     # 保存分析后的Markdown格式内容到需求表
                     if self.db_session:
                         try:
                             from src.database.models import Requirement
-                            requirement = self.db_session.query(Requirement).get(requirement_id)
+
+                            requirement = self.db_session.query(Requirement).get(
+                                requirement_id
+                            )
                             if requirement:
                                 # 构建结构化的Markdown格式需求分析
-                                analyzed_md = self._build_analyzed_markdown(requirement_analysis, requirement_content)
+                                analyzed_md = self._build_analyzed_markdown(
+                                    requirement_analysis, requirement_content
+                                )
                                 requirement.analyzed_content = analyzed_md
                                 self.db_session.commit()
-                                print(f"已保存需求分析Markdown格式到需求ID: {requirement_id}")
+                                print(
+                                    f"已保存需求分析Markdown格式到需求ID: {requirement_id}"
+                                )
                         except Exception as e:
                             print(f"保存需求分析Markdown失败: {e}")
                             # 不影响主流程，继续执行
-                    
-                    self.update_progress(task_id, 15.0, 
-                        f"✅ 需求分析完成 - 识别到{len(requirement_analysis.get('modules', []))}个模块")
+
+                    self.update_progress(
+                        task_id,
+                        15.0,
+                        f"✅ 需求分析完成 - 识别到{len(requirement_analysis.get('modules', []))}个模块",
+                    )
                     if progress_callback:
-                        progress_callback(15.0, 
-                            f"✅ 需求分析完成 - 识别到{len(requirement_analysis.get('modules', []))}个模块")
+                        progress_callback(
+                            15.0,
+                            f"✅ 需求分析完成 - 识别到{len(requirement_analysis.get('modules', []))}个模块",
+                        )
                 else:
                     # 使用简单分析
                     requirement_analysis = {
                         "modules": [],
                         "key_features": [],
                         "business_rules": [],
-                        "data_constraints": []
+                        "data_constraints": [],
                     }
                     self.update_progress(task_id, 15.0, "✅ 使用已有分析结果")
                     if progress_callback:
                         progress_callback(15.0, "✅ 使用已有分析结果")
-                
+
                 # ========== 阶段2: RAG召回 (30%) ==========
                 self.update_progress(task_id, 20.0, "🔎 开始RAG召回...")
                 if progress_callback:
                     progress_callback(20.0, "🔎 开始RAG召回...")
-                
+
                 rag_context = ""
                 rag_stats = {"cases": 0, "defects": 0, "requirements": 0}
-                
+
                 if self.vector_store:
                     try:
                         self.update_progress(task_id, 25.0, "🔎 正在RAG检索...")
                         if progress_callback:
                             progress_callback(25.0, "🔎 正在RAG检索...")
-                        
+
                         # 使用增强RAG检索器
-                        rag_context, rag_stats = self._perform_rag_recall(
-                            requirement_content, 
+                        rag_context, rag_stats, rag_context_data = self._perform_rag_recall(
+                            requirement_content,
                             requirement_analysis,
                             top_k_cases=5,
                             top_k_defects=3,
-                            top_k_requirements=3
+                            top_k_requirements=3,
                         )
-                        
+
                         recall_summary = f"✅ RAG召回完成 - "
-                        if rag_stats['cases'] > 0:
+                        if rag_stats["cases"] > 0:
                             recall_summary += f"用例:{rag_stats['cases']}条 "
-                        if rag_stats['defects'] > 0:
+                        if rag_stats["defects"] > 0:
                             recall_summary += f"缺陷:{rag_stats['defects']}条 "
-                        if rag_stats['requirements'] > 0:
+                        if rag_stats["requirements"] > 0:
                             recall_summary += f"需求:{rag_stats['requirements']}条"
                         if rag_stats == {"cases": 0, "defects": 0, "requirements": 0}:
                             recall_summary += "无相关数据"
-                        
+
                         self.update_progress(task_id, 30.0, recall_summary)
                         if progress_callback:
                             progress_callback(30.0, recall_summary)
-                            
-                        print(f"RAG召回完成 - 用例:{rag_stats['cases']}, 缺陷:{rag_stats['defects']}, 需求:{rag_stats['requirements']}")
+
+                        print(
+                            f"RAG召回完成 - 用例:{rag_stats['cases']}, 缺陷:{rag_stats['defects']}, 需求:{rag_stats['requirements']}"
+                        )
                     except Exception as e:
                         print(f"RAG召回失败，继续生成: {e}")
                         rag_context = ""
@@ -1128,144 +1347,165 @@ class GenerationService:
                         if progress_callback:
                             progress_callback(30.0, "⚠️ RAG召回失败，继续生成")
                 else:
-                    self.update_progress(task_id, 30.0, "⚠️ 向量库未初始化，跳过RAG召回")
+                    self.update_progress(
+                        task_id, 30.0, "⚠️ 向量库未初始化，跳过RAG召回"
+                    )
                     if progress_callback:
                         progress_callback(30.0, "⚠️ 向量库未初始化，跳过RAG召回")
-                
+
                 # ========== 阶段3: 测试规划 (45%) ==========
                 self.update_progress(task_id, 35.0, "📝 开始测试规划...")
                 if progress_callback:
                     progress_callback(35.0, "📝 开始测试规划...")
-                
+
                 self.update_progress(task_id, 40.0, "🎯 正在提取测试点...")
                 if progress_callback:
                     progress_callback(40.0, "🎯 正在提取测试点...")
-                
+
                 test_plan = self._create_test_plan(
-                    requirement_content, 
-                    requirement_analysis,
-                    rag_context
+                    requirement_content, requirement_analysis, rag_context
                 )
-                
+
                 # 解析测试规划
                 structured_plan = self._parse_test_plan(test_plan)
                 items_count = len(structured_plan.get("items", []))
                 points_count = len(structured_plan.get("points", []))
-                
-                self.update_progress(task_id, 45.0, 
-                    f"✅ 测试规划完成 - 识别{items_count}个测试项，{points_count}个测试点")
+
+                self.update_progress(
+                    task_id,
+                    45.0,
+                    f"✅ 测试规划完成 - 识别{items_count}个测试项，{points_count}个测试点",
+                )
                 if progress_callback:
-                    progress_callback(45.0, 
-                        f"✅ 测试规划完成 - 识别{items_count}个测试项，{points_count}个测试点")
-                
+                    progress_callback(
+                        45.0,
+                        f"✅ 测试规划完成 - 识别{items_count}个测试项，{points_count}个测试点",
+                    )
+
                 # ========== 阶段4: LLM生成测试用例 (70%) ==========
                 self.update_progress(task_id, 50.0, "🤖 开始生成测试用例...")
                 if progress_callback:
                     progress_callback(50.0, "🤖 开始生成测试用例...")
-                
+
                 test_cases = []
                 if self.llm_manager:
                     self.update_progress(task_id, 55.0, "🤖 正在初始化适配器...")
                     if progress_callback:
                         progress_callback(55.0, "🤖 正在初始化适配器...")
-                    
+
                     # 输出当前使用的默认配置信息
                     default_config_info = self.llm_manager.get_config_info()
-                    print(f"[LLM生成] 使用默认配置: {default_config_info.get('name')} ({default_config_info.get('provider')})")
+                    print(
+                        f"[LLM生成] 使用默认配置: {default_config_info.get('name')} ({default_config_info.get('provider')})"
+                    )
                     print(f"[LLM生成] Base URL: {default_config_info.get('base_url')}")
                     print(f"[LLM生成] Model ID: {default_config_info.get('model_id')}")
-                    
+
                     adapter = self.llm_manager.get_adapter()
-                    
+
                     self.update_progress(task_id, 60.0, "🤖 正在构建Prompt上下文...")
                     if progress_callback:
                         progress_callback(60.0, "🤖 正在构建Prompt上下文...")
-                    
+
                     # 构建优化的Prompt（包含RAG上下文和测试规划）
                     prompt = self._build_optimized_generation_prompt(
-                        requirement_content, 
-                        rag_context, 
+                        requirement_content,
+                        rag_context,
                         test_plan,
-                        requirement_analysis
+                        requirement_analysis,
                     )
-                    
+
                     self.update_progress(task_id, 65.0, "🤖 正在生成用例...")
                     if progress_callback:
                         progress_callback(65.0, "🤖 正在生成用例...")
-                    
+
                     # 使用更长的超时和token限制用于用例生成
                     response = adapter.generate(
-                        prompt, 
-                        temperature=0.7, 
+                        prompt,
+                        temperature=0.7,
                         max_tokens=8192,  # 增加到8192以支持更多用例
                         timeout=180,  # 增加到180秒（3分钟）
                         max_retries=3,
-                        retry_delay=5
+                        retry_delay=5,
                     )
-                    
-                    self.update_progress(task_id, 80.0, "🤖 LLM响应已接收，正在解析结果...")
+
+                    self.update_progress(
+                        task_id, 80.0, "🤖 LLM响应已接收，正在解析结果..."
+                    )
                     if progress_callback:
                         progress_callback(80.0, "🤖 LLM响应已接收，正在解析结果...")
-                    
+
                     if not response.success:
                         # 记录详细日志到文件
                         self._log_llm_response(prompt, response)
                         raise Exception(f"LLM生成失败: {response.error_message}")
-                    
+
                     self.update_progress(task_id, 85.0, "🤖 正在解析LLM返回的响应...")
                     if progress_callback:
                         progress_callback(85.0, "🤖 正在解析LLM返回的响应...")
-                    
+
                     # 打印原始响应以便调试
                     print(f"LLM原始响应长度: {len(response.content)}")
                     print(f"LLM原始响应前1000字符: {response.content[:1000]}...")
-                    
+
                     # 解析生成的用例
                     test_cases = self._parse_generated_cases(response.content)
                     print(f"解析到用例数量: {len(test_cases)}")
                     if not test_cases:
                         # 记录详细日志到文件
                         self._log_llm_response(prompt, response)
-                        raise Exception(f"LLM返回的用例数据为空（响应长度: {len(response.content)}字符），请检查模型输出格式是否为JSON数组。详细日志已保存到 data/llm_response.log")
+                        raise Exception(
+                            f"LLM返回的用例数据为空（响应长度: {len(response.content)}字符），请检查模型输出格式是否为JSON数组。详细日志已保存到 data/llm_response.log"
+                        )
                 else:
                     # 模拟生成（无LLM时）
                     self.update_progress(task_id, 70.0, "🤖 使用模拟数据生成...")
                     if progress_callback:
                         progress_callback(70.0, "🤖 使用模拟数据生成...")
                     test_cases = self._mock_generate_cases(requirement_content)
-                
-                self.update_progress(task_id, 90.0, f"✅ LLM生成完成 - 生成{len(test_cases)}条用例")
+
+                self.update_progress(
+                    task_id, 90.0, f"✅ LLM生成完成 - 生成{len(test_cases)}条用例"
+                )
                 if progress_callback:
-                    progress_callback(90.0, f"✅ LLM生成完成 - 生成{len(test_cases)}条用例")
-                
+                    progress_callback(
+                        90.0, f"✅ LLM生成完成 - 生成{len(test_cases)}条用例"
+                    )
+
                 # ========== 阶段5: 保存测试用例到数据库 (95%) ==========
                 self.update_progress(task_id, 92.0, "💾 正在保存测试用例到数据库...")
                 if progress_callback:
                     progress_callback(92.0, "💾 正在保存测试用例到数据库...")
-                
+
                 if self.db_session:
                     task_obj = self.get_task(task_id)
                     if task_obj:
-                        print(f"开始保存用例，需求ID: {task_obj.requirement_id}, 用例数: {len(test_cases)}")
+                        print(
+                            f"开始保存用例，需求ID: {task_obj.requirement_id}, 用例数: {len(test_cases)}"
+                        )
                         self._save_test_cases(task_obj.requirement_id, test_cases)
                         print(f"用例保存完成")
-                        
-                        self.update_progress(task_id, 95.0, f"✅ 已保存{len(test_cases)}条测试用例到数据库")
+
+                        self.update_progress(
+                            task_id,
+                            95.0,
+                            f"✅ 已保存{len(test_cases)}条测试用例到数据库",
+                        )
                         if progress_callback:
-                            progress_callback(95.0, f"✅ 已保存{len(test_cases)}条测试用例到数据库")
+                            progress_callback(
+                                95.0, f"✅ 已保存{len(test_cases)}条测试用例到数据库"
+                            )
 
                 # ========== 阶段5.5: 质量评审 (98%) ==========
                 self.update_progress(task_id, 96.0, "🔍 正在执行质量评审...")
                 if progress_callback:
                     progress_callback(96.0, "🔍 正在执行质量评审...")
-                
+
                 quality_review = None
                 if self.llm_manager and test_cases:
                     try:
                         quality_review = self._execute_quality_review(
-                            test_cases, 
-                            requirement_content,
-                            requirement_analysis
+                            test_cases, requirement_content, requirement_analysis
                         )
                         self.update_progress(task_id, 98.0, "✅ 质量评审完成")
                         if progress_callback:
@@ -1283,47 +1523,68 @@ class GenerationService:
                     "rag_stats": rag_stats,
                     "analysis_result": structured_plan,
                     "quality_review": quality_review,
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": datetime.utcnow().isoformat(),
                 }
 
                 self.complete_task(task_id, result)
                 self.update_progress(task_id, 100.0, "✅ 生成完成")
                 if progress_callback:
                     progress_callback(100.0, "✅ 生成完成")
-                
+
                 # 更新需求状态为"已完成"
                 if self.db_session:
                     try:
                         from src.database.models import Requirement, RequirementStatus
+
                         task_obj = self.get_task(task_id)
                         if task_obj:
-                            requirement = self.db_session.query(Requirement).get(task_obj.requirement_id)
+                            requirement = self.db_session.query(Requirement).get(
+                                task_obj.requirement_id
+                            )
                             if requirement:
                                 requirement.status = RequirementStatus.COMPLETED
                                 self.db_session.commit()
                                 print(f"需求状态已更新为: {requirement.status.value}")
                     except Exception as e:
                         print(f"更新需求状态失败: {e}")
-                
+
             except Exception as e:
                 self.fail_task(task_id, str(e))
                 task_obj = self.get_task(task_id)
                 if progress_callback:
-                    progress_callback(task_obj.progress if task_obj and task_obj.progress > 0 else 1.0, f"生成失败: {str(e)}")
-                
+                    progress_callback(
+                        (
+                            task_obj.progress
+                            if task_obj and task_obj.progress > 0
+                            else 1.0
+                        ),
+                        f"生成失败: {str(e)}",
+                    )
+
                 # 生成失败时，清除该需求的所有测试用例（如果有部分保存成功的话）
                 if self.db_session:
                     try:
-                        from src.database.models import Requirement, RequirementStatus, TestCase
+                        from src.database.models import (
+                            Requirement,
+                            RequirementStatus,
+                            TestCase,
+                        )
+
                         task_obj = self.get_task(task_id)
                         if task_obj:
                             # 删除该需求的所有测试用例
-                            deleted = self.db_session.query(TestCase).filter(
-                                TestCase.requirement_id == task_obj.requirement_id
-                            ).delete(synchronize_session=False)
-                            
+                            deleted = (
+                                self.db_session.query(TestCase)
+                                .filter(
+                                    TestCase.requirement_id == task_obj.requirement_id
+                                )
+                                .delete(synchronize_session=False)
+                            )
+
                             # 更新需求状态为"失败"
-                            requirement = self.db_session.query(Requirement).get(task_obj.requirement_id)
+                            requirement = self.db_session.query(Requirement).get(
+                                task_obj.requirement_id
+                            )
                             if requirement:
                                 requirement.status = RequirementStatus.FAILED
                                 self.db_session.commit()
@@ -1333,189 +1594,222 @@ class GenerationService:
                     except Exception as cleanup_error:
                         print(f"清理失败用例或更新状态失败: {cleanup_error}")
                         self.db_session.rollback()
-        
+
         # 在后台线程执行
         thread = threading.Thread(target=run_generation)
         thread.daemon = True
         thread.start()
 
-    def _generate_with_failover(self, primary_adapter, prompt: str, task_id: str, max_retries: int = 3) -> 'LLMResponse':
+    def _generate_with_failover(
+        self, primary_adapter, prompt: str, task_id: str, max_retries: int = 3
+    ) -> "LLMResponse":
         """
         带故障切换的LLM生成
-        
+
         优先使用默认AI配置，失败后再选择切换其它备用模型（仅切换一次）
-        
+
         Args:
             primary_adapter: 主适配器
             prompt: 提示词
             task_id: 任务ID
             max_retries: 最大重试次数
-            
+
         Returns:
             LLMResponse
         """
         from src.llm.adapter import LLMResponse
-        
+
         # 首先尝试使用主适配器（使用默认AI配置）
         try:
             response = primary_adapter.generate(
-                prompt, 
-                temperature=0.7, 
+                prompt,
+                temperature=0.7,
                 max_tokens=16384,  # 增加以支持长输出
                 timeout=180,
                 max_retries=max_retries,
-                retry_delay=5
+                retry_delay=5,
             )
-            
+
             if response.success:
                 return response
-            
+
             # 如果主适配器失败，尝试切换到第一个可用的备用模型（仅切换一次）
             print(f"[故障切换] 主适配器失败: {response.error_message}")
             print(f"[故障切换] 正在尝试切换备用模型...")
-            
+
             self.update_progress(task_id, 68.0, "⚠️ 主模型失败，正在切换备用模型...")
-            
+
             # 获取所有可用的适配器名称（排除当前的）
             all_adapters = list(self.llm_manager.adapters.keys())
             current_adapter_name = self.llm_manager.default_adapter
-            
+
             # 只尝试第一个备用模型，不遍历所有
             for adapter_name in all_adapters:
                 if adapter_name == current_adapter_name:
                     continue  # 跳过当前已失败的
-                
+
                 try:
                     print(f"[故障切换] 尝试使用备用模型: {adapter_name}")
-                    self.update_progress(task_id, 70.0, f"🔄 正在切换到备用模型: {adapter_name}")
-                    
+                    self.update_progress(
+                        task_id, 70.0, f"🔄 正在切换到备用模型: {adapter_name}"
+                    )
+
                     backup_adapter = self.llm_manager.get_adapter(adapter_name)
                     config_info = self.llm_manager.config_infos.get(adapter_name, {})
                     print(f"[故障切换] 备用模型信息: {config_info}")
-                    
+
                     # 使用备用适配器重试
                     response = backup_adapter.generate(
-                        prompt, 
-                        temperature=0.7, 
+                        prompt,
+                        temperature=0.7,
                         max_tokens=16384,  # 增加以支持长输出
                         timeout=180,
                         max_retries=2,
-                        retry_delay=3
+                        retry_delay=3,
                     )
-                    
+
                     if response.success:
                         print(f"[故障切换] 备用模型 {adapter_name} 成功！")
-                        self.update_progress(task_id, 75.0, f"✅ 已切换到备用模型: {adapter_name}")
+                        self.update_progress(
+                            task_id, 75.0, f"✅ 已切换到备用模型: {adapter_name}"
+                        )
                         return response
                     else:
-                        print(f"[故障切换] 备用模型 {adapter_name} 也失败: {response.error_message}")
+                        print(
+                            f"[故障切换] 备用模型 {adapter_name} 也失败: {response.error_message}"
+                        )
                         # 只尝试切换一次，失败即返回错误
                         break
-                        
+
                 except Exception as e:
                     print(f"[故障切换] 切换到 {adapter_name} 异常: {e}")
                     # 只尝试切换一次
                     break
-            
+
             # 备用模型也失败或无可用备用模型
             return LLMResponse(
                 content="",
                 usage={},
                 model=primary_adapter.model_id,
                 success=False,
-                error_message=f"主模型及备用模型均失败。最后错误: {response.error_message}"
+                error_message=f"主模型及备用模型均失败。最后错误: {response.error_message}",
             )
-            
+
         except Exception as e:
             # 异常情况也尝试切换一次
             print(f"[故障切换] 主适配器异常: {e}")
-            return self._generate_with_failover(primary_adapter, prompt, task_id, max_retries)
-    
+            return self._generate_with_failover(
+                primary_adapter, prompt, task_id, max_retries
+            )
+
     def _save_test_cases(self, requirement_id: int, test_cases: list):
         """保存测试用例到数据库 - 先删除旧用例再保存新用例"""
         if not test_cases:
             print("警告: 没有需要保存的测试用例")
             return
-            
+
         try:
             from src.database.models import TestCase, CaseStatus, Priority
             import time
             import random
             import json as json_module
-            
+
             saved_count = 0
-            
+
             print(f"开始保存用例，需求ID: {requirement_id}, 用例数: {len(test_cases)}")
-            
+
             # 先删除该需求的所有旧用例
-            deleted_count = self.db_session.query(TestCase).filter(
-                TestCase.requirement_id == requirement_id
-            ).delete(synchronize_session=False)
-            
+            deleted_count = (
+                self.db_session.query(TestCase)
+                .filter(TestCase.requirement_id == requirement_id)
+                .delete(synchronize_session=False)
+            )
+
             if deleted_count > 0:
                 print(f"已删除 {deleted_count} 条旧用例")
-            
+
             self.db_session.commit()
-            
+
             # 查询数据库中全局最大的case_id序号
             # 这样可以确保不会与其他需求的用例ID冲突
             from sqlalchemy import func
-            max_case = self.db_session.query(TestCase).order_by(TestCase.id.desc()).first()
-            
-            if max_case and max_case.case_id.startswith('TC_'):
+
+            max_case = (
+                self.db_session.query(TestCase).order_by(TestCase.id.desc()).first()
+            )
+
+            if max_case and max_case.case_id.startswith("TC_"):
                 try:
                     # 提取序号部分
                     last_num = int(max_case.case_id[3:])
                     start_num = last_num + 1
-                    print(f"从全局最大用例序号 {last_num} 之后开始编号，起始: {start_num}")
+                    print(
+                        f"从全局最大用例序号 {last_num} 之后开始编号，起始: {start_num}"
+                    )
                 except:
                     start_num = 1
             else:
                 start_num = 1
-            
+
             # 使用全局唯一的序号生成用例编号
             for idx, case_data in enumerate(test_cases):
                 # 生成唯一的用例编号：TC + 6位序号
                 case_id = f"TC_{start_num + idx:06d}"
 
                 # 处理测试步骤和预期结果（支持字符串或列表）
-                test_steps = case_data.get('test_steps', [])
-                expected_results = case_data.get('expected_results', [])
-                preconditions = case_data.get('preconditions', case_data.get('precondition', ''))
-                
+                test_steps = case_data.get("test_steps", [])
+                expected_results = case_data.get("expected_results", [])
+                preconditions = case_data.get(
+                    "preconditions", case_data.get("precondition", "")
+                )
+
                 # 如果是JSON字符串，解析为列表
                 if isinstance(test_steps, str):
                     try:
                         test_steps = json_module.loads(test_steps)
                     except:
                         # 解析失败则按行分割
-                        test_steps = [s.strip() for s in test_steps.split('\n') if s.strip()]
-                
+                        test_steps = [
+                            s.strip() for s in test_steps.split("\n") if s.strip()
+                        ]
+
                 if isinstance(expected_results, str):
                     try:
                         expected_results = json_module.loads(expected_results)
                     except:
                         # 解析失败则按行分割
-                        expected_results = [s.strip() for s in expected_results.split('\n') if s.strip()]
-                
+                        expected_results = [
+                            s.strip() for s in expected_results.split("\n") if s.strip()
+                        ]
+
                 # 如果是字符串形式的preconditions，保持字符串；如果是列表，转换为换行符连接的字符串
                 if isinstance(preconditions, list):
-                    preconditions = '\n'.join([str(p).strip() for p in preconditions if str(p).strip()])
-                
+                    preconditions = "\n".join(
+                        [str(p).strip() for p in preconditions if str(p).strip()]
+                    )
+
                 # 确保最终结果是列表
                 if not isinstance(test_steps, list):
                     test_steps = [str(test_steps)]
                 if not isinstance(expected_results, list):
                     expected_results = [str(expected_results)]
-                
+
                 # 为测试步骤添加序号（从1开始）
-                test_steps = [f"{i+1}. {str(step).strip()}" for i, step in enumerate(test_steps) if str(step).strip()]
-                
+                test_steps = [
+                    f"{i+1}. {str(step).strip()}"
+                    for i, step in enumerate(test_steps)
+                    if str(step).strip()
+                ]
+
                 # 为预期结果添加序号（从1开始）
-                expected_results = [f"{i+1}. {str(result).strip()}" for i, result in enumerate(expected_results) if str(result).strip()]
+                expected_results = [
+                    f"{i+1}. {str(result).strip()}"
+                    for i, result in enumerate(expected_results)
+                    if str(result).strip()
+                ]
 
                 # 处理优先级
-                priority_str = case_data.get('priority', 'P2')
+                priority_str = case_data.get("priority", "P2")
                 try:
                     priority = Priority(priority_str) if priority_str else Priority.P2
                 except ValueError:
@@ -1525,19 +1819,21 @@ class GenerationService:
                 test_case = TestCase(
                     case_id=case_id,
                     requirement_id=requirement_id,
-                    module=case_data.get('module', '默认模块'),
-                    name=case_data.get('name', case_data.get('test_point', '未命名用例')),
-                    test_point=case_data.get('test_point', ''),
+                    module=case_data.get("module", "默认模块"),
+                    name=case_data.get(
+                        "name", case_data.get("test_point", "未命名用例")
+                    ),
+                    test_point=case_data.get("test_point", ""),
                     preconditions=preconditions,
                     test_steps=test_steps,
                     expected_results=expected_results,
                     priority=priority,
-                    case_type=case_data.get('case_type', '功能'),
-                    requirement_clause=case_data.get('requirement_clause', ''),
+                    case_type=case_data.get("case_type", "功能"),
+                    requirement_clause=case_data.get("requirement_clause", ""),
                     status=CaseStatus.PENDING_REVIEW,
-                    confidence_score=case_data.get('confidence_score'),
-                    confidence_level=case_data.get('confidence_level'),
-                    citations=case_data.get('citations'),
+                    confidence_score=case_data.get("confidence_score"),
+                    confidence_level=case_data.get("confidence_level"),
+                    citations=case_data.get("citations"),
                 )
                 self.db_session.add(test_case)
                 saved_count += 1
@@ -1557,10 +1853,10 @@ class GenerationService:
     def _analyze_requirement(self, requirement_content: str) -> Dict[str, Any]:
         """
         需求分析Agent - 使用LLM CoT进行深度需求分析
-        
+
         优先使用LLM进行业务流程识别和测试点提取，
         如果LLM不可用则回退到规则解析。
-        
+
         分析需求文档，提取关键信息：
         - 功能模块清单（按业务域划分）
         - 业务流程步骤（CoT思考链）
@@ -1568,7 +1864,7 @@ class GenerationService:
         - 状态变化清单
         - 测试点清单（禁止与模块名重复）
         - 非功能需求
-        
+
         Returns:
             {
                 "modules": [],  # 功能模块清单
@@ -1589,30 +1885,34 @@ class GenerationService:
             try:
                 print("[需求分析] 尝试使用LLM CoT进行深度需求分析...")
                 llm_analysis = self._llm_based_analysis(requirement_content)
-                if llm_analysis and llm_analysis.get('modules'):
-                    print(f"[需求分析] LLM分析成功 - 识别到 {len(llm_analysis['modules'])} 个模块")
+                if llm_analysis and llm_analysis.get("modules"):
+                    print(
+                        f"[需求分析] LLM分析成功 - 识别到 {len(llm_analysis['modules'])} 个模块"
+                    )
                     return llm_analysis
                 else:
                     print("[需求分析] LLM分析结果为空，回退到规则解析")
             except Exception as e:
                 print(f"[需求分析] LLM分析失败: {e}，回退到规则解析")
-        
+
         # 回退到规则解析
         print("[需求分析] 使用规则解析进行需求分析")
         return self._rule_based_analysis(requirement_content)
-    
+
     def _llm_based_analysis(self, requirement_content: str) -> Dict[str, Any]:
         """
         使用LLM进行需求分析（CoT思考链）
-        
+
         基于testcase-generator标准的需求分析方法
         """
         # 尝试从数据库加载分析模板
-        db_template = self._load_prompt_template('analyze')
-        
+        db_template = self._load_prompt_template("analyze")
+
         if db_template:
             # 使用数据库模板
-            analysis_prompt = db_template.format(requirement_content=requirement_content)
+            analysis_prompt = db_template.format(
+                requirement_content=requirement_content
+            )
         else:
             # 使用硬编码默认模板
             analysis_prompt = f"""你是一位资深测试专家，擅长从需求文档中识别业务功能流程。
@@ -1699,26 +1999,26 @@ class GenerationService:
 3. 业务流程步骤必须包含状态变化
 4. 直接输出JSON，不要包含其他说明文字
 """
-        
+
         # 调用LLM
         adapter = self.llm_manager.get_adapter()
         response = adapter.generate(
             analysis_prompt,
             temperature=0.3,  # 低温以获得更结构化的输出
             max_tokens=8192,
-            timeout=120
+            timeout=120,
         )
-        
+
         if not response.success:
             raise Exception(f"LLM分析失败: {response.error_message}")
-        
+
         # 解析JSON结果
         try:
             import json
             import re
-            
+
             content = response.content
-            
+
             # 尝试提取JSON
             # 方法1：直接解析
             try:
@@ -1726,28 +2026,28 @@ class GenerationService:
                 return self._normalize_llm_analysis(analysis_result)
             except:
                 pass
-            
+
             # 方法2：从代码块中提取
-            json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', content)
+            json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", content)
             if json_match:
                 analysis_result = json.loads(json_match.group(1))
                 return self._normalize_llm_analysis(analysis_result)
-            
+
             # 方法3：查找花括号
-            start = content.find('{')
-            end = content.rfind('}')
+            start = content.find("{")
+            end = content.rfind("}")
             if start != -1 and end != -1:
-                json_str = content[start:end+1]
+                json_str = content[start : end + 1]
                 analysis_result = json.loads(json_str)
                 return self._normalize_llm_analysis(analysis_result)
-            
+
             raise Exception("无法从LLM响应中提取JSON")
-            
+
         except Exception as e:
             print(f"[LLM分析] JSON解析失败: {e}")
             print(f"LLM原始响应: {content[:500]}...")
             raise
-    
+
     def _normalize_llm_analysis(self, llm_result: Dict) -> Dict[str, Any]:
         """
         标准化LLM分析结果，确保字段完整
@@ -1764,30 +2064,32 @@ class GenerationService:
                 "compatibility": [],
                 "security": [],
                 "usability": [],
-                "stability": []
+                "stability": [],
             },
             "risks": llm_result.get("risks", []),
             "key_features": llm_result.get("key_features", []),
             "data_constraints": llm_result.get("data_constraints", []),
             "items": [],
-            "points": []
+            "points": [],
         }
-        
+
         # 验证测试点名称不与模块名重复
-        module_names = {m.get('name', '') for m in defaults['modules']}
-        for point in defaults['test_points']:
-            point_name = point.get('name', '')
+        module_names = {m.get("name", "") for m in defaults["modules"]}
+        for point in defaults["test_points"]:
+            point_name = point.get("name", "")
             if point_name in module_names:
                 # 自动重命名
-                point['name'] = f"{point_name}（操作验证）"
-                print(f"[需求分析] 测试点名称与模块重复，已重命名: {point_name} -> {point['name']}")
-        
+                point["name"] = f"{point_name}（操作验证）"
+                print(
+                    f"[需求分析] 测试点名称与模块重复，已重命名: {point_name} -> {point['name']}"
+                )
+
         return defaults
-    
+
     def _rule_based_analysis(self, requirement_content: str) -> Dict[str, Any]:
         """
         基于规则的需求分析（回退方案）
-        
+
         原有的规则解析逻辑，作为LLM不可用时的备选
         """
         analysis = {
@@ -1801,162 +2103,235 @@ class GenerationService:
                 "compatibility": [],
                 "security": [],
                 "usability": [],
-                "stability": []
+                "stability": [],
             },
             "risks": [],
             "key_features": [],
             "data_constraints": [],
             "items": [],
-            "points": []
+            "points": [],
         }
-        
-        lines = requirement_content.split('\n')
+
+        lines = requirement_content.split("\n")
         content_lower = requirement_content.lower()
-        
+
         # ========== 1. 识别功能模块（按业务域划分）==========
         for line in lines:
             line = line.strip()
-            
+
             # 模式1: # 包含"模块"或"功能"的标题（高优先级）
-            if ('模块' in line or '功能' in line or '业务' in line or '管理' in line or '系统' in line) and line.startswith('#'):
-                clean_line = line.replace('#', '').replace('*', '').strip()
+            if (
+                "模块" in line
+                or "功能" in line
+                or "业务" in line
+                or "管理" in line
+                or "系统" in line
+            ) and line.startswith("#"):
+                clean_line = line.replace("#", "").replace("*", "").strip()
                 if clean_line and 3 < len(clean_line) < 50:
-                    analysis["modules"].append({
-                        "name": clean_line,
-                        "description": "",
-                        "sub_features": []
-                    })
-            
+                    analysis["modules"].append(
+                        {"name": clean_line, "description": "", "sub_features": []}
+                    )
+
             # 模式2: # 一级标题（即使没有关键词也识别为模块）
-            elif line.startswith('#') and not line.startswith('##'):
-                clean_line = line.replace('#', '').replace('*', '').strip()
+            elif line.startswith("#") and not line.startswith("##"):
+                clean_line = line.replace("#", "").replace("*", "").strip()
                 # 排除纯技术性标题
                 if clean_line and 3 < len(clean_line) < 50:
                     # 检查是否已经是模块（避免重复）
                     existing_names = [m["name"] for m in analysis["modules"]]
                     if clean_line not in existing_names:
-                        analysis["modules"].append({
-                            "name": clean_line,
-                            "description": "",
-                            "sub_features": []
-                        })
-            
+                        analysis["modules"].append(
+                            {"name": clean_line, "description": "", "sub_features": []}
+                        )
+
             # 模式3: ## 级别的标题（子功能）
-            elif line.startswith('##') and not line.startswith('###'):
-                clean_line = line.replace('#', '').replace('*', '').strip()
+            elif line.startswith("##") and not line.startswith("###"):
+                clean_line = line.replace("#", "").replace("*", "").strip()
                 if clean_line and 3 < len(clean_line) < 50:
                     # 添加到关键功能点
                     analysis["key_features"].append(clean_line)
-        
+
         # 如果没有识别到模块，基于内容特征智能推断
         if not analysis["modules"]:
             inferred_modules = self._infer_modules(requirement_content)
             analysis["modules"] = inferred_modules
-        
+
         # ========== 2. 提取业务流程步骤 ==========
         analysis["business_flows"] = self._extract_business_flows(requirement_content)
-        
+
         # ========== 3. 识别约束条件 ==========
         for line in lines:
             line = line.strip()
-            if not line or line.startswith('#'):
+            if not line or line.startswith("#"):
                 continue
-            
+
             # 业务规则（必须/禁止/限制等）
-            if any(keyword in line for keyword in ['必须', '禁止', '限制', '不允许', '仅支持', '需要', '应当', '应该']):
+            if any(
+                keyword in line
+                for keyword in [
+                    "必须",
+                    "禁止",
+                    "限制",
+                    "不允许",
+                    "仅支持",
+                    "需要",
+                    "应当",
+                    "应该",
+                ]
+            ):
                 if 5 < len(line) < 200:
-                    analysis["business_rules"].append({
-                        "content": line,
-                        "type": "业务规则"
-                    })
-            
+                    analysis["business_rules"].append(
+                        {"content": line, "type": "业务规则"}
+                    )
+
             # 数据约束（长度/范围/格式等）
-            if any(keyword in line for keyword in ['长度', '范围', '最大', '最小', '≤', '≥', '<', '>', '不超过', '至少', '至多', '位', '字符']):
+            if any(
+                keyword in line
+                for keyword in [
+                    "长度",
+                    "范围",
+                    "最大",
+                    "最小",
+                    "≤",
+                    "≥",
+                    "<",
+                    ">",
+                    "不超过",
+                    "至少",
+                    "至多",
+                    "位",
+                    "字符",
+                ]
+            ):
                 if 5 < len(line) < 200:
-                    analysis["data_constraints"].append({
-                        "content": line,
-                        "type": "数据约束"
-                    })
-        
+                    analysis["data_constraints"].append(
+                        {"content": line, "type": "数据约束"}
+                    )
+
         # ========== 4. 识别状态变化 ==========
         analysis["state_changes"] = self._extract_state_changes(requirement_content)
-        
+
         # ========== 5. 识别非功能需求 ==========
         analysis["non_functional"] = self._extract_non_functional(requirement_content)
-        
+
         # ========== 6. 识别风险与模糊点 ==========
         analysis["risks"] = self._identify_risks(requirement_content)
-        
+
         # ========== 7. 划分测试点（按功能模块组织）==========
-        analysis["test_points"] = self._extract_test_points(requirement_content, analysis)
-        
+        analysis["test_points"] = self._extract_test_points(
+            requirement_content, analysis
+        )
+
         return analysis
-    
+
     def _extract_business_flows(self, content: str) -> list:
         """提取业务流程步骤"""
         flows = []
-        lines = content.split('\n')
-        
+        lines = content.split("\n")
+
         # 寻找流程关键词
-        flow_keywords = ['步骤', '首先', '然后', '接着', '最后', '第一步', '第二步', '第三步']
-        state_keywords = ['待支付', '待发货', '待收货', '已完成', '已取消', '待审核', '已审核']
-        action_keywords = ['创建', '分配', '登录', '提交', '支付', '发货', '收货', '售后', '申请', '审核']
-        
+        flow_keywords = [
+            "步骤",
+            "首先",
+            "然后",
+            "接着",
+            "最后",
+            "第一步",
+            "第二步",
+            "第三步",
+        ]
+        state_keywords = [
+            "待支付",
+            "待发货",
+            "待收货",
+            "已完成",
+            "已取消",
+            "待审核",
+            "已审核",
+        ]
+        action_keywords = [
+            "创建",
+            "分配",
+            "登录",
+            "提交",
+            "支付",
+            "发货",
+            "收货",
+            "售后",
+            "申请",
+            "审核",
+        ]
+
         # 新增：流程连接词（表示先后顺序）
-        flow_connectors = ['成功后', '失败后', '返回', '跳转到', '进入', '清除', '记录', '发送', '显示']
-        
+        flow_connectors = [
+            "成功后",
+            "失败后",
+            "返回",
+            "跳转到",
+            "进入",
+            "清除",
+            "记录",
+            "发送",
+            "显示",
+        ]
+
         for line in lines:
             line = line.strip()
-            if not line or line.startswith('#'):
+            if not line or line.startswith("#"):
                 continue
-            
+
             # 检查是否包含流程关键词
             has_flow_keyword = any(kw in line for kw in flow_keywords)
             has_action = any(kw in line for kw in action_keywords)
             has_state = any(kw in line for kw in state_keywords)
             has_flow_connector = any(kw in line for kw in flow_connectors)
-            
+
             # 匹配条件：
             # 1. 有流程关键词
             # 2. 有动作+状态
             # 3. 有流程连接词（表示操作的结果或后续动作）
             if has_flow_keyword or (has_action and has_state) or has_flow_connector:
-                flows.append({
-                    "step": line[:50],
-                    "keywords": []
-                })
-        
+                flows.append({"step": line[:50], "keywords": []})
+
         return flows[:10]  # 最多10个流程步骤
-    
+
     def _extract_state_changes(self, content: str) -> list:
         """提取状态变化清单"""
         state_changes = []
-        states = ['待支付', '待发货', '待收货', '已完成', '已取消', '待审核', '已审核', '已驳回', '已通过']
-        
+        states = [
+            "待支付",
+            "待发货",
+            "待收货",
+            "已完成",
+            "已取消",
+            "待审核",
+            "已审核",
+            "已驳回",
+            "已通过",
+        ]
+
         # 寻找状态转换模式：从X状态到Y状态
         import re
-        pattern = r'(待\w+|已\w+).*?(变为|转为|更新为|修改为|改为).+?(待\w+|已\w+)'
+
+        pattern = r"(待\w+|已\w+).*?(变为|转为|更新为|修改为|改为).+?(待\w+|已\w+)"
         matches = re.findall(pattern, content)
-        
+
         for match in matches:
             if len(match) >= 2:
-                state_changes.append({
-                    "from_state": match[0],
-                    "to_state": match[-1]
-                })
-        
+                state_changes.append({"from_state": match[0], "to_state": match[-1]})
+
         # 如果没有找到明确的状态转换，尝试识别提到的状态
         if not state_changes:
             found_states = [s for s in states if s in content]
             if len(found_states) >= 2:
                 for i in range(len(found_states) - 1):
-                    state_changes.append({
-                        "from_state": found_states[i],
-                        "to_state": found_states[i + 1]
-                    })
-        
+                    state_changes.append(
+                        {"from_state": found_states[i], "to_state": found_states[i + 1]}
+                    )
+
         return state_changes
-    
+
     def _extract_non_functional(self, content: str) -> dict:
         """提取非功能需求"""
         non_functional = {
@@ -1964,69 +2339,83 @@ class GenerationService:
             "compatibility": [],
             "security": [],
             "usability": [],
-            "stability": []
+            "stability": [],
         }
-        
-        lines = content.split('\n')
+
+        lines = content.split("\n")
         for line in lines:
             line = line.strip()
-            if not line or line.startswith('#'):
+            if not line or line.startswith("#"):
                 continue
-            
+
             # 性能需求
-            if any(kw in line for kw in ['响应时间', '并发', '性能', 'QPS', 'TPS', '秒内', '毫秒']):
+            if any(
+                kw in line
+                for kw in ["响应时间", "并发", "性能", "QPS", "TPS", "秒内", "毫秒"]
+            ):
                 non_functional["performance"].append(line)
-            
+
             # 兼容性需求
-            if any(kw in line for kw in ['浏览器', '兼容', 'iOS', 'Android', 'Chrome', 'Firefox', 'Safari']):
+            if any(
+                kw in line
+                for kw in [
+                    "浏览器",
+                    "兼容",
+                    "iOS",
+                    "Android",
+                    "Chrome",
+                    "Firefox",
+                    "Safari",
+                ]
+            ):
                 non_functional["compatibility"].append(line)
-            
+
             # 安全需求
-            if any(kw in line for kw in ['加密', '权限', '鉴权', 'SQL注入', 'XSS', '安全', '密码加密']):
+            if any(
+                kw in line
+                for kw in ["加密", "权限", "鉴权", "SQL注入", "XSS", "安全", "密码加密"]
+            ):
                 non_functional["security"].append(line)
-            
+
             # 易用性需求
-            if any(kw in line for kw in ['操作步骤', '错误提示', '用户体验', '易用', '界面']):
+            if any(
+                kw in line
+                for kw in ["操作步骤", "错误提示", "用户体验", "易用", "界面"]
+            ):
                 non_functional["usability"].append(line)
-            
+
             # 稳定性需求
-            if any(kw in line for kw in ['7×24', '崩溃', '恢复时间', '稳定性', '可用性']):
+            if any(
+                kw in line for kw in ["7×24", "崩溃", "恢复时间", "稳定性", "可用性"]
+            ):
                 non_functional["stability"].append(line)
-        
+
         return non_functional
-    
+
     def _identify_risks(self, content: str) -> list:
         """识别风险与模糊点"""
         risks = []
-        lines = content.split('\n')
-        
+        lines = content.split("\n")
+
         for line in lines:
             line = line.strip()
-            if not line or line.startswith('#'):
+            if not line or line.startswith("#"):
                 continue
-            
+
             # 识别模糊描述
-            if any(kw in line for kw in ['等', '可能', '大概', '类似', '适当', '合理']):
-                risks.append({
-                    "type": "模糊点",
-                    "content": line,
-                    "severity": "中"
-                })
-            
+            if any(kw in line for kw in ["等", "可能", "大概", "类似", "适当", "合理"]):
+                risks.append({"type": "模糊点", "content": line, "severity": "中"})
+
             # 识别外部依赖
-            if any(kw in line for kw in ['第三方', '接口', '外部', '依赖']):
-                risks.append({
-                    "type": "高风险点",
-                    "content": line,
-                    "severity": "高"
-                })
-        
+            if any(kw in line for kw in ["第三方", "接口", "外部", "依赖"]):
+                risks.append({"type": "高风险点", "content": line, "severity": "高"})
+
         return risks
-    
+
     def _extract_test_points(self, content: str, analysis: dict) -> list:
         """
         提取测试点清单（按功能模块组织）
-        
+
         基于需求分析Agent的测试点划分规则：
         - 按需求中的实际子功能/操作划分测试点
         - 测试点名称禁止与功能模块名称相同
@@ -2034,277 +2423,436 @@ class GenerationService:
         """
         test_points = []
         modules = analysis.get("modules", [])
-        
+
         for module in modules:
             module_name = module["name"] if isinstance(module, dict) else module
-            
+
             # 为每个模块生成测试点
             # 1. 正向场景测试点
-            test_points.append({
-                "module": module_name,
-                "name": f"{module_name}正常流程验证",
-                "description": f"验证{module_name}的正常业务流程",
-                "test_type": "正向场景",
-                "estimated_cases": 1
-            })
-            
+            test_points.append(
+                {
+                    "module": module_name,
+                    "name": f"{module_name}正常流程验证",
+                    "description": f"验证{module_name}的正常业务流程",
+                    "test_type": "正向场景",
+                    "estimated_cases": 1,
+                }
+            )
+
             # 2. 边界值测试点
             if analysis.get("data_constraints"):
-                test_points.append({
-                    "module": module_name,
-                    "name": f"{module_name}边界值验证",
-                    "description": f"验证{module_name}的边界条件",
-                    "test_type": "边界值",
-                    "estimated_cases": 2
-                })
-            
+                test_points.append(
+                    {
+                        "module": module_name,
+                        "name": f"{module_name}边界值验证",
+                        "description": f"验证{module_name}的边界条件",
+                        "test_type": "边界值",
+                        "estimated_cases": 2,
+                    }
+                )
+
             # 3. 异常场景测试点
-            test_points.append({
-                "module": module_name,
-                "name": f"{module_name}异常处理验证",
-                "description": f"验证{module_name}的异常场景处理",
-                "test_type": "异常场景",
-                "estimated_cases": 2
-            })
-            
-            # 4. 业务规则验证点
-            module_rules = [r for r in analysis.get("business_rules", []) 
-                          if module_name in r.get("content", "") or module_name in str(r)]
-            if module_rules:
-                test_points.append({
+            test_points.append(
+                {
                     "module": module_name,
-                    "name": f"{module_name}业务规则验证",
-                    "description": f"验证{module_name}相关的业务规则",
-                    "test_type": "业务规则",
-                    "estimated_cases": len(module_rules)
-                })
-        
+                    "name": f"{module_name}异常处理验证",
+                    "description": f"验证{module_name}的异常场景处理",
+                    "test_type": "异常场景",
+                    "estimated_cases": 2,
+                }
+            )
+
+            # 4. 业务规则验证点
+            module_rules = [
+                r
+                for r in analysis.get("business_rules", [])
+                if module_name in r.get("content", "") or module_name in str(r)
+            ]
+            if module_rules:
+                test_points.append(
+                    {
+                        "module": module_name,
+                        "name": f"{module_name}业务规则验证",
+                        "description": f"验证{module_name}相关的业务规则",
+                        "test_type": "业务规则",
+                        "estimated_cases": len(module_rules),
+                    }
+                )
+
         return test_points
-    
+
     def _infer_modules(self, requirement_content: str) -> list:
         """
         基于需求内容智能推断功能模块
-        
+
         通过分析业务场景、用户角色、操作流程等推断可能的功能模块
         """
         modules = []
         content_lower = requirement_content.lower()
-        
+
         # 扩展的业务场景模式（包含更多常见场景）
         patterns = {
-            '用户管理': ['用户注册', '用户登录', '用户信息', '账号管理', '权限管理'],
-            '登录认证': ['登录', '登出', '忘记密码', '验证码', '密码重置', '免登录'],
-            '订单管理': ['订单创建', '订单查询', '订单状态', '支付', '退款'],
-            '商品管理': ['商品上架', '商品下架', '库存管理', '商品分类'],
-            '数据统计': ['统计报表', '数据分析', '导出报表', '趋势分析'],
-            '审批流程': ['审批', '审核', '流程', '驳回', '通过'],
-            '系统配置': ['系统设置', '参数配置', '基础数据', '字典管理'],
-            '权限管理': ['角色', '权限', '菜单权限', '数据权限', '操作权限'],
-            '消息通知': ['消息', '通知', '推送', '短信', '邮件'],
-            '文件管理': ['文件上传', '文件下载', '附件', '图片上传']
+            "用户管理": ["用户注册", "用户登录", "用户信息", "账号管理", "权限管理"],
+            "登录认证": ["登录", "登出", "忘记密码", "验证码", "密码重置", "免登录"],
+            "订单管理": ["订单创建", "订单查询", "订单状态", "支付", "退款"],
+            "商品管理": ["商品上架", "商品下架", "库存管理", "商品分类"],
+            "数据统计": ["统计报表", "数据分析", "导出报表", "趋势分析"],
+            "审批流程": ["审批", "审核", "流程", "驳回", "通过"],
+            "系统配置": ["系统设置", "参数配置", "基础数据", "字典管理"],
+            "权限管理": ["角色", "权限", "菜单权限", "数据权限", "操作权限"],
+            "消息通知": ["消息", "通知", "推送", "短信", "邮件"],
+            "文件管理": ["文件上传", "文件下载", "附件", "图片上传"],
         }
-        
+
         for module_name, keywords in patterns.items():
             # 如果内容中包含多个相关关键词，则推断存在该模块
             match_count = sum(1 for keyword in keywords if keyword in content_lower)
             if match_count >= 2:  # 至少匹配2个关键词
-                modules.append({
-                    "name": module_name,
-                    "description": f"基于内容推断的{module_name}模块",
-                    "sub_features": []
-                })
+                modules.append(
+                    {
+                        "name": module_name,
+                        "description": f"基于内容推断的{module_name}模块",
+                        "sub_features": [],
+                    }
+                )
             # 对于登录认证等关键场景，1个关键词也可以推断
-            elif match_count >= 1 and module_name in ['登录认证', '权限管理', '消息通知']:
-                modules.append({
-                    "name": module_name,
-                    "description": f"基于内容推断的{module_name}模块",
-                    "sub_features": []
-                })
-        
+            elif match_count >= 1 and module_name in [
+                "登录认证",
+                "权限管理",
+                "消息通知",
+            ]:
+                modules.append(
+                    {
+                        "name": module_name,
+                        "description": f"基于内容推断的{module_name}模块",
+                        "sub_features": [],
+                    }
+                )
+
         return modules
 
-    def _build_analyzed_markdown(self, analysis: Dict[str, Any], original_content: str) -> str:
+    def _build_analyzed_markdown(
+        self, analysis: Dict[str, Any], original_content: str
+    ) -> str:
         """
         构建分析后的Markdown格式需求文档
-        
+
         Args:
             analysis: 需求分析结果
             original_content: 原始需求内容
-            
+
         Returns:
             Markdown格式的分析文档
         """
         md = "# 需求分析报告\n\n"
         md += f"> 生成时间: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-        
+
         # 1. 功能模块
-        if analysis.get('modules'):
+        if analysis.get("modules"):
             md += "## 一、功能模块划分\n\n"
-            for i, module in enumerate(analysis['modules'], 1):
+            for i, module in enumerate(analysis["modules"], 1):
                 module_name = module["name"] if isinstance(module, dict) else module
-                module_desc = module.get("description", "") if isinstance(module, dict) else ""
+                module_desc = (
+                    module.get("description", "") if isinstance(module, dict) else ""
+                )
                 md += f"{i}. **{module_name}**"
                 if module_desc:
                     md += f" - {module_desc}"
                 md += "\n"
             md += "\n"
-        
+
         # 2. 关键功能点
-        if analysis.get('key_features'):
+        if analysis.get("key_features"):
             md += "## 二、关键功能点\n\n"
-            for i, feature in enumerate(analysis['key_features'], 1):
+            for i, feature in enumerate(analysis["key_features"], 1):
                 md += f"{i}. {feature}\n"
             md += "\n"
-        
+
         # 3. 业务规则
-        if analysis.get('business_rules'):
+        if analysis.get("business_rules"):
             md += "## 三、业务规则\n\n"
             md += "| 序号 | 规则内容 |\n"
             md += "|------|----------|\n"
-            for i, rule in enumerate(analysis['business_rules'], 1):
+            for i, rule in enumerate(analysis["business_rules"], 1):
                 # 清理规则文本
-                rule_content = rule.get('content', str(rule)) if isinstance(rule, dict) else str(rule)
-                clean_rule = rule_content.replace('|', '｜')
+                rule_content = (
+                    rule.get("content", str(rule))
+                    if isinstance(rule, dict)
+                    else str(rule)
+                )
+                clean_rule = rule_content.replace("|", "｜")
                 md += f"| {i} | {clean_rule} |\n"
             md += "\n"
-        
+
         # 4. 数据约束
-        if analysis.get('data_constraints'):
+        if analysis.get("data_constraints"):
             md += "## 四、数据约束\n\n"
             md += "| 序号 | 约束内容 |\n"
             md += "|------|----------|\n"
-            for i, constraint in enumerate(analysis['data_constraints'], 1):
-                constraint_content = constraint.get('content', str(constraint)) if isinstance(constraint, dict) else str(constraint)
-                clean_constraint = constraint_content.replace('|', '｜')
+            for i, constraint in enumerate(analysis["data_constraints"], 1):
+                constraint_content = (
+                    constraint.get("content", str(constraint))
+                    if isinstance(constraint, dict)
+                    else str(constraint)
+                )
+                clean_constraint = constraint_content.replace("|", "｜")
                 md += f"| {i} | {clean_constraint} |\n"
             md += "\n"
-        
+
         # 5. 原始需求内容
         md += "---\n\n"
         md += "## 附录：原始需求内容\n\n"
         md += "```\n"
         md += original_content
         md += "\n```\n"
-        
+
         return md
 
-    def _perform_rag_recall(self, requirement_content: str, 
-                           requirement_analysis: Dict[str, Any],
-                           top_k_cases: int = 5,
-                           top_k_defects: int = 3,
-                           top_k_requirements: int = 3) -> tuple:
+    def _perform_rag_recall(
+        self,
+        requirement_content: str,
+        requirement_analysis: Dict[str, Any],
+        top_k_cases: int = 5,
+        top_k_defects: int = 3,
+        top_k_requirements: int = 3,
+    ) -> tuple:
         """
-        执行RAG召回流程 - 检索历史用例、缺陷、需求
-        
+        执行RAG召回流程 - 使用增强检索器（HybridRetriever + DynamicRetriever）
+
         Returns:
             (rag_context_string, rag_stats_dict)
         """
-        from src.vectorstore.chroma_store import ChromaVectorStore
-        
+        # 延迟初始化RAG组件
+        self._init_rag_components()
+
         rag_context = ""
         rag_stats = {"cases": 0, "defects": 0, "requirements": 0}
-        
-        # 1. 召回相似历史用例（最高优先级）
+        rag_context_data = {
+            "retrieval_mode": self._hybrid_retriever.mode
+            if self._hybrid_retriever
+            else "vector_only",
+            "rrf_k": self._hybrid_retriever.rrf_k
+            if self._hybrid_retriever
+            else None,
+            "adjustments": [],
+        }
+
+        # 使用HybridRetriever进行混合检索
+        if self._hybrid_retriever:
+            try:
+                # 用例检索
+                case_response = self._hybrid_retriever.retrieve(
+                    collection="historical_cases",
+                    query=requirement_content,
+                    top_k=top_k_cases,
+                )
+                case_results = (
+                    case_response.get("results", [])
+                    if isinstance(case_response, dict)
+                    else case_response or []
+                )
+                if case_results:
+                    rag_context += "\n\n## 召回的历史测试用例（供参考）\n"
+                    rag_context += "> 以下历史用例与当前需求相关，请借鉴其测试思路和方法，确保测试覆盖率。\n\n"
+                    for i, case in enumerate(case_results[:top_k_cases], 1):
+                        rag_context += (
+                            f"### 历史用例 {i}\n{case.get('content', '')}\n\n"
+                        )
+                    rag_stats["cases"] = len(case_results[:top_k_cases])
+
+                # 记录动态检索调整信息
+                if isinstance(case_response, dict) and case_response.get("adjustment"):
+                    rag_context_data.setdefault("adjustments", []).append(
+                        case_response["adjustment"]
+                    )
+            except Exception as e:
+                print(f"[RAG召回] 混合检索用例失败: {e}")
+
+            # 缺陷检索
+            try:
+                defect_response = self._hybrid_retriever.retrieve(
+                    collection="defects",
+                    query=requirement_content,
+                    top_k=top_k_defects,
+                )
+                defect_results = (
+                    defect_response.get("results", [])
+                    if isinstance(defect_response, dict)
+                    else defect_response or []
+                )
+                if defect_results:
+                    rag_context += "\n## 召回的历史缺陷场景（必须覆盖）\n"
+                    rag_context += "> 以下缺陷在历史项目中出现过，请在新用例设计中重点覆盖这些场景，避免重复问题。\n\n"
+                    for i, defect in enumerate(defect_results[:top_k_defects], 1):
+                        rag_context += (
+                            f"### 历史缺陷 {i}\n{defect.get('content', '')}\n\n"
+                        )
+                    rag_stats["defects"] = len(defect_results[:top_k_defects])
+
+                if isinstance(defect_response, dict) and defect_response.get(
+                    "adjustment"
+                ):
+                    rag_context_data.setdefault("adjustments", []).append(
+                        defect_response["adjustment"]
+                    )
+            except Exception as e:
+                print(f"[RAG召回] 混合检索缺陷失败: {e}")
+
+            # 需求检索
+            try:
+                req_response = self._hybrid_retriever.retrieve(
+                    collection="requirements",
+                    query=requirement_content,
+                    top_k=top_k_requirements,
+                )
+                req_results = (
+                    req_response.get("results", [])
+                    if isinstance(req_response, dict)
+                    else req_response or []
+                )
+                if req_results:
+                    rag_context += "\n## 召回的相似需求（补充理解）\n"
+                    rag_context += (
+                        "> 以下需求与当前需求相关，请综合考虑，避免遗漏关联功能。\n\n"
+                    )
+                    for i, req in enumerate(req_results[:top_k_requirements], 1):
+                        rag_context += f"### 相关需求 {i}\n{req.get('content', '')}\n\n"
+                    rag_stats["requirements"] = len(req_results[:top_k_requirements])
+
+                if isinstance(req_response, dict) and req_response.get("adjustment"):
+                    rag_context_data.setdefault("adjustments", []).append(
+                        req_response["adjustment"]
+                    )
+            except Exception as e:
+                print(f"[RAG召回] 混合检索需求失败: {e}")
+        else:
+            # 回退到原始向量检索
+            return self._perform_rag_recall_fallback(
+                requirement_content, top_k_cases, top_k_defects, top_k_requirements
+            )
+
+        # 生成检索质量报告
+        if self._retrieval_evaluator:
+            try:
+                quality_report = self._retrieval_evaluator.generate_quality_report(
+                    [], [], []
+                )
+                rag_stats["quality_report"] = quality_report
+            except Exception as e:
+                print(f"[RAG召回] 生成质量报告失败: {e}")
+
+        return rag_context, rag_stats, rag_context_data
+
+    def _perform_rag_recall_fallback(
+        self,
+        requirement_content: str,
+        top_k_cases: int,
+        top_k_defects: int,
+        top_k_requirements: int,
+    ) -> tuple:
+        """原始RAG召回流程（回退方案）"""
+        rag_context = ""
+        rag_stats = {"cases": 0, "defects": 0, "requirements": 0}
+
         similar_cases = self.vector_store.search_similar_cases(
             requirement_content, top_k_cases
         )
-        
         if similar_cases:
             rag_context += "\n\n## 召回的历史测试用例（供参考）\n"
             rag_context += "> 以下历史用例与当前需求相关，请借鉴其测试思路和方法，确保测试覆盖率。\n\n"
-            
             for i, case in enumerate(similar_cases, 1):
-                rag_context += f"### 历史用例 {i}\n"
-                rag_context += case['content']
-                rag_context += "\n\n"
-            
+                rag_context += f"### 历史用例 {i}\n{case['content']}\n\n"
             rag_stats["cases"] = len(similar_cases)
-        
-        # 2. 召回相似缺陷（重点覆盖）
+
         similar_defects = self.vector_store.search_similar_defects(
             requirement_content, top_k_defects
         )
-        
         if similar_defects:
             rag_context += "\n## 召回的历史缺陷场景（必须覆盖）\n"
             rag_context += "> 以下缺陷在历史项目中出现过，请在新用例设计中重点覆盖这些场景，避免重复问题。\n\n"
-            
             for i, defect in enumerate(similar_defects, 1):
-                rag_context += f"### 历史缺陷 {i}\n"
-                rag_context += defect['content']
-                rag_context += "\n\n"
-            
+                rag_context += f"### 历史缺陷 {i}\n{defect['content']}\n\n"
             rag_stats["defects"] = len(similar_defects)
-        
-        # 3. 召回相似需求（补充上下文）
+
         similar_requirements = self.vector_store.search_similar_requirements(
             requirement_content, top_k_requirements
         )
-        
         if similar_requirements:
             rag_context += "\n## 召回的相似需求（补充理解）\n"
-            rag_context += "> 以下需求与当前需求相关，请综合考虑，避免遗漏关联功能。\n\n"
-            
+            rag_context += (
+                "> 以下需求与当前需求相关，请综合考虑，避免遗漏关联功能。\n\n"
+            )
             for i, req in enumerate(similar_requirements, 1):
-                rag_context += f"### 相关需求 {i}\n"
-                rag_context += req['content']
-                rag_context += "\n\n"
-            
+                rag_context += f"### 相关需求 {i}\n{req['content']}\n\n"
             rag_stats["requirements"] = len(similar_requirements)
-        
+
         return rag_context, rag_stats
 
-    def _create_test_plan(self, requirement_content: str,
-                         requirement_analysis: Dict[str, Any],
-                         rag_context: str = "") -> str:
+    def _create_test_plan(
+        self,
+        requirement_content: str,
+        requirement_analysis: Dict[str, Any],
+        rag_context: str = "",
+    ) -> str:
         """
         测试规划Agent - 基于02_模块评审Agent.md
-        
+
         基于需求分析结果创建详细的测试规划：
         - 模块拆分评审（完整性/合理性/一致性）
         - 测试点评审（完整性/可测性/合理性/优先级/追溯性/全面性）
         - 风险评审（高风险覆盖/依赖异常）
-        
+
         识别测试项(ITEM)和测试点(POINT)
         """
         # 尝试使用LLM进行模块评审
         if self.llm_manager:
             try:
                 print("[模块评审] 尝试使用LLM进行模块评审...")
-                llm_review = self._llm_module_review(requirement_content, requirement_analysis)
+                llm_review = self._llm_module_review(
+                    requirement_content, requirement_analysis
+                )
                 if llm_review:
                     print("[模块评审] LLM评审成功，使用LLM评审结果")
-                    return self._build_test_plan_from_llm_review(llm_review, requirement_analysis)
+                    return self._build_test_plan_from_llm_review(
+                        llm_review, requirement_analysis
+                    )
                 else:
                     print("[模块评审] LLM评审结果为空，回退到规则评审")
             except Exception as e:
                 print(f"[模块评审] LLM评审失败: {e}，回退到规则评审")
-        
+
         # 回退到基于规则的评审
         return self._rule_based_test_plan(requirement_content, requirement_analysis)
-    
-    def _llm_module_review(self, requirement_content: str, requirement_analysis: Dict[str, Any]) -> Dict:
+
+    def _llm_module_review(
+        self, requirement_content: str, requirement_analysis: Dict[str, Any]
+    ) -> Dict:
         """
         使用LLM进行模块评审
-        
+
         Returns:
             评审结果JSON字典
         """
         # 尝试从数据库加载评审模板
-        db_template = self._load_prompt_template('review')
-        
+        db_template = self._load_prompt_template("review")
+
         if db_template:
             # 将分析结果转为字符串
             import json
-            analysis_str = json.dumps(requirement_analysis, ensure_ascii=False, indent=2)
+
+            analysis_str = json.dumps(
+                requirement_analysis, ensure_ascii=False, indent=2
+            )
             review_prompt = db_template.format(
-                requirement_content=requirement_content,
-                analysis_result=analysis_str
+                requirement_content=requirement_content, analysis_result=analysis_str
             )
         else:
             # 使用硬编码默认模板
             import json
-            analysis_str = json.dumps(requirement_analysis, ensure_ascii=False, indent=2)
+
+            analysis_str = json.dumps(
+                requirement_analysis, ensure_ascii=False, indent=2
+            )
             review_prompt = f"""你是一位资深测试评审专家，负责对需求分析的模块拆分和测试点进行评审。
 
 ## 需求文档
@@ -2359,54 +2907,53 @@ class GenerationService:
   "conclusion": "评审结论"
 }}
 ```"""
-        
+
         # 调用LLM进行评审
         adapter = self.llm_manager.get_adapter()
         response = adapter.generate(
-            review_prompt,
-            temperature=0.3,
-            max_tokens=4096,
-            timeout=60
+            review_prompt, temperature=0.3, max_tokens=4096, timeout=60
         )
-        
+
         if not response.success:
             raise Exception(f"LLM评审失败: {response.error_message}")
-        
+
         # 解析评审结果
         import json
         import re
-        
+
         content = response.content
-        
+
         # 尝试提取JSON
         try:
             review_result = json.loads(content)
         except:
             # 尝试从代码块中提取
-            json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', content)
+            json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", content)
             if json_match:
                 review_result = json.loads(json_match.group(1))
             else:
                 # 查找花括号
-                start = content.find('{')
-                end = content.rfind('}')
+                start = content.find("{")
+                end = content.rfind("}")
                 if start != -1 and end != -1:
-                    json_str = content[start:end+1]
+                    json_str = content[start : end + 1]
                     review_result = json.loads(json_str)
                 else:
                     raise Exception("无法解析评审结果JSON")
-        
+
         print(f"[模块评审] 评审完成 - 结论: {review_result.get('conclusion', 'N/A')}")
         print(f"[模块评审] 总体评分: {review_result.get('overall_score', 'N/A')}/100")
-        
+
         return review_result
-    
-    def _build_test_plan_from_llm_review(self, llm_review: Dict, requirement_analysis: Dict[str, Any]) -> str:
+
+    def _build_test_plan_from_llm_review(
+        self, llm_review: Dict, requirement_analysis: Dict[str, Any]
+    ) -> str:
         """
         基于LLM评审结果构建测试规划
         """
         test_plan = "\n\n## 测试规划（基于LLM模块评审Agent）\n\n"
-        
+
         # 获取分析结果
         modules = requirement_analysis.get("modules", [])
         business_rules = requirement_analysis.get("business_rules", [])
@@ -2415,55 +2962,68 @@ class GenerationService:
         state_changes = requirement_analysis.get("state_changes", [])
         test_points = requirement_analysis.get("test_points", [])
         risks = requirement_analysis.get("risks", [])
-        
+
         # ========== 1. LLM模块评审结果 ==========
         test_plan += "### 一、模块拆分评审（LLM评审）\n\n"
-        
+
         module_review = llm_review.get("module_review", {})
         completeness = module_review.get("completeness", {})
         rationality = module_review.get("rationality", {})
-        
+
         test_plan += f"**完整性评分**: {completeness.get('score', 'N/A')}/100\n"
-        issues = completeness.get('issues', [])
+        issues = completeness.get("issues", [])
         if issues:
             test_plan += "**完整性问题**:\n"
             for issue in issues:
                 test_plan += f"- {issue}\n"
             test_plan += "\n"
-        
-        suggestions = completeness.get('suggestions', [])
+
+        suggestions = completeness.get("suggestions", [])
         if suggestions:
             test_plan += "**改进建议**:\n"
             for suggestion in suggestions:
                 test_plan += f"- {suggestion}\n"
             test_plan += "\n"
-        
+
         test_plan += f"**合理性评分**: {rationality.get('score', 'N/A')}/100\n\n"
-        
+
         # 为每个模块生成测试项
         for module in modules[:5]:
             module_name = module["name"] if isinstance(module, dict) else module
-            module_desc = module.get("description", "") if isinstance(module, dict) else ""
-            
+            module_desc = (
+                module.get("description", "") if isinstance(module, dict) else ""
+            )
+
             test_plan += f"### 测试项：{module_name}\n"
             if module_desc:
                 test_plan += f"**描述**: {module_desc}\n\n"
-            
+
             test_plan += "- 测试点：正常流程验证\n"
             if state_changes:
-                test_plan += f"- 测试点：状态流转验证（覆盖{len(state_changes)}个状态转换）\n"
-            
-            module_rules = [r for r in business_rules 
-                           if module_name in r.get("content", "") or module_name in str(r)]
+                test_plan += (
+                    f"- 测试点：状态流转验证（覆盖{len(state_changes)}个状态转换）\n"
+                )
+
+            module_rules = [
+                r
+                for r in business_rules
+                if module_name in r.get("content", "") or module_name in str(r)
+            ]
             if module_rules:
                 for rule in module_rules[:3]:
-                    rule_content = rule.get("content", rule) if isinstance(rule, dict) else str(rule)
-                    rule_desc = rule_content[:30] + ('...' if len(rule_content) > 30 else '')
+                    rule_content = (
+                        rule.get("content", rule)
+                        if isinstance(rule, dict)
+                        else str(rule)
+                    )
+                    rule_desc = rule_content[:30] + (
+                        "..." if len(rule_content) > 30 else ""
+                    )
                     test_plan += f"- 测试点：业务规则验证 - {rule_desc}\n"
-            
+
             test_plan += "- 测试点：边界值测试\n"
             test_plan += "- 测试点：异常处理验证\n\n"
-        
+
         # 添加LLM建议的遗漏测试点
         test_point_review = llm_review.get("test_point_review", {})
         missing_points = test_point_review.get("missing_points", [])
@@ -2472,29 +3032,31 @@ class GenerationService:
             for point in missing_points:
                 test_plan += f"- 测试点：{point}\n"
             test_plan += "\n"
-        
+
         # ========== 2. 测试点评审 ==========
         test_plan += "### 二、测试点评审（LLM评审）\n\n"
-        
+
         tp_completeness = test_point_review.get("completeness", {})
         tp_testability = test_point_review.get("testability", {})
-        
+
         test_plan += f"**完整性评分**: {tp_completeness.get('score', 'N/A')}/100\n"
         test_plan += f"**可测性评分**: {tp_testability.get('score', 'N/A')}/100\n\n"
-        
+
         # ========== 3. 总体评审结论 ==========
         test_plan += "### 三、总体评审结论\n\n"
         test_plan += f"**总体评分**: {llm_review.get('overall_score', 'N/A')}/100\n"
         test_plan += f"**结论**: {llm_review.get('conclusion', 'N/A')}\n\n"
-        
+
         return test_plan
-    
-    def _rule_based_test_plan(self, requirement_content: str, requirement_analysis: Dict[str, Any]) -> str:
+
+    def _rule_based_test_plan(
+        self, requirement_content: str, requirement_analysis: Dict[str, Any]
+    ) -> str:
         """
         基于规则的测试规划（回退方案）
         """
         test_plan = "\n\n## 测试规划（基于模块评审Agent方法论）\n\n"
-        
+
         # 获取分析结果
         modules = requirement_analysis.get("modules", [])
         business_rules = requirement_analysis.get("business_rules", [])
@@ -2504,10 +3066,10 @@ class GenerationService:
         test_points = requirement_analysis.get("test_points", [])
         non_functional = requirement_analysis.get("non_functional", {})
         risks = requirement_analysis.get("risks", [])
-        
+
         # ========== 1. 模块拆分评审 ==========
         test_plan += "### 一、模块拆分评审\n\n"
-        
+
         if not modules:
             test_plan += "**评审结论**: 未识别到功能模块，使用默认测试结构\n\n"
             test_plan += "### 测试项：核心功能\n"
@@ -2517,55 +3079,75 @@ class GenerationService:
         else:
             # 完整性检查
             test_plan += f"**完整性**: 识别到 {len(modules)} 个功能模块\n\n"
-            
+
             # 为每个模块生成详细的测试项和测试点
             for module in modules[:5]:  # 最多处理5个模块
                 module_name = module["name"] if isinstance(module, dict) else module
-                module_desc = module.get("description", "") if isinstance(module, dict) else ""
-                
+                module_desc = (
+                    module.get("description", "") if isinstance(module, dict) else ""
+                )
+
                 test_plan += f"### 测试项：{module_name}\n"
                 if module_desc:
                     test_plan += f"**描述**: {module_desc}\n\n"
-                
+
                 # 正向测试点（基于业务流程）
                 test_plan += "- 测试点：正常流程验证\n"
                 if business_flows:
                     test_plan += f"  - 覆盖流程步骤: {len(business_flows)}个\n"
-                
+
                 # 状态转换测试点
                 if state_changes:
                     test_plan += f"- 测试点：状态流转验证（覆盖{len(state_changes)}个状态转换）\n"
-                
+
                 # 基于业务规则生成测试点
-                module_rules = [r for r in business_rules 
-                               if module_name in r.get("content", "") or module_name in str(r)]
+                module_rules = [
+                    r
+                    for r in business_rules
+                    if module_name in r.get("content", "") or module_name in str(r)
+                ]
                 if module_rules:
                     for rule in module_rules[:3]:  # 最多3个规则
-                        rule_content = rule.get("content", rule) if isinstance(rule, dict) else str(rule)
-                        rule_desc = rule_content[:30] + ('...' if len(rule_content) > 30 else '')
+                        rule_content = (
+                            rule.get("content", rule)
+                            if isinstance(rule, dict)
+                            else str(rule)
+                        )
+                        rule_desc = rule_content[:30] + (
+                            "..." if len(rule_content) > 30 else ""
+                        )
                         test_plan += f"- 测试点：业务规则验证 - {rule_desc}\n"
-                
+
                 # 基于数据约束生成测试点
-                module_constraints = [c for c in data_constraints 
-                                     if module_name in c.get("content", "") or module_name in str(c)]
+                module_constraints = [
+                    c
+                    for c in data_constraints
+                    if module_name in c.get("content", "") or module_name in str(c)
+                ]
                 if module_constraints:
                     for constraint in module_constraints[:2]:  # 最多2个约束
-                        constraint_content = constraint.get("content", constraint) if isinstance(constraint, dict) else str(constraint)
-                        constraint_desc = constraint_content[:30] + ('...' if len(constraint_content) > 30 else '')
+                        constraint_content = (
+                            constraint.get("content", constraint)
+                            if isinstance(constraint, dict)
+                            else str(constraint)
+                        )
+                        constraint_desc = constraint_content[:30] + (
+                            "..." if len(constraint_content) > 30 else ""
+                        )
                         test_plan += f"- 测试点：数据约束验证 - {constraint_desc}\n"
-                
+
                 # 通用测试点
                 test_plan += "- 测试点：边界值测试\n"
                 test_plan += "- 测试点：异常处理验证\n"
                 test_plan += "\n"
-        
+
         # ========== 2. 测试点评审 ==========
         test_plan += "### 二、测试点评审\n\n"
-        
+
         # 完整性评审
         total_test_points = len(test_points) if test_points else 0
         test_plan += f"**完整性**: 规划 {total_test_points} 个测试点\n"
-        
+
         # 覆盖场景评审
         test_plan += "**全面性**: 覆盖以下场景\n"
         test_plan += "- 正向场景：正常业务流程\n"
@@ -2577,45 +3159,61 @@ class GenerationService:
             test_plan += f"- 状态流转：{len(state_changes)}个状态转换\n"
         test_plan += "- 异常场景：错误处理、异常输入\n"
         test_plan += "- 边界场景：边界值、临界值\n\n"
-        
+
         # ========== 3. 风险评审 ==========
         test_plan += "### 三、风险评审\n\n"
-        
+
         if risks:
             test_plan += f"**识别到 {len(risks)} 个风险点**\n\n"
             for i, risk in enumerate(risks[:5], 1):  # 最多显示5个风险
-                risk_content = risk.get("content", risk) if isinstance(risk, dict) else str(risk)
-                risk_type = risk.get("type", "风险") if isinstance(risk, dict) else "风险"
-                risk_severity = risk.get("severity", "中") if isinstance(risk, dict) else "中"
-                test_plan += f"{i}. **[{risk_severity}]{risk_type}**: {risk_content[:50]}\n"
+                risk_content = (
+                    risk.get("content", risk) if isinstance(risk, dict) else str(risk)
+                )
+                risk_type = (
+                    risk.get("type", "风险") if isinstance(risk, dict) else "风险"
+                )
+                risk_severity = (
+                    risk.get("severity", "中") if isinstance(risk, dict) else "中"
+                )
+                test_plan += (
+                    f"{i}. **[{risk_severity}]{risk_type}**: {risk_content[:50]}\n"
+                )
             test_plan += "\n"
         else:
             test_plan += "**风险**: 未识别到明显风险点\n\n"
-        
+
         # ========== 4. 非功能需求测试 ==========
         test_plan += "### 四、非功能需求测试\n\n"
-        
+
         if non_functional:
             if non_functional.get("performance"):
-                test_plan += f"**性能测试**: {len(non_functional['performance'])}个性能指标\n"
+                test_plan += (
+                    f"**性能测试**: {len(non_functional['performance'])}个性能指标\n"
+                )
             if non_functional.get("security"):
-                test_plan += f"**安全测试**: {len(non_functional['security'])}个安全要求\n"
+                test_plan += (
+                    f"**安全测试**: {len(non_functional['security'])}个安全要求\n"
+                )
             if non_functional.get("compatibility"):
                 test_plan += f"**兼容性测试**: {len(non_functional['compatibility'])}个兼容性要求\n"
             if non_functional.get("usability"):
-                test_plan += f"**易用性测试**: {len(non_functional['usability'])}个易用性要求\n"
+                test_plan += (
+                    f"**易用性测试**: {len(non_functional['usability'])}个易用性要求\n"
+                )
             if non_functional.get("stability"):
-                test_plan += f"**稳定性测试**: {len(non_functional['stability'])}个稳定性要求\n"
+                test_plan += (
+                    f"**稳定性测试**: {len(non_functional['stability'])}个稳定性要求\n"
+                )
             test_plan += "\n"
         else:
             test_plan += "**非功能需求**: 未识别到明确的非功能需求\n\n"
-        
+
         return test_plan
 
     def _parse_test_plan(self, test_plan: str) -> Dict[str, Any]:
         """
         解析测试规划文本为结构化ITEM/POINT数据
-        
+
         Returns:
             {
                 "items": [{"name": "...", "risk_level": "..."}],
@@ -2624,57 +3222,55 @@ class GenerationService:
             }
         """
         import re
-        
-        result = {
-            "items": [],
-            "points": [],
-            "risk_assessment": {}
-        }
-        
+
+        result = {"items": [], "points": [], "risk_assessment": {}}
+
         # 解析测试项（### 测试项：xxx）
-        item_pattern = r'### 测试项[：:]\s*(.+)'
+        item_pattern = r"### 测试项[：:]\s*(.+)"
         items = re.findall(item_pattern, test_plan)
-        
+
         current_item = None
         for item_name in items:
             item_name = item_name.strip()
             if item_name:
                 # 根据内容判断风险等级
                 risk_level = "Medium"
-                if any(keyword in item_name for keyword in ['核心', '主要', '登录', '支付', '订单']):
+                if any(
+                    keyword in item_name
+                    for keyword in ["核心", "主要", "登录", "支付", "订单"]
+                ):
                     risk_level = "Critical"
-                elif any(keyword in item_name for keyword in ['重要', '用户', '管理']):
+                elif any(keyword in item_name for keyword in ["重要", "用户", "管理"]):
                     risk_level = "High"
-                
-                result["items"].append({
-                    "name": item_name,
-                    "risk_level": risk_level
-                })
+
+                result["items"].append({"name": item_name, "risk_level": risk_level})
                 current_item = item_name
-        
+
         # 解析测试点（- 测试点：xxx）
-        point_pattern = r'- 测试点[：:]\s*(.+)'
+        point_pattern = r"- 测试点[：:]\s*(.+)"
         points = re.findall(point_pattern, test_plan)
-        
+
         for point_name in points:
             point_name = point_name.strip()
             if point_name and current_item:
                 # 根据测试点类型判断关注点
                 focus_points = []
-                if '正常' in point_name or '流程' in point_name:
+                if "正常" in point_name or "流程" in point_name:
                     focus_points = ["主流程验证", "业务规则验证"]
-                elif '边界' in point_name:
+                elif "边界" in point_name:
                     focus_points = ["边界值测试", "临界值验证"]
-                elif '异常' in point_name:
+                elif "异常" in point_name:
                     focus_points = ["异常处理", "错误提示验证"]
-                
-                result["points"].append({
-                    "item": current_item,
-                    "name": point_name,
-                    "risk_level": "Medium",
-                    "focus_points": focus_points
-                })
-        
+
+                result["points"].append(
+                    {
+                        "item": current_item,
+                        "name": point_name,
+                        "risk_level": "Medium",
+                        "focus_points": focus_points,
+                    }
+                )
+
         # 构建风险评估
         total_items = len(result["items"])
         total_points = len(result["points"])
@@ -2682,9 +3278,13 @@ class GenerationService:
             "total_items": total_items,
             "total_points": total_points,
             "coverage": "中等" if total_points > 0 else "低",
-            "recommendation": "建议补充异常场景测试点" if total_points < total_items * 2 else "测试点覆盖充分"
+            "recommendation": (
+                "建议补充异常场景测试点"
+                if total_points < total_items * 2
+                else "测试点覆盖充分"
+            ),
         }
-        
+
         return result
 
     def _load_prompt_template(self, template_type: str) -> Optional[str]:
@@ -2702,12 +3302,17 @@ class GenerationService:
 
         try:
             from src.database.models import PromptTemplate
-            template = self.db_session.query(PromptTemplate).filter(
-                PromptTemplate.template_type == template_type
-            ).first()
+
+            template = (
+                self.db_session.query(PromptTemplate)
+                .filter(PromptTemplate.template_type == template_type)
+                .first()
+            )
 
             if template:
-                print(f"[Prompt加载] 从数据库加载模板: {template.name} (类型: {template_type})")
+                print(
+                    f"[Prompt加载] 从数据库加载模板: {template.name} (类型: {template_type})"
+                )
                 return template.template
             else:
                 print(f"[Prompt加载] 数据库中未找到模板: {template_type}")
@@ -2726,21 +3331,28 @@ class GenerationService:
         Returns:
             {"valid": bool, "missing": List[str], "message": str}
         """
-        required_placeholders = ['{requirement_content}', '{rag_context}', '{test_plan}']
+        required_placeholders = [
+            "{requirement_content}",
+            "{rag_context}",
+            "{test_plan}",
+        ]
         missing = [p for p in required_placeholders if p not in template]
         valid = len(missing) == 0
         return {
-            'valid': valid,
-            'missing': missing,
-            'message': '模板验证通过' if valid else f'缺少占位符: {", ".join(missing)}',
+            "valid": valid,
+            "missing": missing,
+            "message": "模板验证通过" if valid else f'缺少占位符: {", ".join(missing)}',
         }
-    
-    def _build_optimized_generation_prompt(self, requirement_content: str,
-                                           rag_context: str,
-                                           test_plan: str,
-                                           requirement_analysis: Dict[str, Any],
-                                           prompt_type: str = 'generate_optimized',
-                                           rag_items: Optional[Dict[str, Any]] = None) -> str:
+
+    def _build_optimized_generation_prompt(
+        self,
+        requirement_content: str,
+        rag_context: str,
+        test_plan: str,
+        requirement_analysis: Dict[str, Any],
+        prompt_type: str = "generate_optimized",
+        rag_items: Optional[Dict[str, Any]] = None,
+    ) -> str:
         """
         构建优化的生成Prompt（包含RAG上下文和测试规划）
 
@@ -2751,15 +3363,15 @@ class GenerationService:
             rag_items: 原始RAG召回项（含source ID），用于在引用模板中注入带来源ID的上下文
         """
         # 如果是引用模板，使用带来源ID的RAG上下文
-        if prompt_type == 'generate_with_citation' and rag_items:
+        if prompt_type == "generate_with_citation" and rag_items:
             rag_context = self._build_rag_context_with_source_ids(rag_items)
 
         # 尝试从数据库加载指定类型的模板
         db_template = self._load_prompt_template(prompt_type)
 
         # 如果指定类型未找到且不是默认类型，回退到优化版模板
-        if not db_template and prompt_type != 'generate_optimized':
-            db_template = self._load_prompt_template('generate_optimized')
+        if not db_template and prompt_type != "generate_optimized":
+            db_template = self._load_prompt_template("generate_optimized")
 
         if db_template:
             # 使用数据库模板，替换占位符
@@ -2775,9 +3387,11 @@ class GenerationService:
                     test_plan_section = test_plan
 
                 # 替换占位符
-                prompt = db_template.replace('{requirement_content}', requirement_content)
-                prompt = prompt.replace('{rag_context}', rag_section)
-                prompt = prompt.replace('{test_plan}', test_plan_section)
+                prompt = db_template.replace(
+                    "{requirement_content}", requirement_content
+                )
+                prompt = prompt.replace("{rag_context}", rag_section)
+                prompt = prompt.replace("{test_plan}", test_plan_section)
 
                 print(f"[Prompt构建] 使用数据库模板生成prompt (类型: {prompt_type})")
                 return prompt
@@ -2804,64 +3418,67 @@ class GenerationService:
         """
         rag_context = ""
 
-        cases = rag_items.get('cases', [])
-        defects = rag_items.get('defects', [])
-        requirements = rag_items.get('requirements', [])
+        cases = rag_items.get("cases", [])
+        defects = rag_items.get("defects", [])
+        requirements = rag_items.get("requirements", [])
 
         if cases:
             rag_context += "\n\n## 召回的历史测试用例（请在生成时引用来源ID）\n"
             rag_context += "> 引用格式示例：`[citation: #CASE-001]`\n\n"
             for i, case in enumerate(cases, 1):
-                source_id = case.get('id', f'CASE-{i:03d}')
-                if not source_id.startswith('#'):
-                    source_id = f'#{source_id}'
+                source_id = case.get("id", f"CASE-{i:03d}")
+                if not source_id.startswith("#"):
+                    source_id = f"#{source_id}"
                 rag_context += f"### 历史用例 {i} (来源ID: `{source_id}`)\n"
-                rag_context += case.get('content', '')
+                rag_context += case.get("content", "")
                 rag_context += "\n\n"
 
         if defects:
             rag_context += "\n## 召回的历史缺陷场景（请在生成时引用来源ID）\n"
             rag_context += "> 引用格式示例：`[citation: #DEFECT-001]`\n\n"
             for i, defect in enumerate(defects, 1):
-                source_id = defect.get('id', f'DEFECT-{i:03d}')
-                if not source_id.startswith('#'):
-                    source_id = f'#{source_id}'
+                source_id = defect.get("id", f"DEFECT-{i:03d}")
+                if not source_id.startswith("#"):
+                    source_id = f"#{source_id}"
                 rag_context += f"### 历史缺陷 {i} (来源ID: `{source_id}`)\n"
-                rag_context += defect.get('content', '')
+                rag_context += defect.get("content", "")
                 rag_context += "\n\n"
 
         if requirements:
             rag_context += "\n## 召回的相似需求（请在生成时引用来源ID）\n"
             rag_context += "> 引用格式示例：`[citation: #REQ-001]`\n\n"
             for i, req in enumerate(requirements, 1):
-                source_id = req.get('id', f'REQ-{i:03d}')
-                if not source_id.startswith('#'):
-                    source_id = f'#{source_id}'
+                source_id = req.get("id", f"REQ-{i:03d}")
+                if not source_id.startswith("#"):
+                    source_id = f"#{source_id}"
                 rag_context += f"### 相关需求 {i} (来源ID: `{source_id}`)\n"
-                rag_context += req.get('content', '')
+                rag_context += req.get("content", "")
                 rag_context += "\n\n"
 
         return rag_context
-    
-    def _build_default_optimized_prompt(self, requirement_content: str,
-                                         rag_context: str,
-                                         test_plan: str,
-                                         requirement_analysis: Dict[str, Any]) -> str:
+
+    def _build_default_optimized_prompt(
+        self,
+        requirement_content: str,
+        rag_context: str,
+        test_plan: str,
+        requirement_analysis: Dict[str, Any],
+    ) -> str:
         """构建默认的优化生成Prompt（硬编码回退方案）"""
         prompt = f"""你是一位资深的功能测试专家，拥有10年以上测试经验，擅长基于场景法和等价类划分设计测试用例。请根据以下需求文档、RAG召回的历史数据和测试规划，生成高质量、高覆盖率的测试用例。
 
 ## 需求文档
 {requirement_content}
 """
-        
+
         # 添加RAG召回上下文（历史用例、缺陷、需求）
         if rag_context:
             prompt += rag_context
-        
+
         # 添加测试规划
         if test_plan:
             prompt += test_plan
-        
+
         prompt += """
 ## 测试用例设计原则
 
@@ -2921,31 +3538,34 @@ class GenerationService:
 
         return prompt
 
-    def _build_generation_prompt(self, requirement_content: str,
-                                  rag_context: str = "") -> str:
+    def _build_generation_prompt(
+        self, requirement_content: str, rag_context: str = ""
+    ) -> str:
         """
         构建生成Prompt（基础版）
-        
+
         优先从数据库加载模板，如果未找到则使用硬编码默认值
         """
         # 尝试从数据库加载基础版模板
-        db_template = self._load_prompt_template('generate')
-        
+        db_template = self._load_prompt_template("generate")
+
         if db_template:
             # 使用数据库模板，替换占位符
             try:
                 rag_section = ""
                 if rag_context:
                     rag_section = f"\n## 参考历史用例和缺陷\n{rag_context}\n"
-                
-                prompt = db_template.replace('{requirement_content}', requirement_content)
-                prompt = prompt.replace('{rag_context}', rag_section)
-                
+
+                prompt = db_template.replace(
+                    "{requirement_content}", requirement_content
+                )
+                prompt = prompt.replace("{rag_context}", rag_section)
+
                 print(f"[Prompt构建] 使用数据库基础版模板生成prompt")
                 return prompt
             except Exception as e:
                 print(f"[Prompt构建] 基础版数据库模板替换失败，使用默认模板: {e}")
-        
+
         # 默认硬编码模板（回退方案）
         prompt = f"""你是一位资深的功能测试专家，拥有10年以上测试经验。请根据以下需求文档，生成高质量、高覆盖率的测试用例。
 
@@ -3017,55 +3637,55 @@ class GenerationService:
 """
 
         return prompt
-    
+
     def _parse_markdown_cases(self, content: str) -> list:
         """
         解析Markdown文本协议格式的测试用例
-        
+
         格式示例：
         ## [P0] 用例标题
         [测试类型] 功能
         [前置条件] 前置条件描述
         [测试步骤] 1. 步骤1。2. 步骤2。3. 步骤3
         [预期结果] 1. 预期1。2. 预期2。3. 预期3
-        
+
         Args:
             content: LLM返回的Markdown内容
-            
+
         Returns:
             解析后的用例列表（JSON格式）
         """
         import re
-        
+
         if not content or not content.strip():
             return []
-        
+
         print("尝试Markdown格式解析...")
-        
+
         # 使用正则表达式匹配用例
         # 匹配模式：## [优先级] 标题\n[测试类型] xxx\n[前置条件] xxx\n[测试步骤] xxx\n[预期结果] xxx
-        case_pattern = r'##\s*\[([Pp]\d+)\]\s*(.+?)\n\s*\[测试类型\]\s*(.+?)\n\s*\[前置条件\]\s*(.+?)\n\s*\[测试步骤\]\s*(.+?)\n\s*\[预期结果\]\s*(.+?)(?=\n##\s*\[|$)'
-        
+        case_pattern = r"##\s*\[([Pp]\d+)\]\s*(.+?)\n\s*\[测试类型\]\s*(.+?)\n\s*\[前置条件\]\s*(.+?)\n\s*\[测试步骤\]\s*(.+?)\n\s*\[预期结果\]\s*(.+?)(?=\n##\s*\[|$)"
+
         matches = re.findall(case_pattern, content, re.DOTALL)
-        
+
         if not matches:
             # 尝试更宽松的匹配（可能没有前置条件）
-            case_pattern_loose = r'##\s*\[([Pp]\d+)\]\s*(.+?)\n\s*\[测试类型\]\s*(.+?)\n\s*(?:\[前置条件\]\s*(.+?)\n\s*)?\[测试步骤\]\s*(.+?)\n\s*\[预期结果\]\s*(.+?)(?=\n##\s*\[|$)'
+            case_pattern_loose = r"##\s*\[([Pp]\d+)\]\s*(.+?)\n\s*\[测试类型\]\s*(.+?)\n\s*(?:\[前置条件\]\s*(.+?)\n\s*)?\[测试步骤\]\s*(.+?)\n\s*\[预期结果\]\s*(.+?)(?=\n##\s*\[|$)"
             matches = re.findall(case_pattern_loose, content, re.DOTALL)
-        
+
         if not matches:
             print("未找到匹配的Markdown用例格式")
             return []
-        
+
         print(f"找到 {len(matches)} 个Markdown格式用例")
-        
+
         cases = []
         for idx, match in enumerate(matches):
             try:
                 priority = match[0].strip()
                 title = match[1].strip()
                 case_type = match[2].strip()
-                
+
                 # 前置条件（可能有也可能没有）
                 if len(match) == 6:
                     preconditions = match[3].strip() if match[3] else ""
@@ -3075,13 +3695,13 @@ class GenerationService:
                     preconditions = ""
                     test_steps_raw = match[3].strip() if match[3] else ""
                     expected_results_raw = match[4].strip()
-                
+
                 # 解析测试步骤（格式：1. xxx。2. xxx。3. xxx）
                 test_steps = self._parse_step_or_result(test_steps_raw)
-                
+
                 # 解析预期结果（格式：1. xxx。2. xxx。3. xxx）
                 expected_results = self._parse_step_or_result(expected_results_raw)
-                
+
                 # 构建用例字典
                 case = {
                     "case_id": f"TC_{idx+1:06d}",
@@ -3093,91 +3713,94 @@ class GenerationService:
                     "expected_results": expected_results,
                     "priority": priority.upper(),
                     "requirement_clause": "",
-                    "case_type": case_type
+                    "case_type": case_type,
                 }
-                
+
                 cases.append(case)
                 print(f"  成功解析用例 {idx+1}: {title[:50]}")
-                
+
             except Exception as e:
                 print(f"  解析用例 {idx+1} 失败: {e}")
                 continue
-        
+
         print(f"Markdown解析成功，返回 {len(cases)} 条用例")
         return cases
-    
+
     def _parse_step_or_result(self, text: str) -> list:
         """
         解析测试步骤或预期结果
-        
+
         支持格式：
         - 1. xxx。2. xxx。3. xxx
         - 1. xxx\n2. xxx\n3. xxx
         - 1、xxx。2、xxx
         - xxx。yyy。zzz（无序号）
-        
+
         Args:
             text: 原始文本
-            
+
         Returns:
             解析后的列表
         """
         import re
-        
+
         if not text or not text.strip():
             return []
-        
+
         # 清理文本
         text = text.strip()
-        
+
         # 尝试匹配带序号的格式：1. xxx 或 1、xxx
         # 模式：数字 + [.或、] + 内容 + [。或\n]
-        pattern = r'(\d+)[.、]\s*([^。.\n]+(?:。[^\n]*)?)'
+        pattern = r"(\d+)[.、]\s*([^。.\n]+(?:。[^\n]*)?)"
         matches = re.findall(pattern, text)
-        
+
         if matches:
             # 提取内容，保留序号
             items = [f"{num}. {content.strip('。.')}" for num, content in matches]
             return items
-        
+
         # 如果没有序号，按句号或换行分割
         # 按句号分割
-        if '。' in text:
-            items = [item.strip() for item in text.split('。') if item.strip()]
+        if "。" in text:
+            items = [item.strip() for item in text.split("。") if item.strip()]
             # 添加序号
             return [f"{i+1}. {item}" for i, item in enumerate(items)]
-        
+
         # 按换行分割
-        if '\n' in text:
-            items = [item.strip() for item in text.split('\n') if item.strip()]
+        if "\n" in text:
+            items = [item.strip() for item in text.split("\n") if item.strip()]
             return [f"{i+1}. {item}" for i, item in enumerate(items)]
-        
+
         # 只有单条内容
         if text:
-            return [f"1. {text.strip('。.')}" ]
-        
+            return [f"1. {text.strip('。.')}"]
+
         return []
-    
+
     def _parse_generated_cases(self, content: str) -> list:
         """解析LLM生成的用例"""
         if not content or not content.strip():
             print("警告: LLM返回内容为空")
             return []
-        
+
         # 保存原始响应到日志文件以便调试
         try:
             import os
-            log_dir = 'data'
+
+            log_dir = "data"
             os.makedirs(log_dir, exist_ok=True)
-            log_path = os.path.join(log_dir, 'llm_response.log')
-            with open(log_path, 'w', encoding='utf-8') as f:
-                f.write(f"[{datetime.now().isoformat()}] LLM响应长度: {len(content)}字符\n")
+            log_path = os.path.join(log_dir, "llm_response.log")
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write(
+                    f"[{datetime.now().isoformat()}] LLM响应长度: {len(content)}字符\n"
+                )
                 f.write(f"前2000字符:\n{content[:2000]}\n")
                 f.write(f"\n后2000字符:\n{content[-2000:]}\n")
             print(f"LLM原始响应已保存到: {log_path}")
         except Exception as e:
             print(f"保存LLM响应日志失败: {e}")
-            
+
         # 尝试1: 直接解析JSON
         try:
             cases = json.loads(content)
@@ -3192,11 +3815,12 @@ class GenerationService:
                         return cases[key]
         except json.JSONDecodeError as e:
             print(f"直接JSON解析失败: {e}")
-        
+
         # 尝试2: 查找JSON代码块（```json ... ```）
         try:
             import re
-            json_block_pattern = r'```(?:json)?\s*\n?([\s\S]*?)\n?\s*```'
+
+            json_block_pattern = r"```(?:json)?\s*\n?([\s\S]*?)\n?\s*```"
             matches = re.findall(json_block_pattern, content)
             if matches:
                 print(f"找到 {len(matches)} 个JSON代码块")
@@ -3210,7 +3834,9 @@ class GenerationService:
                         elif isinstance(cases, dict):
                             for key in ["test_cases", "testCases", "cases", "data"]:
                                 if key in cases and isinstance(cases[key], list):
-                                    print(f"从JSON代码块dict['{key}']解析到 {len(cases[key])} 条用例")
+                                    print(
+                                        f"从JSON代码块dict['{key}']解析到 {len(cases[key])} 条用例"
+                                    )
                                     return cases[key]
                     except json.JSONDecodeError as e:
                         print(f"第 {idx+1} 个JSON代码块解析失败: {e}")
@@ -3223,13 +3849,13 @@ class GenerationService:
                                 return fixed_match
         except Exception as e:
             print(f"JSON代码块解析失败: {e}")
-        
+
         # 尝试3: 查找方括号包裹的内容
         try:
-            start = content.find('[')
-            end = content.rfind(']')
+            start = content.find("[")
+            end = content.rfind("]")
             if start != -1 and end != -1 and end > start:
-                json_str = content[start:end+1]
+                json_str = content[start : end + 1]
                 print(f"尝试方括号解析 (长度: {len(json_str)}字符)")
                 # 如果太长，尝试智能修复
                 if len(json_str) > 10000:
@@ -3244,31 +3870,35 @@ class GenerationService:
                         return cases
         except json.JSONDecodeError as e:
             print(f"方括号JSON解析失败: {e}")
-        
+
         # 尝试4: 查找花括号对象
         try:
-            start = content.find('{')
-            end = content.rfind('}')
+            start = content.find("{")
+            end = content.rfind("}")
             if start != -1 and end != -1 and end > start:
-                json_str = content[start:end+1]
+                json_str = content[start : end + 1]
                 print(f"尝试花括号解析 (长度: {len(json_str)}字符)")
                 if len(json_str) > 10000:
                     obj = self._try_fix_json(json_str, expect_dict=True)
                     if obj:
                         for key in ["test_cases", "testCases", "cases", "data"]:
                             if key in obj and isinstance(obj[key], list):
-                                print(f"从花括号dict['{key}']解析到 {len(obj[key])} 条用例")
+                                print(
+                                    f"从花括号dict['{key}']解析到 {len(obj[key])} 条用例"
+                                )
                                 return obj[key]
                 else:
                     obj = json.loads(json_str)
                     if isinstance(obj, dict):
                         for key in ["test_cases", "testCases", "cases", "data"]:
                             if key in obj and isinstance(obj[key], list):
-                                print(f"从花括号dict['{key}']解析到 {len(obj[key])} 条用例")
+                                print(
+                                    f"从花括号dict['{key}']解析到 {len(obj[key])} 条用例"
+                                )
                                 return obj[key]
         except json.JSONDecodeError as e:
             print(f"花括号JSON解析失败: {e}")
-        
+
         # 尝试5: 解析Markdown文本协议格式（testcase-generator标准格式）
         try:
             markdown_cases = self._parse_markdown_cases(content)
@@ -3277,12 +3907,12 @@ class GenerationService:
                 return markdown_cases
         except Exception as e:
             print(f"Markdown格式解析失败: {e}")
-        
+
         # 返回空列表
         print("所有解析方法均失败，返回空列表")
         print(f"提示：请检查 data/llm_response.log 查看LLM原始响应")
         return []
-    
+
     def _try_fix_json(self, json_str: str, expect_dict: bool = False) -> any:
         """
         尝试修复不完整的JSON
@@ -3290,7 +3920,7 @@ class GenerationService:
         """
         try:
             import re
-            
+
             # 策略1: 尝试找到最后一个完整的对象或数组
             # 从后向前扫描，找到匹配的括号
             if expect_dict:
@@ -3298,32 +3928,32 @@ class GenerationService:
                 depth = 0
                 last_valid_end = -1
                 for i, char in enumerate(json_str):
-                    if char == '{':
+                    if char == "{":
                         depth += 1
-                    elif char == '}':
+                    elif char == "}":
                         depth -= 1
                         if depth == 0:
                             last_valid_end = i
-                
+
                 if last_valid_end > 0:
-                    candidate = json_str[:last_valid_end+1]
+                    candidate = json_str[: last_valid_end + 1]
                     return json.loads(candidate)
             else:
                 # 找 [ ... ]
                 depth = 0
                 last_valid_end = -1
                 for i, char in enumerate(json_str):
-                    if char == '[':
+                    if char == "[":
                         depth += 1
-                    elif char == ']':
+                    elif char == "]":
                         depth -= 1
                         if depth == 0:
                             last_valid_end = i
-                
+
                 if last_valid_end > 0:
-                    candidate = json_str[:last_valid_end+1]
+                    candidate = json_str[: last_valid_end + 1]
                     return json.loads(candidate)
-            
+
             # 策略2: 尝试找到所有独立的JSON对象
             pattern = r'\{[^{}]*"case_id"[^{}]*\}'
             matches = re.findall(pattern, json_str)
@@ -3338,12 +3968,12 @@ class GenerationService:
                         pass
                 if cases:
                     return cases
-            
+
             return None
         except Exception as e:
             print(f"JSON修复失败: {e}")
             return None
-    
+
     def _mock_generate_cases(self, requirement_content: str) -> list:
         """模拟生成用例（无LLM时使用）"""
         return [
@@ -3357,43 +3987,47 @@ class GenerationService:
                 "expected_results": ["操作执行成功", "系统显示正确结果"],
                 "priority": "P1",
                 "requirement_clause": "REQ-001",
-                "case_type": "功能"
+                "case_type": "功能",
             }
         ]
-    
+
     def _log_llm_response(self, prompt: str, response):
         """记录LLM响应详细日志到文件"""
         import os
         from datetime import datetime
-        
-        log_dir = 'data'
+
+        log_dir = "data"
         os.makedirs(log_dir, exist_ok=True)
-        log_file = os.path.join(log_dir, 'llm_response.log')
-        
+        log_file = os.path.join(log_dir, "llm_response.log")
+
         try:
-            with open(log_file, 'a', encoding='utf-8') as f:
-                f.write("\n" + "="*80 + "\n")
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write("\n" + "=" * 80 + "\n")
                 f.write(f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                 f.write(f"模型: {response.model}\n")
                 f.write(f"成功: {response.success}\n")
                 f.write(f"错误: {response.error_message}\n")
                 f.write(f"响应长度: {len(response.content)} 字符\n")
-                f.write("-"*80 + "\n")
+                f.write("-" * 80 + "\n")
                 f.write("Prompt (前500字符):\n")
                 f.write(prompt[:500] + "...\n")
-                f.write("-"*80 + "\n")
+                f.write("-" * 80 + "\n")
                 f.write("LLM完整响应:\n")
                 f.write(response.content + "\n")
-                f.write("="*80 + "\n\n")
+                f.write("=" * 80 + "\n\n")
             print(f"LLM响应日志已保存到: {log_file}")
         except Exception as e:
             print(f"保存日志失败: {e}")
-    
-    def _execute_quality_review(self, test_cases: list, requirement_content: str, 
-                                requirement_analysis: Dict[str, Any]) -> Dict[str, Any]:
+
+    def _execute_quality_review(
+        self,
+        test_cases: list,
+        requirement_content: str,
+        requirement_analysis: Dict[str, Any],
+    ) -> Dict[str, Any]:
         """
         质量评审Agent - 对生成的测试用例进行质量评审
-        
+
         基于testcase-generator标准的质量评审流程：
         1. 引导错误过滤（一票否决）
         2. 六大维度评估
@@ -3401,17 +4035,17 @@ class GenerationService:
         4. 重复检测
         5. 待确认需求清单
         6. 可扩展用例建议
-        
+
         Args:
             test_cases: 生成的测试用例列表
             requirement_content: 原始需求内容
             requirement_analysis: 需求分析结果
-            
+
         Returns:
             质量评审报告
         """
         print("[质量评审] 开始执行质量评审...")
-        
+
         # 构建评审prompt
         review_prompt = f"""你是一位资深质量评审专家，请对以下测试用例进行质量评审。
 
@@ -3428,10 +4062,12 @@ class GenerationService:
 """
         # 添加用例摘要（避免prompt过长）
         for idx, case in enumerate(test_cases[:20], 1):  # 只显示前20条
-            review_prompt += f"{idx}. [{case.get('priority', 'N/A')}] {case.get('name', 'N/A')}\n"
+            review_prompt += (
+                f"{idx}. [{case.get('priority', 'N/A')}] {case.get('name', 'N/A')}\n"
+            )
             if len(test_cases) > 20:
                 review_prompt += f"... (还有{len(test_cases)-20}条用例)\n"
-        
+
         review_prompt += """
 ## 评审要求
 
@@ -3504,42 +4140,43 @@ class GenerationService:
 }}
 ```
 """
-        
+
         # 调用LLM进行评审
         try:
             adapter = self.llm_manager.get_adapter()
             response = adapter.generate(
-                review_prompt,
-                temperature=0.3,
-                max_tokens=4096,
-                timeout=60
+                review_prompt, temperature=0.3, max_tokens=4096, timeout=60
             )
-            
+
             if not response.success:
                 raise Exception(f"LLM评审失败: {response.error_message}")
-            
+
             # 解析评审结果
             import json
             import re
-            
+
             content = response.content
-            
+
             # 尝试提取JSON
             try:
                 review_result = json.loads(content)
             except:
                 # 尝试从代码块中提取
-                json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', content)
+                json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", content)
                 if json_match:
                     review_result = json.loads(json_match.group(1))
                 else:
                     raise Exception("无法解析评审结果JSON")
-            
-            print(f"[质量评审] 评审完成 - 结论: {review_result.get('conclusion', 'N/A')}")
-            print(f"[质量评审] 总体评分: {review_result.get('overall_score', 'N/A')}/100")
-            
+
+            print(
+                f"[质量评审] 评审完成 - 结论: {review_result.get('conclusion', 'N/A')}"
+            )
+            print(
+                f"[质量评审] 总体评分: {review_result.get('overall_score', 'N/A')}/100"
+            )
+
             return review_result
-            
+
         except Exception as e:
             print(f"[质量评审] 评审失败: {e}")
             # 返回简化的评审结果
@@ -3547,20 +4184,20 @@ class GenerationService:
                 "pass": True,  # 默认通过，不阻塞流程
                 "overall_score": "N/A",
                 "conclusion": f"自动评审失败: {str(e)}",
-                "error": str(e)
+                "error": str(e),
             }
 
 
 class IncrementalUpdateService:
     """增量更新服务"""
-    
+
     def __init__(self, generation_service: GenerationService):
         self.generation_service = generation_service
-    
+
     def detect_changes(self, old_content: str, new_content: str) -> Dict[str, Any]:
         """
         检测文档变更
-        
+
         Returns:
             {
                 "has_changes": bool,
@@ -3570,49 +4207,53 @@ class IncrementalUpdateService:
             }
         """
         # 简化实现：按段落对比
-        old_paragraphs = set(p.strip() for p in old_content.split('\n') if p.strip())
-        new_paragraphs = set(p.strip() for p in new_content.split('\n') if p.strip())
-        
+        old_paragraphs = set(p.strip() for p in old_content.split("\n") if p.strip())
+        new_paragraphs = set(p.strip() for p in new_content.split("\n") if p.strip())
+
         added = new_paragraphs - old_paragraphs
         removed = old_paragraphs - new_paragraphs
-        
+
         return {
             "has_changes": bool(added or removed),
             "added_sections": list(added),
             "removed_sections": list(removed),
-            "modified_sections": []
+            "modified_sections": [],
         }
-    
-    def generate_incremental_cases(self, task_id: str, 
-                                   old_cases: list,
-                                   changes: Dict[str, Any]) -> str:
+
+    def generate_incremental_cases(
+        self, task_id: str, old_cases: list, changes: Dict[str, Any]
+    ) -> str:
         """
         生成增量用例
-        
+
         Returns:
             新任务ID
         """
         # 创建增量更新任务
-        new_task_id = self.generation_service.create_task(0)  # requirement_id=0表示增量任务
-        
+        new_task_id = self.generation_service.create_task(
+            0
+        )  # requirement_id=0表示增量任务
+
         def run_incremental():
             try:
                 self.generation_service.start_task(new_task_id)
-                
+
                 # 基于变更生成增量用例
                 # 实际实现中应调用LLM进行增量生成
-                
-                self.generation_service.complete_task(new_task_id, {
-                    "incremental_cases": [],
-                    "unchanged_cases": old_cases,
-                    "changes": changes
-                })
+
+                self.generation_service.complete_task(
+                    new_task_id,
+                    {
+                        "incremental_cases": [],
+                        "unchanged_cases": old_cases,
+                        "changes": changes,
+                    },
+                )
             except Exception as e:
                 self.generation_service.fail_task(new_task_id, str(e))
-        
+
         thread = threading.Thread(target=run_incremental)
         thread.daemon = True
         thread.start()
-        
-        return new_task_id
 
+        return new_task_id

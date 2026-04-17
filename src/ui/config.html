@@ -1042,7 +1042,7 @@
         <main class="main-content">
             <div class="header">
                 <h1>AI模型配置</h1>
-                <button class="btn btn-primary" onclick="openAddModal()">+ 添加配置</button>
+                <button class="btn btn-primary" onclick="openAddModal()" title="添加配置" aria-label="添加配置">➕</button>
             </div>
 
             <div class="info-box">
@@ -1156,9 +1156,9 @@
                 <div class="test-result" id="testResult"></div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal()">取消</button>
-                <button class="btn btn-success" onclick="testConnection()">测试连接</button>
-                <button class="btn btn-primary" onclick="saveConfig()">保存</button>
+                <button class="btn btn-secondary" onclick="closeModal()" title="取消" aria-label="取消">✖️</button>
+                <button class="btn btn-success" onclick="testConnection()" title="测试连接" aria-label="测试连接">🔗</button>
+                <button class="btn btn-primary" onclick="saveConfig()" title="保存" aria-label="保存">💾</button>
             </div>
         </div>
     </div>
@@ -1298,10 +1298,10 @@
                         </div>
                     </div>
                     <div class="config-actions">
-                        <button class="btn btn-secondary" onclick="testConfigFromList(${c.id})">测试</button>
-                        <button class="btn btn-secondary" onclick="editConfig(${c.id})">编辑</button>
-                        ${!c.is_default ? `<button class="btn btn-secondary" onclick="setDefault(${c.id})">设为默认</button>` : `<button class="btn btn-secondary" onclick="unsetDefault(${c.id})">取消默认</button>`}
-                        <button class="btn btn-secondary" onclick="deleteConfig(${c.id})">删除</button>
+                        <button class="btn btn-secondary" onclick="testConfigFromList(${c.id})" title="测试连接" aria-label="测试连接">🔗</button>
+                        <button class="btn btn-secondary" onclick="editConfig(${c.id})" title="编辑" aria-label="编辑">✏️</button>
+                        ${!c.is_default ? `<button class="btn btn-secondary" onclick="setDefault(${c.id})" title="设为默认" aria-label="设为默认">⭐</button>` : `<button class="btn btn-secondary" onclick="unsetDefault(${c.id})" title="取消默认" aria-label="取消默认">☆</button>`}
+                        <button class="btn btn-secondary" onclick="deleteConfig(${c.id})" title="删除" aria-label="删除">🗑️</button>
                     </div>
                 </div>
             `).join('');
@@ -1544,14 +1544,13 @@
                 return;
             }
 
-            // 找到对应的测试按钮
-            const configItem = event.target.closest('.config-item');
-            const testBtn = configItem.querySelector('.btn-test');
+            // 通过event.target直接获取点击的测试按钮
+            const testBtn = event.target.closest('button[title="测试连接"]') || event.target.closest('button[aria-label="测试连接"]');
             if (!testBtn) return;
 
             // 设置loading状态
             testBtn.disabled = true;
-            const originalText = testBtn.textContent;
+            const originalHTML = testBtn.innerHTML;
             testBtn.innerHTML = '<span class="spinner"></span>';
 
             try {
@@ -1580,7 +1579,7 @@
             } finally {
                 // 恢复按钮状态
                 testBtn.disabled = false;
-                testBtn.textContent = originalText;
+                testBtn.innerHTML = originalHTML;
             }
         }
 

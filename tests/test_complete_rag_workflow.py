@@ -139,7 +139,7 @@ def test_complete_rag_workflow():
     # 测试RAG召回
     print("\n[Step 7] Testing RAG recall...")
     if vector_store:
-        rag_context, rag_stats = gen_service._perform_rag_recall(
+        rag_context, rag_stats, rag_context_data = gen_service._perform_rag_recall(
             test_requirement_content,
             analysis_result,
             top_k_cases=5,
@@ -151,9 +151,11 @@ def test_complete_rag_workflow():
         print(f"    - Defects recalled: {rag_stats['defects']}")
         print(f"    - Requirements recalled: {rag_stats['requirements']}")
         print(f"  RAG context length: {len(rag_context)} characters")
+        print(f"  Retrieval mode: {rag_context_data.get('retrieval_mode', 'N/A')}")
     else:
         rag_context = ""
         rag_stats = {"cases": 0, "defects": 0, "requirements": 0}
+        rag_context_data = {}
         print("  Skipped (vector store not available)")
     
     # 测试测试规划

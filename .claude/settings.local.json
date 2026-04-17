@@ -10,7 +10,10 @@
       "Bash(python src/database/migrations/v2_citation_prompt.py data/testgen.db 2>&1)",
       "Bash(python -c \"import src.services.confidence_calculator; import src.services.citation_parser; import src.database.models; import src.case_generator.exporter; print\\('All imports OK'\\)\" 2>&1)",
       "Bash(python -c \"import src.services.generation_service; print\\('generation_service OK'\\)\" 2>&1)",
-      "Bash(python -c \"import src.api.routes; print\\('routes OK'\\)\" 2>&1)"
+      "Bash(python -c \"import src.api.routes; print\\('routes OK'\\)\" 2>&1)",
+      "Bash(python -m pytest tests/test_confidence_api.py -v 2>&1 | tail -15)",
+      "Bash(python -m pytest tests/test_confidence_calculator.py tests/test_citation_parser.py tests/test_confidence_api.py -v 2>&1 | tail -8)",
+      "Bash(python -m pytest tests/test_confidence_calculator.py tests/test_citation_parser.py tests/test_confidence_api.py -v 2>&1 | grep -E \"PASSED|FAILED|ERROR|passed|failed\")"
     ]
   }
 }

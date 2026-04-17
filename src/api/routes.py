@@ -7,7 +7,10 @@ API路由定义 - RESTful接口
 
 import os
 import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+sys.path.append(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 
 from flask import Blueprint, request, jsonify, send_from_directory, send_file
 from werkzeug.utils import secure_filename
@@ -16,7 +19,7 @@ import json
 import tempfile
 
 # 创建蓝图
-api_bp = Blueprint('api', __name__, url_prefix='/api')
+api_bp = Blueprint("api", __name__, url_prefix="/api")
 
 # 全局服务实例（将在应用初始化时注入）
 db_session = None
@@ -36,12 +39,13 @@ def init_services(db, llm, vector, gen_service):
 
 # ==================== 需求管理接口 ====================
 
-@api_bp.route('/requirements', methods=['POST'])
+
+@api_bp.route("/requirements", methods=["POST"])
 def create_requirement():
     """
     创建新需求
     POST /api/requirements
-    
+
     Request Body:
     {
         "title": "需求标题",
@@ -51,36 +55,41 @@ def create_requirement():
     """
     try:
         data = request.json
-        
-        if not data or 'title' not in data or 'content' not in data:
+
+        if not data or "title" not in data or "content" not in data:
             return jsonify({"error": "缺少必要字段: title, content"}), 400
-        
+
         # 创建需求记录
         from src.database.models import Requirement, RequirementStatus
-        
+
         requirement = Requirement(
-            title=data['title'],
-            content=data['content'],
-            source_file=data.get('source_file'),
-            status=RequirementStatus.PENDING
+            title=data["title"],
+            content=data["content"],
+            source_file=data.get("source_file"),
+            status=RequirementStatus.PENDING,
         )
-        
+
         db_session.add(requirement)
         db_session.commit()
-        
-        return jsonify({
-            "id": requirement.id,
-            "title": requirement.title,
-            "status": requirement.status.value,
-            "message": "需求创建成功"
-        }), 201
-        
+
+        return (
+            jsonify(
+                {
+                    "id": requirement.id,
+                    "title": requirement.title,
+                    "status": requirement.status.value,
+                    "message": "需求创建成功",
+                }
+            ),
+            201,
+        )
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/requirements', methods=['GET'])
+@api_bp.route("/requirements", methods=["GET"])
 def list_requirements():
     """
     查询需求列表
@@ -88,57 +97,74 @@ def list_requirements():
     """
     try:
         from src.database.models import Requirement
-        
-        page = request.args.get('page', 1, type=int)
-        limit = request.args.get('limit', 10, type=int)
-        
+
+        page = request.args.get("page", 1, type=int)
+        limit = request.args.get("limit", 10, type=int)
+
         query = db_session.query(Requirement).order_by(Requirement.created_at.desc())
         total = query.count()
         requirements = query.offset((page - 1) * limit).limit(limit).all()
-        
-        return jsonify({
-            "items": [{
-                "id": r.id,
-                "title": r.title,
-                "status": r.status.value,
-                "created_at": r.created_at.isoformat() if r.created_at else None
-            } for r in requirements],
-            "total": total,
-            "page": page,
-            "limit": limit
-        })
-        
+
+        return jsonify(
+            {
+                "items": [
+                    {
+                        "id": r.id,
+                        "title": r.title,
+                        "status": r.status.value,
+                        "created_at": (
+                            r.created_at.isoformat() if r.created_at else None
+                        ),
+                    }
+                    for r in requirements
+                ],
+                "total": total,
+                "page": page,
+                "limit": limit,
+            }
+        )
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/requirements/<int:requirement_id>', methods=['GET'])
+@api_bp.route("/requirements/<int:requirement_id>", methods=["GET"])
 def get_requirement(requirement_id):
     """获取需求详情"""
     try:
         from src.database.models import Requirement
-        
+
         requirement = db_session.query(Requirement).get(requirement_id)
         if not requirement:
             return jsonify({"error": "需求不存在"}), 404
-        
-        return jsonify({
-            "id": requirement.id,
-            "title": requirement.title,
-            "content": requirement.content,
-            "status": requirement.status.value,
-            "source_file": requirement.source_file,
-            "created_at": requirement.created_at.isoformat() if requirement.created_at else None,
-            "updated_at": requirement.updated_at.isoformat() if requirement.updated_at else None
-        })
-        
+
+        return jsonify(
+            {
+                "id": requirement.id,
+                "title": requirement.title,
+                "content": requirement.content,
+                "status": requirement.status.value,
+                "source_file": requirement.source_file,
+                "created_at": (
+                    requirement.created_at.isoformat()
+                    if requirement.created_at
+                    else None
+                ),
+                "updated_at": (
+                    requirement.updated_at.isoformat()
+                    if requirement.updated_at
+                    else None
+                ),
+            }
+        )
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/requirements/<int:requirement_id>', methods=['PATCH'])
+@api_bp.route("/requirements/<int:requirement_id>", methods=["PATCH"])
 def update_requirement(requirement_id):
     """
     更新需求
@@ -153,73 +179,158 @@ def update_requirement(requirement_id):
 
         data = request.json
 
-        if 'title' in data:
-            requirement.title = data['title']
-        if 'content' in data:
-            requirement.content = data['content']
+        if "title" in data:
+            requirement.title = data["title"]
+        if "content" in data:
+            requirement.content = data["content"]
 
         db_session.commit()
 
-        return jsonify({
-            "message": "需求更新成功",
-            "requirement": {
-                "id": requirement.id,
-                "title": requirement.title,
-                "content": requirement.content,
-                "created_at": requirement.created_at.isoformat() if requirement.created_at else None
+        return jsonify(
+            {
+                "message": "需求更新成功",
+                "requirement": {
+                    "id": requirement.id,
+                    "title": requirement.title,
+                    "content": requirement.content,
+                    "created_at": (
+                        requirement.created_at.isoformat()
+                        if requirement.created_at
+                        else None
+                    ),
+                },
             }
-        })
+        )
 
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/requirements/<int:requirement_id>', methods=['DELETE'])
+@api_bp.route("/requirements/<int:requirement_id>", methods=["DELETE"])
 def delete_requirement(requirement_id):
-    """删除需求"""
+    """删除需求（不删除关联的测试用例和生成任务）"""
     try:
-        from src.database.models import Requirement
-        
+        from src.database.models import (
+            Requirement,
+            TestCase,
+            GenerationTask as GenerationTaskModel,
+        )
+
         requirement = db_session.query(Requirement).get(requirement_id)
         if not requirement:
             return jsonify({"error": "需求不存在"}), 404
+
+        # 统计关联的测试用例和生成任务数量（但不删除）
+        case_count = (
+            db_session.query(TestCase)
+            .filter(TestCase.requirement_id == requirement_id)
+            .count()
+        )
+        task_count = (
+            db_session.query(GenerationTaskModel)
+            .filter(GenerationTaskModel.requirement_id == requirement_id)
+            .count()
+        )
+
+        # 将关联的用例和任务的requirement_id设置为NULL
+        if case_count > 0:
+            db_session.query(TestCase).filter(
+                TestCase.requirement_id == requirement_id
+            ).update({"requirement_id": None}, synchronize_session=False)
         
+        if task_count > 0:
+            db_session.query(GenerationTaskModel).filter(
+                GenerationTaskModel.requirement_id == requirement_id
+            ).update({"requirement_id": None}, synchronize_session=False)
+
         db_session.delete(requirement)
         db_session.commit()
-        
-        return jsonify({"message": "需求删除成功"})
-        
-    except Exception as e:
-        db_session.rollback()
-        return jsonify({"error": str(e)}), 500
 
+        message = "需求删除成功"
+        if case_count > 0:
+            message += f"，{case_count} 条测试用例已解除关联"
+        if task_count > 0:
+            message += f"，{task_count} 条生成任务已解除关联"
 
-@api_bp.route('/requirements/batch-delete', methods=['POST'])
-def batch_delete_requirements():
-    """批量删除需求"""
-    try:
-        from src.database.models import Requirement
-        
-        data = request.json
-        if not data or 'ids' not in data:
-            return jsonify({"error": "缺少ids字段"}), 400
-        
-        ids = data['ids']
-        deleted = db_session.query(Requirement).filter(Requirement.id.in_(ids)).delete(synchronize_session=False)
-        db_session.commit()
-        
         return jsonify({
-            "message": f"成功删除 {deleted} 条需求",
-            "deleted_count": deleted
+            "message": message,
+            "disassociated_cases": case_count,
+            "disassociated_tasks": task_count
         })
-        
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/requirements/list-all', methods=['GET'])
+@api_bp.route("/requirements/batch-delete", methods=["POST"])
+def batch_delete_requirements():
+    """批量删除需求（解除关联，不删除测试用例和生成任务）"""
+    try:
+        from src.database.models import (
+            Requirement,
+            TestCase,
+            GenerationTask as GenerationTaskModel,
+        )
+
+        data = request.json
+        if not data or "ids" not in data:
+            return jsonify({"error": "缺少ids字段"}), 400
+
+        ids = data["ids"]
+
+        # 统计关联数量
+        case_count = (
+            db_session.query(TestCase)
+            .filter(TestCase.requirement_id.in_(ids))
+            .count()
+        )
+        task_count = (
+            db_session.query(GenerationTaskModel)
+            .filter(GenerationTaskModel.requirement_id.in_(ids))
+            .count()
+        )
+
+        # 解除关联（不删除）
+        if case_count > 0:
+            db_session.query(TestCase).filter(
+                TestCase.requirement_id.in_(ids)
+            ).update({"requirement_id": None}, synchronize_session=False)
+        
+        if task_count > 0:
+            db_session.query(GenerationTaskModel).filter(
+                GenerationTaskModel.requirement_id.in_(ids)
+            ).update({"requirement_id": None}, synchronize_session=False)
+
+        deleted = (
+            db_session.query(Requirement)
+            .filter(Requirement.id.in_(ids))
+            .delete(synchronize_session=False)
+        )
+        db_session.commit()
+
+        message = f"成功删除 {deleted} 条需求"
+        if case_count > 0:
+            message += f"，{case_count} 条测试用例已解除关联"
+        if task_count > 0:
+            message += f"，{task_count} 条生成任务已解除关联"
+
+        return jsonify(
+            {
+                "message": message,
+                "deleted_count": deleted,
+                "disassociated_cases": case_count,
+                "disassociated_tasks": task_count,
+            }
+        )
+
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/requirements/list-all", methods=["GET"])
 def list_all_requirements():
     """
     查询所有需求（不分页，用于RAG导入）
@@ -227,20 +338,25 @@ def list_all_requirements():
     """
     try:
         from src.database.models import Requirement
-        
+
         requirements = db_session.query(Requirement).all()
-        
-        return jsonify({
-            "items": [{
-                "id": r.id,
-                "title": r.title,
-                "content": r.content,
-                "version": r.version,
-                "status": r.status.value if r.status else None,
-                "source_file": r.source_file
-            } for r in requirements]
-        })
-        
+
+        return jsonify(
+            {
+                "items": [
+                    {
+                        "id": r.id,
+                        "title": r.title,
+                        "content": r.content,
+                        "version": r.version,
+                        "status": r.status.value if r.status else None,
+                        "source_file": r.source_file,
+                    }
+                    for r in requirements
+                ]
+            }
+        )
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -248,7 +364,8 @@ def list_all_requirements():
 
 # ==================== 缺陷管理接口 ====================
 
-@api_bp.route('/defects', methods=['GET'])
+
+@api_bp.route("/defects", methods=["GET"])
 def list_defects():
     """
     查询缺陷列表
@@ -256,29 +373,34 @@ def list_defects():
     """
     try:
         from src.database.models import Defect
-        
-        page = request.args.get('page', 1, type=int)
-        limit = request.args.get('limit', 100, type=int)
-        
+
+        page = request.args.get("page", 1, type=int)
+        limit = request.args.get("limit", 100, type=int)
+
         query = db_session.query(Defect)
         total = query.count()
         defects = query.offset((page - 1) * limit).limit(limit).all()
-        
-        return jsonify({
-            "items": [{
-                "id": d.id,
-                "defect_id": d.defect_id,
-                "title": d.title,
-                "module": d.module,
-                "description": d.description,
-                "status": d.status,
-                "related_case_id": d.related_case_id
-            } for d in defects],
-            "total": total,
-            "page": page,
-            "limit": limit
-        })
-        
+
+        return jsonify(
+            {
+                "items": [
+                    {
+                        "id": d.id,
+                        "defect_id": d.defect_id,
+                        "title": d.title,
+                        "module": d.module,
+                        "description": d.description,
+                        "status": d.status,
+                        "related_case_id": d.related_case_id,
+                    }
+                    for d in defects
+                ],
+                "total": total,
+                "page": page,
+                "limit": limit,
+            }
+        )
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -286,17 +408,18 @@ def list_defects():
 
 # ==================== 用例生成接口 ====================
 
-@api_bp.route('/generate', methods=['POST'])
+
+@api_bp.route("/generate", methods=["POST"])
 def trigger_generation():
     """
     触发AI生成用例 - 阶段1：需求分析+测试规划
     POST /api/generate
-    
+
     Request Body:
     {
         "requirement_id": 1
     }
-    
+
     Returns:
     {
         "task_id": "task_xxx",
@@ -311,57 +434,62 @@ def trigger_generation():
     """
     try:
         data = request.json
-        
-        if not data or 'requirement_id' not in data:
+
+        if not data or "requirement_id" not in data:
             return jsonify({"error": "缺少必要字段: requirement_id"}), 400
-        
-        requirement_id = data['requirement_id']
-        
+
+        requirement_id = data["requirement_id"]
+
         # 获取需求内容
         from src.database.models import Requirement, RequirementStatus
+
         requirement = db_session.query(Requirement).get(requirement_id)
-        
+
         if not requirement:
             return jsonify({"error": "需求不存在"}), 404
-        
+
         # 创建生成任务
         task_id = generation_service.create_task(requirement_id)
-        
+
         # 更新需求状态
         requirement.status = RequirementStatus.PROCESSING
         db_session.commit()
-        
+
         # 执行阶段1：需求分析+测试规划（同步执行，快速返回）
         analysis_result = generation_service.execute_phase1_analysis(
-            task_id,
-            requirement.content
+            task_id, requirement.content
         )
-        
-        return jsonify({
-            "task_id": task_id,
-            "requirement_id": requirement_id,
-            "analysis_result": analysis_result,
-            "status": "awaiting_review",
-            "message": "需求分析完成，请评审后继续"
-        }), 200
-        
+
+        return (
+            jsonify(
+                {
+                    "task_id": task_id,
+                    "requirement_id": requirement_id,
+                    "analysis_result": analysis_result,
+                    "status": "awaiting_review",
+                    "message": "需求分析完成，请评审后继续",
+                }
+            ),
+            200,
+        )
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/generate/continue', methods=['POST'])
+@api_bp.route("/generate/continue", methods=["POST"])
 def continue_generation():
     """
     继续生成用例 - 阶段2：RAG检索+LLM生成
     POST /api/generate/continue
-    
+
     Request Body:
     {
         "task_id": "task_xxx",
         "reviewed_plan": {...}  # 用户评审后的测试规划（可能已编辑）
     }
-    
+
     Returns:
     {
         "task_id": "task_xxx",
@@ -371,48 +499,50 @@ def continue_generation():
     """
     try:
         data = request.json
-        
-        if not data or 'task_id' not in data:
+
+        if not data or "task_id" not in data:
             return jsonify({"error": "缺少必要字段: task_id"}), 400
-        
-        task_id = data['task_id']
-        reviewed_plan = data.get('reviewed_plan')  # 用户可能编辑过的规划
-        
+
+        task_id = data["task_id"]
+        reviewed_plan = data.get("reviewed_plan")  # 用户可能编辑过的规划
+
         # 获取任务
         task = generation_service.get_task(task_id)
         if not task:
             return jsonify({"error": "任务不存在"}), 404
-        
+
         # 异步执行阶段2：RAG检索+LLM生成
-        generation_service.execute_phase2_generation(
-            task_id,
-            reviewed_plan
+        generation_service.execute_phase2_generation(task_id, reviewed_plan)
+
+        return (
+            jsonify(
+                {
+                    "task_id": task_id,
+                    "status": "processing",
+                    "message": "生成任务已继续执行",
+                }
+            ),
+            202,
         )
-        
-        return jsonify({
-            "task_id": task_id,
-            "status": "processing",
-            "message": "生成任务已继续执行"
-        }), 202
-        
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/generate/retry', methods=['POST'])
+@api_bp.route("/generate/retry", methods=["POST"])
 def retry_generation():
     """
     重新生成用例 - 直接使用已有的需求分析结果，跳过评审弹窗
     POST /api/generate/retry
-    
+
     Request Body:
     {
         "requirement_id": 1,
         "modules": "功能模块内容（可选，为空则使用已有内容）",
         "points": "测试点内容（可选，为空则使用已有内容）"
     }
-    
+
     Returns:
     {
         "task_id": "task_xxx",
@@ -422,52 +552,62 @@ def retry_generation():
     """
     try:
         data = request.json
-        
-        if not data or 'requirement_id' not in data:
+
+        if not data or "requirement_id" not in data:
             return jsonify({"error": "缺少必要字段: requirement_id"}), 400
-        
-        requirement_id = data['requirement_id']
-        modules = data.get('modules', '')
-        points = data.get('points', '')
-        
+
+        requirement_id = data["requirement_id"]
+        modules = data.get("modules", "")
+        points = data.get("points", "")
+
         # 获取需求内容
         from src.database.models import Requirement
+
         requirement = db_session.query(Requirement).get(requirement_id)
         if not requirement:
             return jsonify({"error": "需求不存在"}), 404
-        
+
         # 创建新任务
         import uuid
+
         task_id = f"task_{uuid.uuid4().hex[:12]}"
-        
+
         # 构建评审后的规划（使用已有的或用户编辑的）
         reviewed_plan = {}
         if modules or points:
             # 如果用户提供了编辑后的内容，使用它
             reviewed_plan = {
-                'modules': modules,
-                'points': points,
-                'test_plan': f"功能模块:\n{modules}\n\n测试点:\n{points}" if modules or points else ''
+                "modules": modules,
+                "points": points,
+                "test_plan": (
+                    f"功能模块:\n{modules}\n\n测试点:\n{points}"
+                    if modules or points
+                    else ""
+                ),
             }
-        
+
         # 异步执行阶段2：RAG检索+LLM生成
         generation_service.execute_phase2_generation(
-            task_id,
-            reviewed_plan if reviewed_plan else None
+            task_id, reviewed_plan if reviewed_plan else None
         )
-        
-        return jsonify({
-            "task_id": task_id,
-            "status": "processing",
-            "message": "重新生成任务已启动"
-        }), 202
-        
+
+        return (
+            jsonify(
+                {
+                    "task_id": task_id,
+                    "status": "processing",
+                    "message": "重新生成任务已启动",
+                }
+            ),
+            202,
+        )
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/generate/<task_id>', methods=['GET'])
+@api_bp.route("/generate/<task_id>", methods=["GET"])
 def get_generation_status(task_id):
     """
     查询生成进度
@@ -475,27 +615,69 @@ def get_generation_status(task_id):
     """
     try:
         task = generation_service.get_task(task_id)
-        
+
+        # 如果内存中没有，从数据库获取
         if not task:
-            return jsonify({"error": "任务不存在"}), 404
-        
-        return jsonify({
-            "task_id": task.task_id,
-            "requirement_id": task.requirement_id,
-            "requirement_title": task.requirement_title,
-            "status": task.status,
-            "progress": task.progress,
-            "message": task.message,
-            "result": task.result,
-            "error_message": task.error_message,
-            "case_count": task.case_count,
-            "duration": task.duration,
-            "analysis_snapshot": task.analysis_snapshot,
-            "created_at": task.created_at,
-            "started_at": task.started_at,
-            "completed_at": task.completed_at
-        })
-        
+            from src.database.models import GenerationTask as GenerationTaskModel
+
+            task_model = (
+                db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+            )
+            if not task_model:
+                return jsonify({"error": "任务不存在"}), 404
+
+            # 转换为字典格式
+            return jsonify(
+                {
+                    "task_id": task_model.task_id,
+                    "requirement_id": task_model.requirement_id,
+                    "requirement_title": task_model.requirement_title
+                    or (task_model.requirement.title if task_model.requirement else ""),
+                    "status": task_model.status,
+                    "progress": task_model.progress or 0.0,
+                    "message": task_model.message or "",
+                    "result": task_model.result or {},
+                    "error_message": task_model.error_message,
+                    "case_count": task_model.case_count or 0,
+                    "duration": task_model.duration or 0.0,
+                    "analysis_snapshot": task_model.analysis_snapshot,
+                    "created_at": (
+                        task_model.created_at.isoformat()
+                        if task_model.created_at
+                        else ""
+                    ),
+                    "started_at": (
+                        task_model.started_at.isoformat()
+                        if task_model.started_at
+                        else ""
+                    ),
+                    "completed_at": (
+                        task_model.completed_at.isoformat()
+                        if task_model.completed_at
+                        else ""
+                    ),
+                }
+            )
+
+        return jsonify(
+            {
+                "task_id": task.task_id,
+                "requirement_id": task.requirement_id,
+                "requirement_title": task.requirement_title,
+                "status": task.status,
+                "progress": task.progress,
+                "message": task.message,
+                "result": task.result,
+                "error_message": task.error_message,
+                "case_count": task.case_count,
+                "duration": task.duration,
+                "analysis_snapshot": task.analysis_snapshot,
+                "created_at": task.created_at,
+                "started_at": task.started_at,
+                "completed_at": task.completed_at,
+            }
+        )
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -503,7 +685,8 @@ def get_generation_status(task_id):
 
 # ==================== 用例管理接口 ====================
 
-@api_bp.route('/cases', methods=['GET'])
+
+@api_bp.route("/cases", methods=["GET"])
 def list_cases():
     """
     查询用例列表
@@ -513,16 +696,18 @@ def list_cases():
     try:
         from src.database.models import TestCase, Requirement
 
-        requirement_id = request.args.get('requirement_id', type=int)
-        status = request.args.get('status')
-        priority = request.args.get('priority')
-        confidence_level = request.args.get('confidence_level')
-        sort_field = request.args.get('sort')
-        order = request.args.get('order', 'desc')
-        page = request.args.get('page', 1, type=int)
-        limit = request.args.get('limit', 10, type=int)
+        requirement_id = request.args.get("requirement_id", type=int)
+        status = request.args.get("status")
+        priority = request.args.get("priority")
+        confidence_level = request.args.get("confidence_level")
+        sort_field = request.args.get("sort")
+        order = request.args.get("order", "desc")
+        page = request.args.get("page", 1, type=int)
+        limit = request.args.get("limit", 10, type=int)
 
-        query = db_session.query(TestCase).outerjoin(Requirement, TestCase.requirement_id == Requirement.id)
+        query = db_session.query(TestCase).outerjoin(
+            Requirement, TestCase.requirement_id == Requirement.id
+        )
 
         if requirement_id:
             query = query.filter(TestCase.requirement_id == requirement_id)
@@ -532,14 +717,14 @@ def list_cases():
             query = query.filter(TestCase.priority == priority)
         # 按置信度等级筛选
         if confidence_level:
-            if confidence_level == '无':
+            if confidence_level == "无":
                 query = query.filter(TestCase.confidence_level.is_(None))
             else:
                 query = query.filter(TestCase.confidence_level == confidence_level)
 
         # 按置信度分数排序
-        if sort_field == 'confidence_score':
-            if order == 'asc':
+        if sort_field == "confidence_score":
+            if order == "asc":
                 query = query.order_by(TestCase.confidence_score.asc().nullslast())
             else:
                 query = query.order_by(TestCase.confidence_score.desc().nullslast())
@@ -547,35 +732,42 @@ def list_cases():
         total = query.count()
         cases = query.offset((page - 1) * limit).limit(limit).all()
 
-        return jsonify({
-            "items": [{
-                "id": c.id,
-                "case_id": c.case_id,
-                "module": c.module,
-                "name": c.name,
-                "priority": c.priority.value if c.priority else None,
-                "status": c.status.value if c.status else None,
-                "requirement_clause": c.requirement_clause,
-                "requirement_title": c.requirement.title if c.requirement else None,
-                "requirement_id": c.requirement_id,
-                "preconditions": c.preconditions,
-                "test_steps": c.test_steps,
-                "expected_results": c.expected_results,
-                "test_point": c.test_point,
-                "confidence_score": c.confidence_score,
-                "confidence_level": c.confidence_level,
-            } for c in cases],
-            "total": total,
-            "page": page,
-            "limit": limit
-        })
+        return jsonify(
+            {
+                "items": [
+                    {
+                        "id": c.id,
+                        "case_id": c.case_id,
+                        "module": c.module,
+                        "name": c.name,
+                        "priority": c.priority.value if c.priority else None,
+                        "status": c.status.value if c.status else None,
+                        "requirement_clause": c.requirement_clause,
+                        "requirement_title": (
+                            c.requirement.title if c.requirement else None
+                        ),
+                        "requirement_id": c.requirement_id,
+                        "preconditions": c.preconditions,
+                        "test_steps": c.test_steps,
+                        "expected_results": c.expected_results,
+                        "test_point": c.test_point,
+                        "confidence_score": c.confidence_score,
+                        "confidence_level": c.confidence_level,
+                    }
+                    for c in cases
+                ],
+                "total": total,
+                "page": page,
+                "limit": limit,
+            }
+        )
 
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/cases/stats', methods=['GET'])
+@api_bp.route("/cases/stats", methods=["GET"])
 def get_case_stats():
     """
     获取用例统计信息
@@ -584,33 +776,29 @@ def get_case_stats():
     try:
         from src.database.models import TestCase
         from sqlalchemy import func
-        
+
         # 统计各状态数量
-        stats = db_session.query(
-            TestCase.status,
-            func.count(TestCase.id)
-        ).group_by(TestCase.status).all()
-        
-        result = {
-            "total": 0,
-            "pending_review": 0,
-            "approved": 0,
-            "rejected": 0
-        }
-        
+        stats = (
+            db_session.query(TestCase.status, func.count(TestCase.id))
+            .group_by(TestCase.status)
+            .all()
+        )
+
+        result = {"total": 0, "pending_review": 0, "approved": 0, "rejected": 0}
+
         for status, count in stats:
-            status_value = status.value if status else 'pending_review'
+            status_value = status.value if status else "pending_review"
             result[status_value] = count
             result["total"] += count
-        
+
         return jsonify(result)
-        
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/cases/<int:case_id>', methods=['GET'])
+@api_bp.route("/cases/<int:case_id>", methods=["GET"])
 def get_case(case_id):
     """
     获取用例详情
@@ -618,40 +806,49 @@ def get_case(case_id):
     """
     try:
         from src.database.models import TestCase, Requirement
-        
-        case = db_session.query(TestCase).outerjoin(Requirement, TestCase.requirement_id == Requirement.id).filter(TestCase.id == case_id).first()
+
+        case = (
+            db_session.query(TestCase)
+            .outerjoin(Requirement, TestCase.requirement_id == Requirement.id)
+            .filter(TestCase.id == case_id)
+            .first()
+        )
         if not case:
             return jsonify({"error": "用例不存在"}), 404
-        
-        return jsonify({
-            "id": case.id,
-            "case_id": case.case_id,
-            "module": case.module,
-            "name": case.name,
-            "test_point": case.test_point,
-            "preconditions": case.preconditions,
-            "test_steps": case.test_steps,
-            "expected_results": case.expected_results,
-            "test_data": case.test_data,
-            "priority": case.priority.value if case.priority else None,
-            "case_type": case.case_type,
-            "status": case.status.value if case.status else None,
-            "requirement_clause": case.requirement_clause,
-            "requirement_id": case.requirement_id,
-            "requirement_title": case.requirement.title if case.requirement else None,
-            "created_at": case.created_at.isoformat() if case.created_at else None,
-            "updated_at": case.updated_at.isoformat() if case.updated_at else None,
-            "confidence_score": case.confidence_score,
-            "confidence_level": case.confidence_level,
-            "citations": case.citations,
-        })
+
+        return jsonify(
+            {
+                "id": case.id,
+                "case_id": case.case_id,
+                "module": case.module,
+                "name": case.name,
+                "test_point": case.test_point,
+                "preconditions": case.preconditions,
+                "test_steps": case.test_steps,
+                "expected_results": case.expected_results,
+                "test_data": case.test_data,
+                "priority": case.priority.value if case.priority else None,
+                "case_type": case.case_type,
+                "status": case.status.value if case.status else None,
+                "requirement_clause": case.requirement_clause,
+                "requirement_id": case.requirement_id,
+                "requirement_title": (
+                    case.requirement.title if case.requirement else None
+                ),
+                "created_at": case.created_at.isoformat() if case.created_at else None,
+                "updated_at": case.updated_at.isoformat() if case.updated_at else None,
+                "confidence_score": case.confidence_score,
+                "confidence_level": case.confidence_level,
+                "citations": case.citations,
+            }
+        )
 
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/cases/<int:case_id>/confidence', methods=['GET'])
+@api_bp.route("/cases/<int:case_id>/confidence", methods=["GET"])
 def get_case_confidence(case_id):
     """
     获取用例置信度详情
@@ -659,6 +856,7 @@ def get_case_confidence(case_id):
     """
     try:
         from src.database.models import TestCase
+
         case = db_session.query(TestCase).get(case_id)
         if not case:
             return jsonify({"error": "用例不存在"}), 404
@@ -668,22 +866,28 @@ def get_case_confidence(case_id):
         if citations and isinstance(citations, list):
             # 从 citations 中提取 breakdown（如果存储了的话）
             first = citations[0] if citations else {}
-            breakdown = first.get('breakdown', {})
+            breakdown = first.get("breakdown", {})
 
-        return jsonify({
-            "case_id": case.id,
-            "confidence_score": case.confidence_score,
-            "confidence_level": case.confidence_level,
-            "requires_human_review": case.confidence_level in ('C', 'D') if case.confidence_level else None,
-            "breakdown": breakdown,
-        })
+        return jsonify(
+            {
+                "case_id": case.id,
+                "confidence_score": case.confidence_score,
+                "confidence_level": case.confidence_level,
+                "requires_human_review": (
+                    case.confidence_level in ("C", "D")
+                    if case.confidence_level
+                    else None
+                ),
+                "breakdown": breakdown,
+            }
+        )
 
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/cases/<int:case_id>/citations', methods=['GET'])
+@api_bp.route("/cases/<int:case_id>/citations", methods=["GET"])
 def get_case_citations(case_id):
     """
     获取用例引用来源列表
@@ -691,23 +895,26 @@ def get_case_citations(case_id):
     """
     try:
         from src.database.models import TestCase
+
         case = db_session.query(TestCase).get(case_id)
         if not case:
             return jsonify({"error": "用例不存在"}), 404
 
         citations = case.citations or []
-        return jsonify({
-            "case_id": case.id,
-            "citations": citations,
-            "total": len(citations),
-        })
+        return jsonify(
+            {
+                "case_id": case.id,
+                "citations": citations,
+                "total": len(citations),
+            }
+        )
 
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/cases/<int:case_id>', methods=['PATCH'])
+@api_bp.route("/cases/<int:case_id>", methods=["PATCH"])
 def update_case(case_id):
     """
     更新用例（评审修改）
@@ -715,92 +922,95 @@ def update_case(case_id):
     """
     try:
         from src.database.models import TestCase
-        
+
         case = db_session.query(TestCase).get(case_id)
         if not case:
             return jsonify({"error": "用例不存在"}), 404
-        
+
         data = request.json
-        
+
         # 更新字段
-        if 'name' in data:
-            case.name = data['name']
-        if 'module' in data:
-            case.module = data['module']
-        if 'test_point' in data:
-            case.test_point = data['test_point']
-        if 'preconditions' in data:
-            case.preconditions = data['preconditions']
-        if 'test_steps' in data:
-            case.test_steps = data['test_steps']
-        if 'expected_results' in data:
-            case.expected_results = data['expected_results']
-        if 'priority' in data:
-            case.priority = data['priority']
-        if 'status' in data:
-            case.status = data['status']
-        if 'case_type' in data:
-            case.case_type = data['case_type']
-        
+        if "name" in data:
+            case.name = data["name"]
+        if "module" in data:
+            case.module = data["module"]
+        if "test_point" in data:
+            case.test_point = data["test_point"]
+        if "preconditions" in data:
+            case.preconditions = data["preconditions"]
+        if "test_steps" in data:
+            case.test_steps = data["test_steps"]
+        if "expected_results" in data:
+            case.expected_results = data["expected_results"]
+        if "priority" in data:
+            case.priority = data["priority"]
+        if "status" in data:
+            case.status = data["status"]
+        if "case_type" in data:
+            case.case_type = data["case_type"]
+
         db_session.commit()
-        
+
         return jsonify({"message": "用例更新成功"})
-        
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/cases/<int:case_id>', methods=['DELETE'])
+@api_bp.route("/cases/<int:case_id>", methods=["DELETE"])
 def delete_case(case_id):
     """删除用例"""
     try:
         from src.database.models import TestCase
-        
+
         case = db_session.query(TestCase).get(case_id)
         if not case:
             return jsonify({"error": "用例不存在"}), 404
-        
+
         db_session.delete(case)
         db_session.commit()
-        
+
         return jsonify({"message": "用例删除成功"})
-        
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/cases/batch-delete', methods=['POST'])
+@api_bp.route("/cases/batch-delete", methods=["POST"])
 def batch_delete_cases():
     """批量删除用例"""
     try:
         from src.database.models import TestCase
-        
+
         data = request.json
-        if not data or 'ids' not in data:
+        if not data or "ids" not in data:
             return jsonify({"error": "缺少ids字段"}), 400
-        
-        ids = data['ids']
-        deleted = db_session.query(TestCase).filter(TestCase.id.in_(ids)).delete(synchronize_session=False)
+
+        ids = data["ids"]
+        deleted = (
+            db_session.query(TestCase)
+            .filter(TestCase.id.in_(ids))
+            .delete(synchronize_session=False)
+        )
         db_session.commit()
-        
-        return jsonify({
-            "message": f"成功删除 {deleted} 条用例",
-            "deleted_count": deleted
-        })
-        
+
+        return jsonify(
+            {"message": f"成功删除 {deleted} 条用例", "deleted_count": deleted}
+        )
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/cases/batch-update-status', methods=['POST'])
+@api_bp.route("/cases/batch-update-status", methods=["POST"])
 def batch_update_case_status():
     """
     批量更新用例状态
     POST /api/cases/batch-update-status
-    
+
     Request Body:
     {
         "case_ids": [1, 2, 3],
@@ -809,35 +1019,36 @@ def batch_update_case_status():
     """
     try:
         from src.database.models import TestCase, CaseStatus
-        
+
         data = request.json
-        if not data or 'case_ids' not in data or 'status' not in data:
+        if not data or "case_ids" not in data or "status" not in data:
             return jsonify({"error": "缺少必要字段"}), 400
-        
-        case_ids = data['case_ids']
-        status_str = data['status']
-        
+
+        case_ids = data["case_ids"]
+        status_str = data["status"]
+
         # 转换状态字符串为枚举
         status_map = {
-            'pending_review': CaseStatus.PENDING_REVIEW,
-            'approved': CaseStatus.APPROVED,
-            'rejected': CaseStatus.REJECTED
+            "pending_review": CaseStatus.PENDING_REVIEW,
+            "approved": CaseStatus.APPROVED,
+            "rejected": CaseStatus.REJECTED,
         }
         status = status_map.get(status_str)
         if not status:
             return jsonify({"error": f"无效状态: {status_str}"}), 400
-        
+
         # 批量更新
-        updated = db_session.query(TestCase).filter(
-            TestCase.id.in_(case_ids)
-        ).update({TestCase.status: status}, synchronize_session=False)
+        updated = (
+            db_session.query(TestCase)
+            .filter(TestCase.id.in_(case_ids))
+            .update({TestCase.status: status}, synchronize_session=False)
+        )
         db_session.commit()
-        
-        return jsonify({
-            "message": f"成功更新 {updated} 条用例状态",
-            "updated_count": updated
-        })
-        
+
+        return jsonify(
+            {"message": f"成功更新 {updated} 条用例状态", "updated_count": updated}
+        )
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -845,12 +1056,13 @@ def batch_update_case_status():
 
 # ==================== RAG召回接口 ====================
 
-@api_bp.route('/rag/search', methods=['POST'])
+
+@api_bp.route("/rag/search", methods=["POST"])
 def rag_search():
     """
     RAG相似性搜索
     POST /api/rag/search
-    
+
     Request Body:
     {
         "query": "搜索文本",
@@ -860,32 +1072,29 @@ def rag_search():
     try:
         if not vector_store:
             return jsonify({"error": "向量库未初始化"}), 500
-        
+
         data = request.json
-        if not data or 'query' not in data:
+        if not data or "query" not in data:
             return jsonify({"error": "缺少query字段"}), 400
-        
-        query = data['query']
-        top_k = data.get('top_k', 5)
-        
+
+        query = data["query"]
+        top_k = data.get("top_k", 5)
+
         results = vector_store.search_all(query, top_k)
-        
-        return jsonify({
-            "query": query,
-            "results": results
-        })
-        
+
+        return jsonify({"query": query, "results": results})
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/rag/upsert', methods=['POST'])
+@api_bp.route("/rag/upsert", methods=["POST"])
 def rag_upsert():
     """
     插入数据到向量库
     POST /api/rag/upsert
-    
+
     Request Body:
     {
         "type": "case/defect/requirement",
@@ -897,37 +1106,35 @@ def rag_upsert():
     try:
         if not vector_store:
             return jsonify({"error": "向量库未初始化"}), 500
-        
+
         data = request.json
-        if not data or 'type' not in data or 'id' not in data or 'content' not in data:
+        if not data or "type" not in data or "id" not in data or "content" not in data:
             return jsonify({"error": "缺少必要字段: type, id, content"}), 400
-        
-        item_type = data['type']
-        item_id = data['id']
-        content = data['content']
-        metadata = data.get('metadata', {})
-        
-        if item_type == 'case':
+
+        item_type = data["type"]
+        item_id = data["id"]
+        content = data["content"]
+        metadata = data.get("metadata", {})
+
+        if item_type == "case":
             vector_store.add_case(item_id, content, metadata)
-        elif item_type == 'defect':
+        elif item_type == "defect":
             vector_store.add_defect(item_id, content, metadata)
-        elif item_type == 'requirement':
+        elif item_type == "requirement":
             vector_store.add_requirement(item_id, content, metadata)
         else:
             return jsonify({"error": f"不支持的类型: {item_type}"}), 400
-        
-        return jsonify({
-            "message": "数据已成功插入向量库",
-            "id": item_id,
-            "type": item_type
-        })
-        
+
+        return jsonify(
+            {"message": "数据已成功插入向量库", "id": item_id, "type": item_type}
+        )
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/rag/stats', methods=['GET'])
+@api_bp.route("/rag/stats", methods=["GET"])
 def rag_stats():
     """
     获取向量库统计信息
@@ -936,22 +1143,22 @@ def rag_stats():
     try:
         if not vector_store:
             return jsonify({"error": "向量库未初始化"}), 500
-        
+
         stats = vector_store.get_stats()
-        
+
         return jsonify(stats)
-        
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/rag/import-from-db', methods=['POST'])
+@api_bp.route("/rag/import-from-db", methods=["POST"])
 def rag_import_from_db():
     """
     从数据库导入用例/需求到向量库
     POST /api/rag/import-from-db
-    
+
     Request Body:
     {
         "type": "cases",  // 支持 cases, requirements
@@ -961,23 +1168,26 @@ def rag_import_from_db():
     try:
         if not vector_store:
             return jsonify({"error": "向量库未初始化"}), 500
-        
+
         data = request.json
-        if not data or 'type' not in data or 'ids' not in data:
+        if not data or "type" not in data or "ids" not in data:
             return jsonify({"error": "缺少必要字段: type, ids"}), 400
-        
-        item_type = data['type']
-        ids = data['ids']
+
+        item_type = data["type"]
+        ids = data["ids"]
         imported_count = 0
-        
-        if item_type == 'cases':
+
+        if item_type == "cases":
             from src.database.models import TestCase, Requirement
-            
+
             # 查询指定ID的用例
-            cases = db_session.query(TestCase).outerjoin(Requirement, TestCase.requirement_id == Requirement.id).filter(
-                TestCase.id.in_(ids)
-            ).all()
-            
+            cases = (
+                db_session.query(TestCase)
+                .outerjoin(Requirement, TestCase.requirement_id == Requirement.id)
+                .filter(TestCase.id.in_(ids))
+                .all()
+            )
+
             for case in cases:
                 # 构建用例内容文本
                 case_content = f"测试用例: {case.name}\n"
@@ -988,16 +1198,24 @@ def rag_import_from_db():
                 if case.preconditions:
                     case_content += f"前置条件: {case.preconditions}\n"
                 if case.test_steps:
-                    steps = case.test_steps if isinstance(case.test_steps, list) else [case.test_steps]
+                    steps = (
+                        case.test_steps
+                        if isinstance(case.test_steps, list)
+                        else [case.test_steps]
+                    )
                     case_content += "测试步骤:\n"
-                    for i, step in enumerate(steps, 1):
-                        case_content += f"{i}. {step}\n"
+                    for step in steps:
+                        case_content += f"{step}\n"
                 if case.expected_results:
-                    results = case.expected_results if isinstance(case.expected_results, list) else [case.expected_results]
+                    results = (
+                        case.expected_results
+                        if isinstance(case.expected_results, list)
+                        else [case.expected_results]
+                    )
                     case_content += "预期结果:\n"
-                    for i, result in enumerate(results, 1):
-                        case_content += f"{i}. {result}\n"
-                
+                    for result in results:
+                        case_content += f"{result}\n"
+
                 # 构建元数据
                 metadata = {
                     "case_id": case.case_id,
@@ -1007,61 +1225,124 @@ def rag_import_from_db():
                     "priority": case.priority.value if case.priority else "P2",
                     "status": case.status.value if case.status else "pending_review",
                     "case_type": case.case_type or "功能",
-                    "requirement_id": case.requirement_id
+                    "requirement_id": case.requirement_id,
                 }
-                
+
                 if case.requirement:
                     metadata["requirement_title"] = case.requirement.title
-                
-                # 添加到向量库
+
+                # 添加到向量库（先删除旧的再添加，实现更新效果）
                 try:
-                    vector_store.add_case(f"case_{case.id}", case_content, metadata)
+                    case_doc_id = f"case_{case.id}"
+                    # 尝试删除旧数据（如果存在）
+                    try:
+                        vector_store.delete_case(case_doc_id)
+                    except Exception:
+                        pass  # 旧数据不存在，忽略
+                    vector_store.add_case(case_doc_id, case_content, metadata)
                     imported_count += 1
                 except Exception as e:
                     print(f"导入用例 {case.id} 失败: {e}")
                     continue
-            
-        elif item_type == 'requirements':
+
+        elif item_type == "requirements":
             from src.database.models import Requirement
-            
+
             # 查询指定ID的需求
-            requirements = db_session.query(Requirement).filter(
-                Requirement.id.in_(ids)
-            ).all()
-            
+            requirements = (
+                db_session.query(Requirement).filter(Requirement.id.in_(ids)).all()
+            )
+
             for req in requirements:
                 # 构建需求内容文本
                 req_content = f"需求标题: {req.title}\n"
                 req_content += f"需求内容:\n{req.content}\n"
-                
+
                 # 构建元数据
                 metadata = {
                     "title": req.title,
                     "status": req.status.value if req.status else "pending",
-                    "source_file": req.source_file or ""
+                    "source_file": req.source_file or "",
                 }
-                
-                # 添加到向量库
+
+                # 添加到向量库（先删除旧的再添加，实现更新效果）
                 try:
-                    vector_store.add_requirement(f"req_{req.id}", req_content, metadata)
+                    req_doc_id = f"req_{req.id}"
+                    # 尝试删除旧数据（如果存在）
+                    try:
+                        vector_store.delete_requirement(req_doc_id)
+                    except Exception:
+                        pass  # 旧数据不存在，忽略
+                    vector_store.add_requirement(req_doc_id, req_content, metadata)
                     imported_count += 1
                 except Exception as e:
                     print(f"导入需求 {req.id} 失败: {e}")
                     continue
         else:
             return jsonify({"error": f"不支持的类型: {item_type}"}), 400
-        
-        return jsonify({
-            "message": f"成功导入 {imported_count} 条数据到RAG向量库",
-            "imported_count": imported_count
-        })
-        
+
+        return jsonify(
+            {
+                "message": f"成功导入 {imported_count} 条数据到RAG向量库",
+                "imported_count": imported_count,
+            }
+        )
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/rag/list', methods=['GET'])
+@api_bp.route("/rag/imported-ids", methods=["GET"])
+def rag_imported_ids():
+    """
+    查询已导入向量库的用例/需求/缺陷ID列表
+    GET /api/rag/imported-ids?type=cases
+    """
+    try:
+        if not vector_store:
+            return jsonify({"error": "向量库未初始化"}), 500
+
+        item_type = request.args.get("type", "cases")
+
+        type_map = {
+            "cases": vector_store.get_case_ids,
+            "requirements": vector_store.get_requirement_ids,
+            "defects": vector_store.get_defect_ids,
+        }
+
+        if item_type not in type_map:
+            return jsonify({"error": f"不支持的类型: {item_type}"}), 400
+
+        ids = type_map[item_type]()
+
+        # 从ID格式中提取原始ID（如 case_1 -> 1）
+        if item_type == "cases":
+            raw_ids = [
+                int(id_str.replace("case_", ""))
+                for id_str in ids
+                if id_str.startswith("case_")
+            ]
+        elif item_type == "requirements":
+            raw_ids = [
+                int(id_str.replace("req_", ""))
+                for id_str in ids
+                if id_str.startswith("req_")
+            ]
+        else:
+            raw_ids = [
+                int(id_str.replace("defect_", ""))
+                for id_str in ids
+                if id_str.startswith("defect_")
+            ]
+
+        return jsonify({"type": item_type, "ids": raw_ids, "count": len(raw_ids)})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/rag/list", methods=["GET"])
 def rag_list():
     """
     列出向量库中的数据
@@ -1070,57 +1351,71 @@ def rag_list():
     try:
         if not vector_store:
             return jsonify({"error": "向量库未初始化"}), 500
-        
-        item_type = request.args.get('type', 'cases')
-        limit = request.args.get('limit', 50, type=int)
-        
+
+        item_type = request.args.get("type", "cases")
+        limit = request.args.get("limit", 50, type=int)
+
         # 从向量库查询数据（使用空搜索获取所有数据）
-        if item_type == 'cases':
+        if item_type == "cases":
             # 使用空查询获取所有用例
             results = vector_store.case_collection.get(limit=limit)
             items = []
-            if results and results.get('ids'):
-                for i, doc_id in enumerate(results['ids']):
-                    content = results['documents'][i] if i < len(results.get('documents', [])) else ''
-                    metadata = results['metadatas'][i] if i < len(results.get('metadatas', [])) else {}
-                    items.append({
-                        "id": doc_id,
-                        "content": content,
-                        "metadata": metadata
-                    })
-        elif item_type == 'defects':
+            if results and results.get("ids"):
+                for i, doc_id in enumerate(results["ids"]):
+                    content = (
+                        results["documents"][i]
+                        if i < len(results.get("documents", []))
+                        else ""
+                    )
+                    metadata = (
+                        results["metadatas"][i]
+                        if i < len(results.get("metadatas", []))
+                        else {}
+                    )
+                    items.append(
+                        {"id": doc_id, "content": content, "metadata": metadata}
+                    )
+        elif item_type == "defects":
             results = vector_store.defect_collection.get(limit=limit)
             items = []
-            if results and results.get('ids'):
-                for i, doc_id in enumerate(results['ids']):
-                    content = results['documents'][i] if i < len(results.get('documents', [])) else ''
-                    metadata = results['metadatas'][i] if i < len(results.get('metadatas', [])) else {}
-                    items.append({
-                        "id": doc_id,
-                        "content": content,
-                        "metadata": metadata
-                    })
-        elif item_type == 'requirements':
+            if results and results.get("ids"):
+                for i, doc_id in enumerate(results["ids"]):
+                    content = (
+                        results["documents"][i]
+                        if i < len(results.get("documents", []))
+                        else ""
+                    )
+                    metadata = (
+                        results["metadatas"][i]
+                        if i < len(results.get("metadatas", []))
+                        else {}
+                    )
+                    items.append(
+                        {"id": doc_id, "content": content, "metadata": metadata}
+                    )
+        elif item_type == "requirements":
             results = vector_store.requirement_collection.get(limit=limit)
             items = []
-            if results and results.get('ids'):
-                for i, doc_id in enumerate(results['ids']):
-                    content = results['documents'][i] if i < len(results.get('documents', [])) else ''
-                    metadata = results['metadatas'][i] if i < len(results.get('metadatas', [])) else {}
-                    items.append({
-                        "id": doc_id,
-                        "content": content,
-                        "metadata": metadata
-                    })
+            if results and results.get("ids"):
+                for i, doc_id in enumerate(results["ids"]):
+                    content = (
+                        results["documents"][i]
+                        if i < len(results.get("documents", []))
+                        else ""
+                    )
+                    metadata = (
+                        results["metadatas"][i]
+                        if i < len(results.get("metadatas", []))
+                        else {}
+                    )
+                    items.append(
+                        {"id": doc_id, "content": content, "metadata": metadata}
+                    )
         else:
             return jsonify({"error": "不支持的类型: " + item_type}), 400
-        
-        return jsonify({
-            "type": item_type,
-            "items": items,
-            "total": len(items)
-        })
-        
+
+        return jsonify({"type": item_type, "items": items, "total": len(items)})
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -1128,7 +1423,8 @@ def rag_list():
 
 # ==================== 导出接口 ====================
 
-@api_bp.route('/export', methods=['GET'])
+
+@api_bp.route("/export", methods=["GET"])
 def export_cases():
     """
     导出测试用例
@@ -1137,66 +1433,69 @@ def export_cases():
     try:
         from src.database.models import TestCase, Requirement
         from src.case_generator.exporter import CaseExporter
-        
-        export_format = request.args.get('format', 'excel')
-        requirement_id = request.args.get('requirement_id', type=int)
-        
-        if export_format not in ['excel', 'xmind', 'json']:
+
+        export_format = request.args.get("format", "excel")
+        requirement_id = request.args.get("requirement_id", type=int)
+
+        if export_format not in ["excel", "xmind", "json"]:
             return jsonify({"error": f"不支持的导出格式: {export_format}"}), 400
-        
+
         # 查询用例
-        query = db_session.query(TestCase).outerjoin(Requirement, TestCase.requirement_id == Requirement.id)
+        query = db_session.query(TestCase).outerjoin(
+            Requirement, TestCase.requirement_id == Requirement.id
+        )
         if requirement_id:
             query = query.filter(TestCase.requirement_id == requirement_id)
-        
+
         test_cases = query.all()
-        
+
         if not test_cases:
             return jsonify({"error": "没有可导出的用例数据"}), 500
-        
+
         # 转换为字典列表
-        cases_data = [{
-            'case_id': c.case_id,
-            'module': c.module,
-            'name': c.name,
-            'test_point': c.test_point,
-            'preconditions': c.preconditions,
-            'test_steps': c.test_steps,
-            'expected_results': c.expected_results,
-            'priority': c.priority.value if c.priority else 'P2',
-            'case_type': c.case_type,
-            'requirement_clause': c.requirement_clause
-        } for c in test_cases]
-        
+        cases_data = [
+            {
+                "case_id": c.case_id,
+                "module": c.module,
+                "name": c.name,
+                "test_point": c.test_point,
+                "preconditions": c.preconditions,
+                "test_steps": c.test_steps,
+                "expected_results": c.expected_results,
+                "priority": c.priority.value if c.priority else "P2",
+                "case_type": c.case_type,
+                "requirement_clause": c.requirement_clause,
+            }
+            for c in test_cases
+        ]
+
         # 创建临时文件
         tmpdir = tempfile.mkdtemp()
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"test_cases_{timestamp}"
-        
+
         exporter = CaseExporter()
-        
-        if export_format == 'excel':
+
+        if export_format == "excel":
             filepath = os.path.join(tmpdir, f"{filename}.xlsx")
             exporter.export_to_excel(cases_data, filepath)
-        elif export_format == 'xmind':
+        elif export_format == "xmind":
             filepath = os.path.join(tmpdir, f"{filename}.xmind")
             exporter.export_to_xmind(cases_data, filepath)
-        elif export_format == 'json':
+        elif export_format == "json":
             filepath = os.path.join(tmpdir, f"{filename}.json")
             exporter.export_to_json(cases_data, filepath)
-        
+
         return send_file(
-            filepath,
-            as_attachment=True,
-            download_name=os.path.basename(filepath)
+            filepath, as_attachment=True, download_name=os.path.basename(filepath)
         )
-        
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/export/cases', methods=['POST'])
+@api_bp.route("/export/cases", methods=["POST"])
 def export_cases_post():
     """
     导出测试用例（POST方式，支持选择特定用例）
@@ -1212,20 +1511,20 @@ def export_cases_post():
     try:
         from src.database.models import TestCase, Requirement
         from src.case_generator.exporter import CaseExporter
-        
+
         data = request.json
-        export_format = data.get('format', 'excel')
-        case_ids = data.get('case_ids')
-        requirement_id = data.get('requirement_id')
-        status = data.get('status')
-        priority = data.get('priority')
-        
-        if export_format not in ['excel', 'xmind', 'json']:
+        export_format = data.get("format", "excel")
+        case_ids = data.get("case_ids")
+        requirement_id = data.get("requirement_id")
+        status = data.get("status")
+        priority = data.get("priority")
+
+        if export_format not in ["excel", "xmind", "json"]:
             return jsonify({"error": f"不支持的导出格式: {export_format}"}), 400
-        
+
         # 查询用例
         query = db_session.query(TestCase)
-        
+
         # 如果指定了case_ids，直接按ID查询
         if case_ids and len(case_ids) > 0:
             query = query.filter(TestCase.id.in_(case_ids))
@@ -1237,127 +1536,141 @@ def export_cases_post():
                 query = query.filter(TestCase.status == status)
             if priority:
                 query = query.filter(TestCase.priority == priority)
-        
+
         test_cases = query.all()
-        
+
         if not test_cases:
             return jsonify({"error": "没有可导出的用例数据"}), 500
-        
+
         # 转换为字典列表
-        cases_data = [{
-            'case_id': c.case_id,
-            'module': c.module,
-            'name': c.name,
-            'test_point': c.test_point,
-            'preconditions': c.preconditions,
-            'test_steps': c.test_steps if isinstance(c.test_steps, list) else json.loads(c.test_steps) if c.test_steps else [],
-            'expected_results': c.expected_results if isinstance(c.expected_results, list) else json.loads(c.expected_results) if c.expected_results else [],
-            'priority': c.priority.value if c.priority else 'P2',
-            'case_type': c.case_type,
-            'requirement_clause': c.requirement_clause
-        } for c in test_cases]
-        
+        cases_data = [
+            {
+                "case_id": c.case_id,
+                "module": c.module,
+                "name": c.name,
+                "test_point": c.test_point,
+                "preconditions": c.preconditions,
+                "test_steps": (
+                    c.test_steps
+                    if isinstance(c.test_steps, list)
+                    else json.loads(c.test_steps) if c.test_steps else []
+                ),
+                "expected_results": (
+                    c.expected_results
+                    if isinstance(c.expected_results, list)
+                    else json.loads(c.expected_results) if c.expected_results else []
+                ),
+                "priority": c.priority.value if c.priority else "P2",
+                "case_type": c.case_type,
+                "requirement_clause": c.requirement_clause,
+            }
+            for c in test_cases
+        ]
+
         # 创建临时文件
         tmpdir = tempfile.mkdtemp()
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"test_cases_{timestamp}"
-        
+
         exporter = CaseExporter()
-        
-        if export_format == 'excel':
+
+        if export_format == "excel":
             filepath = os.path.join(tmpdir, f"{filename}.xlsx")
             exporter.export_to_excel(cases_data, filepath)
-        elif export_format == 'xmind':
+        elif export_format == "xmind":
             filepath = os.path.join(tmpdir, f"{filename}.xmind")
             exporter.export_to_xmind(cases_data, filepath)
-        elif export_format == 'json':
+        elif export_format == "json":
             filepath = os.path.join(tmpdir, f"{filename}.json")
             exporter.export_to_json(cases_data, filepath)
-        
+
         # 将临时文件复制到持久目录
-        export_folder = 'data/exports'
+        export_folder = "data/exports"
         os.makedirs(export_folder, exist_ok=True)
         final_path = os.path.join(export_folder, os.path.basename(filepath))
-        
+
         import shutil
+
         shutil.copy2(filepath, final_path)
-        
+
         # 返回下载URL
         download_url = f"/api/export/download/{os.path.basename(final_path)}"
-        
-        return jsonify({
-            "message": "导出成功",
-            "exported_count": len(cases_data),
-            "download_url": download_url
-        })
-        
+
+        return jsonify(
+            {
+                "message": "导出成功",
+                "exported_count": len(cases_data),
+                "download_url": download_url,
+            }
+        )
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/export/download/<filename>', methods=['GET'])
+@api_bp.route("/export/download/<filename>", methods=["GET"])
 def download_export(filename):
     """
     下载导出的文件
     GET /api/export/download/<filename>
     """
     try:
-        export_folder = 'data/exports'
+        export_folder = "data/exports"
         filepath = os.path.join(export_folder, filename)
-        
+
         if not os.path.exists(filepath):
             return jsonify({"error": "文件不存在"}), 404
-        
-        return send_file(
-            filepath,
-            as_attachment=True,
-            download_name=filename
-        )
-        
+
+        return send_file(filepath, as_attachment=True, download_name=filename)
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
 # ==================== 文件上传接口 ====================
 
-@api_bp.route('/upload', methods=['POST'])
+
+@api_bp.route("/upload", methods=["POST"])
 def upload_file():
     """
     上传需求文档
     POST /api/upload
     """
     try:
-        if 'file' not in request.files:
+        if "file" not in request.files:
             return jsonify({"error": "没有上传文件"}), 400
-        
-        file = request.files['file']
-        if file.filename == '':
+
+        file = request.files["file"]
+        if file.filename == "":
             return jsonify({"error": "文件名为空"}), 400
-        
+
         # 保存文件
-        upload_folder = 'data/uploads'
+        upload_folder = "data/uploads"
         os.makedirs(upload_folder, exist_ok=True)
-        
+
         filename = secure_filename(file.filename)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filepath = os.path.join(upload_folder, f"{timestamp}_{filename}")
         file.save(filepath)
-        
+
         # 解析文档内容
         from src.document_parser.parser import parse_document
+
         content = parse_document(filepath)
-        
+
         # 提取预览
         preview = content[:500] if content else ""
-        
-        return jsonify({
-            "message": "文件上传成功",
-            "filepath": filepath,
-            "filename": filename,
-            "content_preview": preview
-        })
-        
+
+        return jsonify(
+            {
+                "message": "文件上传成功",
+                "filepath": filepath,
+                "filename": filename,
+                "content_preview": preview,
+            }
+        )
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -1365,41 +1678,42 @@ def upload_file():
 
 # ==================== 需求导入辅助函数 ====================
 
+
 def _extract_title_from_content(content: str, file_ext: str) -> str:
     """
     从文件内容中提取一级标题作为需求标题
-    
+
     对于 Markdown 文件：提取第一个 # 标题
     对于其他文件：提取第一行非空文本
     """
     try:
         if not content:
             return ""
-        
-        if file_ext in ['.md', '.markdown']:
+
+        if file_ext in [".md", ".markdown"]:
             # Markdown: 查找第一个一级标题 (# 标题)
-            lines = content.split('\n')
+            lines = content.split("\n")
             for line in lines:
                 line = line.strip()
-                if line.startswith('# ') and len(line) > 2:
+                if line.startswith("# ") and len(line) > 2:
                     # 提取标题内容，去掉 # 号
                     title = line[1:].strip()
                     # 去掉可能的结尾标记
-                    if '\r' in title:
-                        title = title.split('\r')[0]
+                    if "\r" in title:
+                        title = title.split("\r")[0]
                     return title
-            
+
             # 如果没有找到 # 标题，尝试查找 ## 标题
             for line in lines:
                 line = line.strip()
-                if line.startswith('## ') and len(line) > 3:
+                if line.startswith("## ") and len(line) > 3:
                     title = line[2:].strip()
-                    if '\r' in title:
-                        title = title.split('\r')[0]
+                    if "\r" in title:
+                        title = title.split("\r")[0]
                     return title
-        
+
         # 对于所有文件类型，尝试提取第一行非空文本
-        lines = content.split('\n')
+        lines = content.split("\n")
         for line in lines:
             line = line.strip()
             if line and len(line) > 0:
@@ -1407,7 +1721,7 @@ def _extract_title_from_content(content: str, file_ext: str) -> str:
                 if len(line) > 200:
                     line = line[:200] + "..."
                 return line
-        
+
         return ""
     except Exception as e:
         print(f"[提取标题] 异常: {str(e)}")
@@ -1416,7 +1730,8 @@ def _extract_title_from_content(content: str, file_ext: str) -> str:
 
 # ==================== 需求导入接口 ====================
 
-@api_bp.route('/import/requirements', methods=['POST'])
+
+@api_bp.route("/import/requirements", methods=["POST"])
 def import_requirements():
     """
     导入需求文件（支持 .xlsx, .xls, .txt, .md, .markdown, .docx, .pdf）
@@ -1424,108 +1739,129 @@ def import_requirements():
     """
     print("[导入需求] ========== 开始导入 ==========")
     try:
-        if 'file' not in request.files:
+        if "file" not in request.files:
             print("[导入需求] 错误: 没有上传文件")
             return jsonify({"error": "没有上传文件"}), 400
-        
-        file = request.files['file']
+
+        file = request.files["file"]
         print(f"[导入需求] file对象: {file}")
         print(f"[导入需求] file.filename: {repr(file.filename)}")
-        
-        if file.filename == '':
+
+        if file.filename == "":
             print("[导入需求] 错误: 文件名为空")
             return jsonify({"error": "文件名为空"}), 400
-        
+
         # 获取原始文件名（这时就应该提取扩展名）
-        original_filename = file.filename or ''
-        
+        original_filename = file.filename or ""
+
         # 直接从原始文件名提取扩展名（使用unicode友好方式）
-        file_ext = ''
-        if '.' in original_filename:
+        file_ext = ""
+        if "." in original_filename:
             # 使用rsplit从右边分割，获取最后一个扩展名
-            parts = original_filename.rsplit('.', 1)
+            parts = original_filename.rsplit(".", 1)
             if len(parts) == 2 and parts[1]:
-                file_ext = '.' + parts[1].lower()
-        
+                file_ext = "." + parts[1].lower()
+
         print(f"[导入需求] 原始文件名: {original_filename}")
         print(f"[导入需求] 提取的扩展名: '{file_ext}'")
         print(f"[导入需求] 扩展名repr: {repr(file_ext)}")
         print(f"[导入需求] 扩展名长度: {len(file_ext)}")
-        
+
         # 如果提取的扩展名为空，给一个默认值
         if not file_ext:
             print("[导入需求] 警告: 扩展名为空，使用默认值 .txt")
-            file_ext = '.txt'
-        
+            file_ext = ".txt"
+
         print(f"[导入需求] 最终使用的扩展名: '{file_ext}'")
-        
+
         # 支持的文件格式
-        supported_extensions = ['.xlsx', '.xls', '.txt', '.md', '.markdown', '.docx', '.pdf']
-        
+        supported_extensions = [
+            ".xlsx",
+            ".xls",
+            ".txt",
+            ".md",
+            ".markdown",
+            ".docx",
+            ".pdf",
+        ]
+
         if file_ext not in supported_extensions:
-            return jsonify({
-                "error": f"不支持的文件格式: {file_ext}，支持的格式: {', '.join(supported_extensions)}"
-            }), 400
-        
+            return (
+                jsonify(
+                    {
+                        "error": f"不支持的文件格式: {file_ext}，支持的格式: {', '.join(supported_extensions)}"
+                    }
+                ),
+                400,
+            )
+
         # 保存文件
-        upload_folder = 'data/uploads'
+        upload_folder = "data/uploads"
         os.makedirs(upload_folder, exist_ok=True)
-        
+
         # 使用secure_filename处理文件名（但可能会把中文名全部删掉）
         safe_filename = secure_filename(original_filename)
-        
+
         # 如果secure_filename处理后文件名为空或只有扩展名，使用原始文件名
         if not safe_filename or safe_filename == file_ext or len(safe_filename) < 5:
             # 保留中文文件名，只替换不安全的字符
             import re
-            safe_filename = re.sub(r'[<>:"/\\|?*]', '_', original_filename)
-        
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+            safe_filename = re.sub(r'[<>:"/\\|?*]', "_", original_filename)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filepath = os.path.join(upload_folder, f"{timestamp}_{safe_filename}")
-        
+
         # 确保filepath有正确的扩展名
         if not filepath.lower().endswith(file_ext):
             filepath = filepath + file_ext
-        
+
         file.save(filepath)
-        
+
         print(f"[导入需求] 保存路径: {filepath}")
         print(f"[导入需求] 文件扩展名验证: {os.path.splitext(filepath)[1]}")
-        
+
         # 解析文件内容并创建需求记录
         from src.database.models import Requirement, RequirementStatus
         from src.document_parser.parser import parse_document
-        
+
         # 解析文档内容
         content = parse_document(filepath)
-        
+
         if not content:
             return jsonify({"error": "文件内容为空"}), 400
-        
+
         # 根据文件类型决定如何创建需求
         imported_count = 0
-        
-        if file_ext in ['.xlsx', '.xls']:
+
+        if file_ext in [".xlsx", ".xls"]:
             # Excel 文件：每一行作为一个需求
             import openpyxl
+
             wb = openpyxl.load_workbook(filepath)
             ws = wb.active
-            
+
             # 假设第一行是标题，从第二行开始读取
-            for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+            for row_idx, row in enumerate(
+                ws.iter_rows(min_row=2, values_only=True), start=2
+            ):
                 # 尝试获取标题和内容（假设第一列是标题，第二列是内容）
-                title = str(row[0]) if len(row) > 0 and row[0] else f"导入需求_{timestamp}_{row_idx}"
+                title = (
+                    str(row[0])
+                    if len(row) > 0 and row[0]
+                    else f"导入需求_{timestamp}_{row_idx}"
+                )
                 content_text = str(row[1]) if len(row) > 1 and row[1] else ""
-                
+
                 # 如果只有标题没有内容，把标题作为内容
                 if not content_text:
                     content_text = title
-                
+
                 req = Requirement(
                     title=title,
                     content=content_text,
                     source_file=filepath,
-                    status=RequirementStatus.PENDING
+                    status=RequirementStatus.PENDING,
                 )
                 db_session.add(req)
                 imported_count += 1
@@ -1533,50 +1869,49 @@ def import_requirements():
             # txt、md、docx、pdf 文件：整个文件作为一个需求
             # 优先从内容中提取一级标题作为需求标题
             title = _extract_title_from_content(content, file_ext)
-            
+
             # 如果无法从内容提取标题，使用文件名
             if not title or not title.strip():
                 title = os.path.splitext(safe_filename)[0]
                 # 如果文件名包含时间戳前缀，尝试提取原始文件名
-                if '_' in title and len(title.split('_')[-1]) > 10:
+                if "_" in title and len(title.split("_")[-1]) > 10:
                     # 可能是 timestamp_original_name 格式
-                    parts = title.split('_', 1)
+                    parts = title.split("_", 1)
                     if len(parts) > 1:
                         title = parts[1]
-            
+
             # 如果标题仍然为空，使用原始文件名
             if not title or not title.strip():
                 title = os.path.splitext(original_filename)[0]
-            
+
             req = Requirement(
                 title=title,
                 content=content,
                 source_file=filepath,
-                status=RequirementStatus.PENDING
+                status=RequirementStatus.PENDING,
             )
             db_session.add(req)
             imported_count = 1
-        
+
         db_session.commit()
-        
+
         print(f"[导入需求] 导入成功，数量: {imported_count}")
-        
-        return jsonify({
-            "message": "导入成功",
-            "imported_count": imported_count
-        })
-        
+
+        return jsonify({"message": "导入成功", "imported_count": imported_count})
+
     except Exception as e:
         db_session.rollback()
         print(f"[导入需求] 异常: {str(e)}")
         import traceback
+
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
 # ==================== LLM配置接口 ====================
 
-@api_bp.route('/llm-configs', methods=['GET'])
+
+@api_bp.route("/llm-configs", methods=["GET"])
 def list_llm_configs():
     """
     查询LLM配置列表
@@ -1584,30 +1919,37 @@ def list_llm_configs():
     """
     try:
         from src.database.models import LLMConfig
-        
+
         configs = db_session.query(LLMConfig).all()
-        
-        return jsonify({
-            "configs": [{
-                "id": c.id,
-                "name": c.name,
-                "provider": c.provider,
-                "base_url": c.base_url,
-                "api_key": c.api_key,
-                "model_id": c.model_id,
-                "timeout": c.timeout,
-                "is_default": bool(c.is_default),
-                "is_active": bool(c.is_active),
-                "created_at": c.created_at.isoformat() if c.created_at else None
-            } for c in configs]
-        })
-        
+
+        return jsonify(
+            {
+                "configs": [
+                    {
+                        "id": c.id,
+                        "name": c.name,
+                        "provider": c.provider,
+                        "base_url": c.base_url,
+                        "api_key": c.api_key,
+                        "model_id": c.model_id,
+                        "timeout": c.timeout,
+                        "is_default": bool(c.is_default),
+                        "is_active": bool(c.is_active),
+                        "created_at": (
+                            c.created_at.isoformat() if c.created_at else None
+                        ),
+                    }
+                    for c in configs
+                ]
+            }
+        )
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/llm-configs', methods=['POST'])
+@api_bp.route("/llm-configs", methods=["POST"])
 def create_llm_config():
     """
     创建LLM配置
@@ -1615,31 +1957,31 @@ def create_llm_config():
     """
     try:
         from src.database.models import LLMConfig
-        
+
         data = request.json
-        required_fields = ['name', 'provider', 'base_url', 'api_key', 'model_id']
+        required_fields = ["name", "provider", "base_url", "api_key", "model_id"]
         for field in required_fields:
             if field not in data:
                 return jsonify({"error": f"缺少必要字段: {field}"}), 400
-        
+
         # 如果设置为默认，取消其他默认配置
-        if data.get('is_default'):
+        if data.get("is_default"):
             db_session.query(LLMConfig).update({LLMConfig.is_default: 0})
-        
+
         config = LLMConfig(
-            name=data['name'],
-            provider=data['provider'],
-            base_url=data['base_url'],
-            api_key=data['api_key'],
-            model_id=data['model_id'],
-            timeout=data.get('timeout', 30),
-            is_default=1 if data.get('is_default') else 0,
-            is_active=1 if data.get('is_active', True) else 0
+            name=data["name"],
+            provider=data["provider"],
+            base_url=data["base_url"],
+            api_key=data["api_key"],
+            model_id=data["model_id"],
+            timeout=data.get("timeout", 30),
+            is_default=1 if data.get("is_default") else 0,
+            is_active=1 if data.get("is_active", True) else 0,
         )
-        
+
         db_session.add(config)
         db_session.commit()
-        
+
         # 同步到LLM管理器
         llm_manager.add_config(
             name=config.name,
@@ -1648,20 +1990,17 @@ def create_llm_config():
             api_key=config.api_key,
             model_id=config.model_id,
             timeout=config.timeout,
-            is_default=bool(config.is_default)
+            is_default=bool(config.is_default),
         )
-        
-        return jsonify({
-            "message": "LLM配置创建成功",
-            "id": config.id
-        }), 201
-        
+
+        return jsonify({"message": "LLM配置创建成功", "id": config.id}), 201
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/llm-configs/<int:config_id>', methods=['PATCH'])
+@api_bp.route("/llm-configs/<int:config_id>", methods=["PATCH"])
 def update_llm_config(config_id):
     """
     更新LLM配置
@@ -1669,42 +2008,42 @@ def update_llm_config(config_id):
     """
     try:
         from src.database.models import LLMConfig
-        
+
         config = db_session.query(LLMConfig).get(config_id)
         if not config:
             return jsonify({"error": "配置不存在"}), 404
-        
+
         # 保存旧名称用于同步
         old_name = config.name
-        
+
         data = request.json
-        
+
         # 更新字段
-        if 'name' in data:
-            config.name = data['name']
-        if 'provider' in data:
-            config.provider = data['provider']
-        if 'base_url' in data:
-            config.base_url = data['base_url']
-        if 'api_key' in data:
-            config.api_key = data['api_key']
-        if 'model_id' in data:
-            config.model_id = data['model_id']
-        if 'timeout' in data:
-            config.timeout = data['timeout']
-        
+        if "name" in data:
+            config.name = data["name"]
+        if "provider" in data:
+            config.provider = data["provider"]
+        if "base_url" in data:
+            config.base_url = data["base_url"]
+        if "api_key" in data:
+            config.api_key = data["api_key"]
+        if "model_id" in data:
+            config.model_id = data["model_id"]
+        if "timeout" in data:
+            config.timeout = data["timeout"]
+
         # 如果设置为默认，取消其他默认配置
-        if data.get('is_default'):
+        if data.get("is_default"):
             db_session.query(LLMConfig).update({LLMConfig.is_default: 0})
             config.is_default = 1
-        elif 'is_default' in data:
+        elif "is_default" in data:
             config.is_default = 0
-        
-        if 'is_active' in data:
-            config.is_active = 1 if data['is_active'] else 0
-        
+
+        if "is_active" in data:
+            config.is_active = 1 if data["is_active"] else 0
+
         db_session.commit()
-        
+
         # 同步到LLM管理器 - 更新内存中的配置
         if llm_manager:
             # 先删除旧配置（使用旧名称）
@@ -1712,7 +2051,7 @@ def update_llm_config(config_id):
                 llm_manager.delete_config(old_name)
             except:
                 pass
-            
+
             # 添加更新后的配置（使用新名称）
             llm_manager.add_config(
                 name=config.name,
@@ -1721,25 +2060,22 @@ def update_llm_config(config_id):
                 api_key=config.api_key,
                 model_id=config.model_id,
                 timeout=config.timeout,
-                is_default=bool(config.is_default)
+                is_default=bool(config.is_default),
             )
-        
-        return jsonify({
-            "message": "LLM配置更新成功",
-            "id": config.id
-        })
-        
+
+        return jsonify({"message": "LLM配置更新成功", "id": config.id})
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/llm-configs/test', methods=['POST'])
+@api_bp.route("/llm-configs/test", methods=["POST"])
 def test_llm_config():
     """
     测试LLM配置连接 - 真实发起请求验证连接
     POST /api/llm-configs/test
-    
+
     Request Body:
     {
         "provider": "openai",
@@ -1751,80 +2087,89 @@ def test_llm_config():
     """
     try:
         data = request.json
-        required_fields = ['provider', 'base_url', 'api_key', 'model_id']
+        required_fields = ["provider", "base_url", "api_key", "model_id"]
         for field in required_fields:
             if field not in data:
                 return jsonify({"error": f"缺少必要字段: {field}"}), 400
-        
+
         # 创建临时LLM管理器进行测试
         from src.llm.adapter import LLMManager
-        
+
         temp_llm = LLMManager()
         temp_llm.add_config(
-            name='test',
-            provider=data['provider'],
-            base_url=data.get('base_url', ''),
-            api_key=data['api_key'],
-            model_id=data['model_id'],
-            timeout=data.get('timeout', 30),
-            is_default=True
+            name="test",
+            provider=data["provider"],
+            base_url=data.get("base_url", ""),
+            api_key=data["api_key"],
+            model_id=data["model_id"],
+            timeout=data.get("timeout", 30),
+            is_default=True,
         )
-        
+
         # 获取适配器并发送真实测试请求
-        adapter = temp_llm.get_adapter('test')
-        
+        adapter = temp_llm.get_adapter("test")
+
         # 打印请求信息以便调试
         print(f"[测试连接] 提供商: {data['provider']}")
         print(f"[测试连接] Base URL: {data.get('base_url', '')}")
         print(f"[测试连接] Model ID: {data['model_id']}")
         print(f"[测试连接] Timeout: {data.get('timeout', 30)}秒")
-        
+
         # 发起真实的测试请求
         response = adapter.generate(
             prompt="你好，这是一个API连接测试。如果你收到这条消息，请简单回复'连接成功'四个字。",
             max_tokens=100,
             temperature=0.1,
             max_retries=2,
-            retry_delay=3
+            retry_delay=3,
         )
-        
+
         # 验证响应
         if not response.success:
             print(f"[测试连接] 失败: {response.error_message}")
-            return jsonify({
-                "success": False,
-                "error": f"LLM API请求失败: {response.error_message}",
-                "message": "连接测试失败"
-            }), 500
-        
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": f"LLM API请求失败: {response.error_message}",
+                        "message": "连接测试失败",
+                    }
+                ),
+                500,
+            )
+
         # 验证响应内容是否为空
         if not response.content or len(response.content.strip()) == 0:
             print(f"[测试连接] 失败: 响应为空")
-            return jsonify({
-                "success": False,
-                "error": "LLM API返回空响应",
-                "message": "连接测试失败"
-            }), 500
-        
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "LLM API返回空响应",
+                        "message": "连接测试失败",
+                    }
+                ),
+                500,
+            )
+
         print(f"[测试连接] 成功，响应: {response.content[:100]}...")
-        
-        return jsonify({
-            "success": True,
-            "response": response.content[:200],  # 返回前200字符作为验证
-            "model": response.model,
-            "usage": response.usage,
-            "message": "连接测试成功"
-        })
-        
+
+        return jsonify(
+            {
+                "success": True,
+                "response": response.content[:200],  # 返回前200字符作为验证
+                "model": response.model,
+                "usage": response.usage,
+                "message": "连接测试成功",
+            }
+        )
+
     except Exception as e:
         print(f"[测试连接] 异常: {str(e)}")
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
-@api_bp.route('/llm-configs/<int:config_id>/set-default', methods=['POST'])
+@api_bp.route("/llm-configs/<int:config_id>/set-default", methods=["POST"])
 def set_default_llm_config(config_id):
     """
     设置默认LLM配置
@@ -1832,27 +2177,27 @@ def set_default_llm_config(config_id):
     """
     try:
         from src.database.models import LLMConfig
-        
+
         # 取消所有默认
         db_session.query(LLMConfig).update({LLMConfig.is_default: 0})
-        
+
         # 设置新默认
         config = db_session.query(LLMConfig).get(config_id)
         if not config:
             db_session.rollback()
             return jsonify({"error": "配置不存在"}), 404
-        
+
         config.is_default = 1
         db_session.commit()
-        
+
         return jsonify({"message": "默认配置设置成功"})
-        
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/llm-configs/<int:config_id>/unset-default', methods=['POST'])
+@api_bp.route("/llm-configs/<int:config_id>/unset-default", methods=["POST"])
 def unset_default_llm_config(config_id):
     """
     取消默认LLM配置
@@ -1860,23 +2205,23 @@ def unset_default_llm_config(config_id):
     """
     try:
         from src.database.models import LLMConfig
-        
+
         config = db_session.query(LLMConfig).get(config_id)
         if not config:
             return jsonify({"error": "配置不存在"}), 404
-        
+
         if config.is_default:
             config.is_default = 0
             db_session.commit()
-        
+
         return jsonify({"message": "已取消默认配置"})
-        
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/llm-configs/<int:config_id>', methods=['DELETE'])
+@api_bp.route("/llm-configs/<int:config_id>", methods=["DELETE"])
 def delete_llm_config(config_id):
     """
     删除LLM配置
@@ -1884,16 +2229,16 @@ def delete_llm_config(config_id):
     """
     try:
         from src.database.models import LLMConfig
-        
+
         config = db_session.query(LLMConfig).get(config_id)
         if not config:
             return jsonify({"error": "配置不存在"}), 404
-        
+
         db_session.delete(config)
         db_session.commit()
-        
+
         return jsonify({"message": "LLM配置删除成功"})
-        
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -1901,7 +2246,8 @@ def delete_llm_config(config_id):
 
 # ==================== Prompt模板接口 ====================
 
-@api_bp.route('/prompts', methods=['GET'])
+
+@api_bp.route("/prompts", methods=["GET"])
 def list_prompts():
     """
     查询Prompt模板列表
@@ -1909,27 +2255,34 @@ def list_prompts():
     """
     try:
         from src.database.models import PromptTemplate
-        
+
         templates = db_session.query(PromptTemplate).all()
-        
-        return jsonify({
-            "items": [{
-                "id": t.id,
-                "name": t.name,
-                "description": t.description,
-                "template": t.template,
-                "template_type": t.template_type,
-                "is_default": bool(t.is_default),
-                "created_at": t.created_at.isoformat() if t.created_at else None
-            } for t in templates]
-        })
-        
+
+        return jsonify(
+            {
+                "items": [
+                    {
+                        "id": t.id,
+                        "name": t.name,
+                        "description": t.description,
+                        "template": t.template,
+                        "template_type": t.template_type,
+                        "is_default": bool(t.is_default),
+                        "created_at": (
+                            t.created_at.isoformat() if t.created_at else None
+                        ),
+                    }
+                    for t in templates
+                ]
+            }
+        )
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/prompts/<int:prompt_id>', methods=['GET'])
+@api_bp.route("/prompts/<int:prompt_id>", methods=["GET"])
 def get_prompt(prompt_id):
     """
     获取Prompt模板详情
@@ -1937,27 +2290,31 @@ def get_prompt(prompt_id):
     """
     try:
         from src.database.models import PromptTemplate
-        
+
         template = db_session.query(PromptTemplate).get(prompt_id)
         if not template:
             return jsonify({"error": "模板不存在"}), 404
-        
-        return jsonify({
-            "id": template.id,
-            "name": template.name,
-            "description": template.description,
-            "template": template.template,
-            "template_type": template.template_type,
-            "is_default": bool(template.is_default),
-            "created_at": template.created_at.isoformat() if template.created_at else None
-        })
-        
+
+        return jsonify(
+            {
+                "id": template.id,
+                "name": template.name,
+                "description": template.description,
+                "template": template.template,
+                "template_type": template.template_type,
+                "is_default": bool(template.is_default),
+                "created_at": (
+                    template.created_at.isoformat() if template.created_at else None
+                ),
+            }
+        )
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/prompts/<int:prompt_id>', methods=['PUT'])
+@api_bp.route("/prompts/<int:prompt_id>", methods=["PUT"])
 def update_prompt(prompt_id):
     """
     更新Prompt模板
@@ -1965,26 +2322,26 @@ def update_prompt(prompt_id):
     """
     try:
         from src.database.models import PromptTemplate
-        
+
         template = db_session.query(PromptTemplate).get(prompt_id)
         if not template:
             return jsonify({"error": "模板不存在"}), 404
-        
+
         data = request.json
-        
-        if 'name' in data:
-            template.name = data['name']
-        if 'description' in data:
-            template.description = data['description']
-        if 'template' in data:
-            template.template = data['template']
-        if 'template_type' in data:
-            template.template_type = data['template_type']
-        
+
+        if "name" in data:
+            template.name = data["name"]
+        if "description" in data:
+            template.description = data["description"]
+        if "template" in data:
+            template.template = data["template"]
+        if "template_type" in data:
+            template.template_type = data["template_type"]
+
         db_session.commit()
-        
+
         return jsonify({"message": "模板更新成功"})
-        
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -1992,26 +2349,30 @@ def update_prompt(prompt_id):
 
 # ==================== 生成任务管理接口 ====================
 
-@api_bp.route('/tasks', methods=['GET'])
+
+@api_bp.route("/tasks", methods=["GET"])
 def list_tasks():
     """
     查询生成任务列表
     GET /api/tasks?page=1&limit=20&status=processing&search=keyword&requirement_id=1
     """
     try:
-        from src.database.models import GenerationTask as GenerationTaskModel, Requirement
-        
-        page = request.args.get('page', 1, type=int)
-        limit = request.args.get('limit', 20, type=int)
-        status = request.args.get('status')
-        search = request.args.get('search', '').strip()
-        requirement_id = request.args.get('requirement_id', type=int)
-        
+        from src.database.models import (
+            GenerationTask as GenerationTaskModel,
+            Requirement,
+        )
+
+        page = request.args.get("page", 1, type=int)
+        limit = request.args.get("limit", 20, type=int)
+        status = request.args.get("status")
+        search = request.args.get("search", "").strip()
+        requirement_id = request.args.get("requirement_id", type=int)
+
         query = db_session.query(GenerationTaskModel).outerjoin(Requirement)
-        
+
         if status:
             # 支持多值状态筛选（如 cancelled,failed）
-            status_list = [s.strip() for s in status.split(',')]
+            status_list = [s.strip() for s in status.split(",")]
             if len(status_list) > 1:
                 query = query.filter(GenerationTaskModel.status.in_(status_list))
             else:
@@ -2021,41 +2382,43 @@ def list_tasks():
         if search:
             # 搜索需求名称（支持模糊匹配）
             query = query.filter(GenerationTaskModel.requirement_title.contains(search))
-        
+
         # 按创建时间倒序
         query = query.order_by(GenerationTaskModel.created_at.desc())
-        
+
         total = query.count()
         tasks = query.offset((page - 1) * limit).limit(limit).all()
-        
+
         task_list = []
         for t in tasks:
-            task_list.append({
-                "task_id": t.task_id,
-                "requirement_id": t.requirement_id,
-                "requirement_title": t.requirement_title or (t.requirement.title if t.requirement else ''),
-                "status": t.status,
-                "progress": t.progress or 0.0,
-                "message": t.message or '',
-                "case_count": t.case_count or 0,
-                "duration": t.duration or 0.0,
-                "created_at": t.created_at.isoformat() if t.created_at else '',
-                "started_at": t.started_at.isoformat() if t.started_at else '',
-                "completed_at": t.completed_at.isoformat() if t.completed_at else ''
-            })
-        
-        return jsonify({
-            "tasks": task_list,
-            "total": total,
-            "page": page,
-            "limit": limit
-        })
-        
+            task_list.append(
+                {
+                    "task_id": t.task_id,
+                    "requirement_id": t.requirement_id,
+                    "requirement_title": t.requirement_title
+                    or (t.requirement.title if t.requirement else ""),
+                    "status": t.status,
+                    "progress": t.progress or 0.0,
+                    "message": t.message or "",
+                    "case_count": t.case_count or 0,
+                    "duration": t.duration or 0.0,
+                    "created_at": t.created_at.isoformat() if t.created_at else "",
+                    "started_at": t.started_at.isoformat() if t.started_at else "",
+                    "completed_at": (
+                        t.completed_at.isoformat() if t.completed_at else ""
+                    ),
+                }
+            )
+
+        return jsonify(
+            {"tasks": task_list, "total": total, "page": page, "limit": limit}
+        )
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/tasks/<task_id>/cancel', methods=['POST'])
+@api_bp.route("/tasks/<task_id>/cancel", methods=["POST"])
 def cancel_task(task_id):
     """
     终止生成任务
@@ -2065,33 +2428,36 @@ def cancel_task(task_id):
         task = generation_service.get_task(task_id)
         if not task:
             return jsonify({"error": "任务不存在"}), 404
-        
-        if task.status in ['completed', 'failed', 'cancelled', 'discarded']:
+
+        if task.status in ["completed", "failed", "cancelled", "discarded"]:
             return jsonify({"error": "任务已结束，无法终止"}), 400
-        
+
         # 设置取消状态
         generation_service.update_progress(task_id, task.progress, "用户已终止生成")
         with generation_service._lock:
-            task.status = 'cancelled'
-        
+            task.status = "cancelled"
+
         # 同步到数据库
         if generation_service.db_session:
             from src.database.models import GenerationTask as GenerationTaskModel
-            task_model = db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+
+            task_model = (
+                db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+            )
             if task_model:
-                task_model.status = 'cancelled'
+                task_model.status = "cancelled"
                 task_model.message = "用户已终止生成"
                 task_model.completed_at = datetime.utcnow()
                 db_session.commit()
-        
+
         return jsonify({"message": "任务已终止"})
-        
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/tasks/<task_id>/analysis', methods=['PUT'])
+@api_bp.route("/tasks/<task_id>/analysis", methods=["PUT"])
 def update_task_analysis(task_id):
     """
     更新任务的分析结果（编辑模块/测试点）
@@ -2101,34 +2467,37 @@ def update_task_analysis(task_id):
         task = generation_service.get_task(task_id)
         if not task:
             return jsonify({"error": "任务不存在"}), 404
-        
+
         data = request.json
-        
+
         # 更新分析快照
         with generation_service._lock:
-            if 'modules' in data:
-                task.analysis_snapshot['modules'] = data['modules']
-            if 'test_points' in data:
-                task.analysis_snapshot['test_points'] = data['test_points']
-            if 'business_flows' in data:
-                task.analysis_snapshot['business_flows'] = data['business_flows']
-        
+            if "modules" in data:
+                task.analysis_snapshot["modules"] = data["modules"]
+            if "test_points" in data:
+                task.analysis_snapshot["test_points"] = data["test_points"]
+            if "business_flows" in data:
+                task.analysis_snapshot["business_flows"] = data["business_flows"]
+
         # 同步到数据库
         if generation_service.db_session:
             from src.database.models import GenerationTask as GenerationTaskModel
-            task_model = db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+
+            task_model = (
+                db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+            )
             if task_model:
                 task_model.analysis_snapshot = task.analysis_snapshot
                 db_session.commit()
-        
+
         return jsonify({"message": "分析结果已更新"})
-        
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/tasks/<task_id>/regenerate', methods=['POST'])
+@api_bp.route("/tasks/<task_id>/regenerate", methods=["POST"])
 def regenerate_task(task_id):
     """
     重新生成用例
@@ -2138,64 +2507,82 @@ def regenerate_task(task_id):
         task = generation_service.get_task(task_id)
         if not task:
             return jsonify({"error": "任务不存在"}), 404
-        
+
+        # 只有失败或终止的任务才能重新生成
+        if task.status not in ["failed", "cancelled"]:
+            return (
+                jsonify(
+                    {
+                        "error": f"当前状态({task.status})不允许重新生成，只有失败或终止的任务可以重新生成"
+                    }
+                ),
+                400,
+            )
+
         # 重置任务状态
         with generation_service._lock:
-            task.status = 'processing'
+            task.status = "processing"
             task.progress = 25.0
-            task.message = '正在重新生成...'
+            task.message = "正在重新生成..."
             task.error_message = None
             task.result = {}
-        
+
         # 同步到数据库
         if generation_service.db_session:
             from src.database.models import GenerationTask as GenerationTaskModel
-            task_model = db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+
+            task_model = (
+                db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+            )
             if task_model:
-                task_model.status = 'processing'
+                task_model.status = "processing"
                 task_model.progress = 25.0
-                task_model.message = '正在重新生成...'
+                task_model.message = "正在重新生成..."
                 task_model.error_message = None
                 task_model.result = {}
                 task_model.started_at = datetime.utcnow()
                 task_model.completed_at = None
                 db_session.commit()
-        
+
         # 使用分析快照重新执行 Phase 2
         generation_service.execute_phase2_generation(task_id, task.analysis_snapshot)
-        
-        return jsonify({
-            "task_id": task_id,
-            "status": "processing",
-            "message": "重新生成任务已启动"
-        })
-        
+
+        return jsonify(
+            {
+                "task_id": task_id,
+                "status": "processing",
+                "message": "重新生成任务已启动",
+            }
+        )
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/tasks/<task_id>', methods=['DELETE'])
+@api_bp.route("/tasks/<task_id>", methods=["DELETE"])
 def delete_task(task_id):
     """
-    删除任务记录
-    DELETE /api/tasks/<task_id>?delete_cases=false
-    Query参数:
-      - delete_cases: 是否同时删除关联的用例 (true/false)
+    删除任务记录（不删除关联用例）
+    DELETE /api/tasks/<task_id>
     """
     try:
         # 优先从内存中获取任务
         task = generation_service.get_task(task_id)
-        
+
         # 如果内存中没有，从数据库获取
         if not task:
             from src.database.models import GenerationTask as GenerationTaskModel
-            task_model = db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+
+            task_model = (
+                db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+            )
             if not task_model:
                 return jsonify({"error": "任务不存在"}), 404
-            
+
             # 将数据库中的任务转换为内存对象
             from src.services.generation_service import GenerationTask
+
             task = GenerationTask(
                 task_id=task_model.task_id,
                 requirement_id=task_model.requirement_id,
@@ -2207,329 +2594,307 @@ def delete_task(task_id):
                 error_message=task_model.error_message,
                 case_count=task_model.case_count,
                 duration=task_model.duration,
-                created_at=task_model.created_at.isoformat() if task_model.created_at else None,
-                started_at=task_model.started_at.isoformat() if task_model.started_at else None,
-                completed_at=task_model.completed_at.isoformat() if task_model.completed_at else None
+                created_at=(
+                    task_model.created_at.isoformat() if task_model.created_at else None
+                ),
+                started_at=(
+                    task_model.started_at.isoformat() if task_model.started_at else None
+                ),
+                completed_at=(
+                    task_model.completed_at.isoformat()
+                    if task_model.completed_at
+                    else None
+                ),
             )
-        
-        # 获取是否删除用例的参数
-        delete_cases = request.args.get('delete_cases', 'false').lower() == 'true'
-        
+
         # 如果任务还在进行中，先终止
-        if task.status in ['pending', 'processing', 'awaiting_review']:
+        if task.status in ["pending", "processing", "awaiting_review"]:
             with generation_service._lock:
-                task.status = 'cancelled'
-        
+                task.status = "cancelled"
+
         # 从内存中删除（如果存在）
         with generation_service._lock:
             if task_id in generation_service._tasks:
                 del generation_service._tasks[task_id]
-        
-        requirement_id = task.requirement_id
-        deleted_case_count = 0
-        
-        # 从数据库中删除
+
+        # 从数据库中删除任务记录
         if generation_service.db_session:
-            from src.database.models import GenerationTask as GenerationTaskModel, TestCase
-            
-            # 如果需要删除关联用例
-            if delete_cases:
-                # 删除该需求下的所有用例
-                deleted_case_count = db_session.query(TestCase).filter_by(
-                    requirement_id=requirement_id
-                ).delete(synchronize_session=False)
-            
-            # 删除任务记录
-            task_model = db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+            from src.database.models import GenerationTask as GenerationTaskModel
+
+            task_model = (
+                db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+            )
             if task_model:
                 db_session.delete(task_model)
-            
+
             db_session.commit()
-            
-            # 如果删除了用例，需要更新需求状态
-            if delete_cases and deleted_case_count > 0:
-                from src.database.models import Requirement, RequirementStatus
-                requirement = db_session.query(Requirement).get(requirement_id)
-                if requirement:
-                    # 检查是否还有其他已完成的任务
-                    other_completed_tasks = db_session.query(GenerationTaskModel).filter_by(
-                        requirement_id=requirement_id,
-                        status='completed'
-                    ).first()
-                    
-                    if other_completed_tasks:
-                        # 还有其他完成的任务，保持completed状态
-                        pass
-                    else:
-                        # 没有其他完成的任务，重置状态
-                        requirement.status = RequirementStatus.PENDING
-                        db_session.commit()
-        
-        return jsonify({
-            "message": f"任务已删除{'，同时删除了 ' + str(deleted_case_count) + ' 条用例' if delete_cases else ''}",
-            "deleted_case_count": deleted_case_count
-        })
-        
+
+        return jsonify({"message": "任务已删除"})
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/tasks/batch-delete', methods=['POST'])
+@api_bp.route("/tasks/batch-delete", methods=["POST"])
 def batch_delete_tasks():
     """
-    批量删除任务记录
-    POST /api/tasks/batch-delete?delete_cases=false
+    批量删除任务记录（不删除关联用例）
+    POST /api/tasks/batch-delete
     Body: { "task_ids": ["task_id1", "task_id2", ...] }
-    Query参数:
-      - delete_cases: 是否同时删除关联的用例 (true/false)
     """
     try:
         data = request.get_json()
-        task_ids = data.get('task_ids', [])
-        
+        task_ids = data.get("task_ids", [])
+
         if not task_ids:
             return jsonify({"error": "未指定要删除的任务ID"}), 400
-        
-        # 获取是否删除用例的参数
-        delete_cases = request.args.get('delete_cases', 'false').lower() == 'true'
-        
+
         deleted_count = 0
-        total_deleted_cases = 0
-        requirement_ids_to_update = set()
-        
+
         for task_id in task_ids:
             try:
-                requirement_id_for_task = None
-                
                 # 从内存中删除（如果存在）
                 task = generation_service.get_task(task_id)
                 if task:
                     # 如果任务还在进行中，先终止
-                    if task.status in ['pending', 'processing', 'awaiting_review']:
+                    if task.status in ["pending", "processing", "awaiting_review"]:
                         with generation_service._lock:
-                            task.status = 'cancelled'
-                    
-                    requirement_id_for_task = task.requirement_id
-                    
+                            task.status = "cancelled"
+
                     with generation_service._lock:
                         if task_id in generation_service._tasks:
                             del generation_service._tasks[task_id]
-                
+
                 # 从数据库中删除
                 if generation_service.db_session:
-                    from src.database.models import GenerationTask as GenerationTaskModel, TestCase
-                    
-                    task_model = db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+                    from src.database.models import (
+                        GenerationTask as GenerationTaskModel,
+                    )
+
+                    task_model = (
+                        db_session.query(GenerationTaskModel)
+                        .filter_by(task_id=task_id)
+                        .first()
+                    )
                     if task_model:
-                        # 如果内存中没有任务，从数据库模型获取requirement_id
-                        if not requirement_id_for_task:
-                            requirement_id_for_task = task_model.requirement_id
-                        
-                        requirement_ids_to_update.add(requirement_id_for_task)
-                        
-                        # 如果需要删除关联用例
-                        if delete_cases:
-                            deleted_case_count = db_session.query(TestCase).filter_by(
-                                requirement_id=requirement_id_for_task
-                            ).delete(synchronize_session=False)
-                            total_deleted_cases += deleted_case_count
-                        
                         db_session.delete(task_model)
                         deleted_count += 1
             except Exception as e:
                 print(f"删除任务 {task_id} 失败: {e}")
                 continue
-        
+
         db_session.commit()
-        
-        # 如果删除了用例，需要更新相关需求的状态
-        if delete_cases and total_deleted_cases > 0 and generation_service.db_session:
-            from src.database.models import Requirement, RequirementStatus, GenerationTask as GenerationTaskModel
-            
-            for req_id in requirement_ids_to_update:
-                requirement = db_session.query(Requirement).get(req_id)
-                if requirement:
-                    # 检查是否还有其他已完成的任务
-                    other_completed_tasks = db_session.query(GenerationTaskModel).filter_by(
-                        requirement_id=req_id,
-                        status='completed'
-                    ).first()
-                    
-                    if not other_completed_tasks:
-                        # 没有其他完成的任务，重置状态
-                        requirement.status = RequirementStatus.PENDING
-            
-            db_session.commit()
-        
-        return jsonify({
-            "message": f"成功删除 {deleted_count} 个任务{'，同时删除了 ' + str(total_deleted_cases) + ' 条用例' if delete_cases else ''}",
-            "deleted_count": deleted_count,
-            "deleted_case_count": total_deleted_cases
-        })
-        
+
+        return jsonify(
+            {
+                "message": f"成功删除 {deleted_count} 个任务",
+                "deleted_count": deleted_count,
+            }
+        )
+
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
 
-@api_bp.route('/tasks/<task_id>/cases/preview', methods=['GET'])
-def preview_task_cases(task_id):
+# ==================== RAG增强: 溯源面板API ====================
+
+
+@api_bp.route("/cases/<int:case_id>/traceability", methods=["GET"])
+def get_case_traceability(case_id):
     """
-    预览用例（支持暂存和已入库两种状态）
-    GET /api/tasks/<task_id>/cases/preview
+    获取用例完整溯源信息
+    GET /api/cases/{id}/traceability
+    返回: citations, confidence_breakdown, rag_results, prompt_snapshot
     """
     try:
-        # 优先从内存中获取任务
-        task = generation_service.get_task(task_id)
-        
-        # 如果内存中没有，从数据库获取
-        if not task:
-            from src.database.models import GenerationTask as GenerationTaskModel
-            task_model = db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
-            if not task_model:
-                return jsonify({"error": "任务不存在"}), 404
-            
-            # 将数据库中的任务转换为内存对象
-            from src.services.generation_service import GenerationTask
-            task = GenerationTask(
-                task_id=task_model.task_id,
-                requirement_id=task_model.requirement_id,
-                requirement_title=task_model.requirement_title,
-                status=task_model.status,
-                progress=task_model.progress,
-                message=task_model.message,
-                result=task_model.result,
-                error_message=task_model.error_message,
-                case_count=task_model.case_count,
-                duration=task_model.duration,
-                created_at=task_model.created_at.isoformat() if task_model.created_at else None,
-                started_at=task_model.started_at.isoformat() if task_model.started_at else None,
-                completed_at=task_model.completed_at.isoformat() if task_model.completed_at else None
-            )
-        
-        # 优先从内存中获取暂存的用例
-        test_cases = task.result.get('test_cases', []) if task.result else []
-        
-        # 如果内存中没有用例，从数据库获取
-        if not test_cases:
-            from src.database.models import TestCase
-            
-            cases_from_db = db_session.query(TestCase).filter_by(
-                requirement_id=task.requirement_id
-            ).all()
-            
-            test_cases = [{
-                'case_id': tc.case_id,
-                'module': tc.module,
-                'name': tc.name,
-                'test_point': tc.test_point,
-                'priority': tc.priority.value if hasattr(tc.priority, 'value') else tc.priority,
-                'case_type': tc.case_type,
-                'status': tc.status.value if hasattr(tc.status, 'value') else tc.status
-            } for tc in cases_from_db]
-        
-        # 确定数据来源
-        if task.result and task.result.get('test_cases'):
-            source = 'stashed'
-        else:
-            source = 'database'
-        
-        return jsonify({
-            "task_id": task_id,
-            "case_count": len(test_cases),
-            "test_cases": test_cases,
-            "source": source
-        })
-        
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        from src.database.models import TestCase
 
-
-@api_bp.route('/tasks/<task_id>/cases/commit', methods=['POST'])
-def commit_cases(task_id):
-    """
-    全部入库
-    POST /api/tasks/<task_id>/cases/commit
-    """
-    try:
-        task = generation_service.get_task(task_id)
-        if not task:
-            return jsonify({"error": "任务不存在"}), 404
-        
-        if task.status != 'completed_pending_review':
-            return jsonify({"error": "任务状态不是待入库"}), 400
-        
-        test_cases = task.result.get('test_cases', [])
-        if not test_cases:
-            return jsonify({"error": "没有可入库的用例"}), 400
-        
-        # 保存用例到数据库
-        if generation_service.db_session:
-            generation_service._save_test_cases(task.requirement_id, test_cases)
-            
-            # 更新需求状态
-            from src.database.models import Requirement, RequirementStatus
-            requirement = db_session.query(Requirement).get(task.requirement_id)
-            if requirement:
-                requirement.status = RequirementStatus.COMPLETED
-                db_session.commit()
-        
-        # 更新任务状态
-        with generation_service._lock:
-            task.status = 'completed'
-            task.result['test_cases'] = []  # 清理暂存数据
-            task.result['committed'] = True
-        
-        # 同步到数据库
-        if generation_service.db_session:
-            from src.database.models import GenerationTask as GenerationTaskModel
-            task_model = db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
-            if task_model:
-                task_model.status = 'completed'
-                task_model.result = task.result
-                task_model.completed_at = datetime.utcnow()
-                db_session.commit()
-        
-        return jsonify({
-            "message": f"成功入库 {len(test_cases)} 条用例",
-            "case_count": len(test_cases)
-        })
-        
-    except Exception as e:
-        db_session.rollback()
-        return jsonify({"error": str(e)}), 500
-
-
-@api_bp.route('/tasks/<task_id>/cases/<case_id>', methods=['DELETE'])
-def delete_preview_case(task_id, case_id):
-    """
-    删除暂存的单条用例
-    DELETE /api/tasks/<task_id>/cases/<case_id>
-    """
-    try:
-        task = generation_service.get_task(task_id)
-        if not task:
-            return jsonify({"error": "任务不存在"}), 404
-        
-        test_cases = task.result.get('test_cases', [])
-        original_count = len(test_cases)
-        
-        # 删除指定用例
-        test_cases = [tc for tc in test_cases if tc.get('case_id') != case_id]
-        
-        if len(test_cases) == original_count:
+        case = db_session.query(TestCase).get(case_id)
+        if not case:
             return jsonify({"error": "用例不存在"}), 404
-        
-        # 更新暂存数据
-        with generation_service._lock:
-            task.result['test_cases'] = test_cases
-            task.case_count = len(test_cases)
-        
-        return jsonify({
-            "message": "用例已删除",
-            "case_count": len(test_cases)
-        })
-        
+
+        traceability = {
+            "case_id": case.case_id,
+            "citations": case.citations or [],
+            "confidence_breakdown": (
+                {
+                    "confidence_score": case.confidence_score,
+                    "confidence_level": case.confidence_level,
+                }
+                if case.confidence_score is not None
+                else None
+            ),
+            "rag_results": None,
+            "prompt_snapshot": None,
+        }
+
+        if case.requirement_id:
+            from src.database.models import GenerationTask
+
+            task = (
+                db_session.query(GenerationTask)
+                .filter_by(requirement_id=case.requirement_id, status="completed")
+                .order_by(GenerationTask.completed_at.desc())
+                .first()
+            )
+
+            if task and task.result:
+                traceability["rag_results"] = task.result.get("rag_stats")
+                traceability["prompt_snapshot"] = task.result.get("prompt_snapshot")
+
+        return jsonify(traceability)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/tasks/<task_id>/rag-history", methods=["GET"])
+def get_task_rag_history(task_id):
+    """
+    获取任务执行时的RAG召回完整记录
+    GET /api/tasks/{id}/rag-history
+    返回: query, vector_results, keyword_results, fused_results
+    """
+    try:
+        task = generation_service.get_task(task_id)
+        if not task:
+            from src.database.models import GenerationTask as GenerationTaskModel
+
+            task_model = (
+                db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+            )
+            if not task_model or not task_model.result:
+                return jsonify({"error": "任务不存在或无RAG历史记录"}), 404
+            result = task_model.result
+        else:
+            result = task.result or {}
+
+        rag_history = result.get("rag_history")
+        if not rag_history:
+            return jsonify({"error": "无RAG历史记录"}), 404
+
+        return jsonify(rag_history)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/tasks/<task_id>/reasoning-trace", methods=["GET"])
+def get_task_reasoning_trace(task_id):
+    """
+    获取任务执行时的推理追踪
+    GET /api/tasks/{id}/reasoning-trace
+    返回: prompt_content, llm_response_raw, parsed_cases, generation_params
+    """
+    try:
+        task = generation_service.get_task(task_id)
+        if not task:
+            from src.database.models import GenerationTask as GenerationTaskModel
+
+            task_model = (
+                db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+            )
+            if not task_model or not task_model.result:
+                return jsonify({"error": "任务不存在或无推理追踪信息"}), 404
+            result = task_model.result
+        else:
+            result = task.result or {}
+
+        reasoning_trace = {
+            "prompt_content": result.get("prompt_snapshot"),
+            "llm_response_raw": result.get("llm_raw_response"),
+            "parsed_cases": result.get("test_cases", []),
+            "generation_params": {
+                "temperature": result.get("temperature", 0.7),
+                "max_tokens": result.get("max_tokens", 8192),
+                "model": result.get("model", "unknown"),
+            },
+        }
+
+        return jsonify(reasoning_trace)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ==================== RAG增强: 检索效果评估API ====================
+
+
+@api_bp.route("/rag/evaluation/summary", methods=["GET"])
+def get_rag_evaluation_summary():
+    """
+    获取历史检索效果统计
+    GET /api/rag/evaluation/summary?days=7
+    返回: 近N天的检索效果统计
+    """
+    try:
+        from src.database.models import GenerationTask
+        from datetime import datetime, timedelta
+
+        days = request.args.get("days", 7, type=int)
+        since = datetime.utcnow() - timedelta(days=days)
+
+        tasks = (
+            db_session.query(GenerationTask)
+            .filter(
+                GenerationTask.status == "completed",
+                GenerationTask.completed_at >= since,
+                GenerationTask.result.isnot(None),
+            )
+            .all()
+        )
+
+        total_tasks = len(tasks)
+        if total_tasks == 0:
+            return jsonify(
+                {
+                    "period_days": days,
+                    "total_tasks": 0,
+                    "avg_recall_count": 0,
+                    "avg_similarity": None,
+                    "quality_alert_count": 0,
+                    "diversity_index": None,
+                }
+            )
+
+        total_recall = 0
+        similarity_scores = []
+        quality_alerts = 0
+        diversity_scores = []
+
+        for task in tasks:
+            result = task.result or {}
+            metrics = result.get("retrieval_metrics", {})
+            total_recall += metrics.get("total_results", 0)
+            if metrics.get("avg_similarity") is not None:
+                similarity_scores.append(metrics["avg_similarity"])
+            if metrics.get("quality_alert"):
+                quality_alerts += 1
+            if metrics.get("diversity_index") is not None:
+                diversity_scores.append(metrics["diversity_index"])
+
+        return jsonify(
+            {
+                "period_days": days,
+                "total_tasks": total_tasks,
+                "avg_recall_count": (
+                    round(total_recall / total_tasks, 2) if total_tasks > 0 else 0
+                ),
+                "avg_similarity": (
+                    round(sum(similarity_scores) / len(similarity_scores), 4)
+                    if similarity_scores
+                    else None
+                ),
+                "quality_alert_count": quality_alerts,
+                "diversity_index": (
+                    round(sum(diversity_scores) / len(diversity_scores), 4)
+                    if diversity_scores
+                    else None
+                ),
+            }
+        )
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
