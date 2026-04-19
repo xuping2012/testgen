@@ -437,11 +437,15 @@
             background: transparent;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 11px;
+            font-size: 14px;
             color: var(--text-secondary);
             transition: all 0.3s;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 28px;
         }
         
         .action-btn:hover {
@@ -745,7 +749,6 @@
             width: 100%;
             height: 100%;
             background: rgba(0, 0, 0, 0.85);
-            backdrop-filter: blur(8px);
             z-index: 9999;
             justify-content: center;
             align-items: center;
@@ -827,7 +830,7 @@
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: background-color 0.15s, color 0.15s, box-shadow 0.15s;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
@@ -863,8 +866,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(4px);
+            background: rgba(0, 0, 0, 0.85);
             z-index: 9999;
             justify-content: center;
             align-items: center;
@@ -946,7 +948,7 @@
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: background-color 0.15s, color 0.15s, box-shadow 0.15s;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             background: transparent;
@@ -1503,18 +1505,18 @@
                             ${c.status === 'pending_review' ? `
                                 <button class="action-btn" onclick="viewCase(${c.id})" title="查看" aria-label="查看">👁️</button>
                                 <button class="action-btn" onclick="editCase(${c.id})" title="编辑" aria-label="编辑">✏️</button>
-                                <button class="action-btn approve" onclick="approveCase(${c.id})">通过</button>
-                                <button class="action-btn reject" onclick="rejectCase(${c.id})">拒绝</button>
+                                <button class="action-btn approve" onclick="approveCase(${c.id})" title="通过" aria-label="通过">✓</button>
+                                <button class="action-btn reject" onclick="rejectCase(${c.id})" title="拒绝" aria-label="拒绝">✗</button>
                                 <button class="action-btn" onclick="deleteCase(${c.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="删除" aria-label="删除">🗑️</button>
                             ` : ''}
                             ${c.status === 'approved' ? `
                                 <button class="action-btn" onclick="viewCase(${c.id})" title="查看" aria-label="查看">👁️</button>
-                                <button class="action-btn" onclick="activateCase(${c.id})">激活</button>
+                                <button class="action-btn" onclick="activateCase(${c.id})" title="激活" aria-label="激活">↻</button>
                                 <button class="action-btn" onclick="deleteCase(${c.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="删除" aria-label="删除">🗑️</button>
                             ` : ''}
                             ${c.status === 'rejected' ? `
                                 <button class="action-btn" onclick="viewCase(${c.id})" title="查看" aria-label="查看">👁️</button>
-                                <button class="action-btn" onclick="activateCase(${c.id})">激活</button>
+                                <button class="action-btn" onclick="activateCase(${c.id})" title="激活" aria-label="激活">↻</button>
                                 <button class="action-btn" onclick="deleteCase(${c.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="删除" aria-label="删除">🗑️</button>
                             ` : ''}
                         </div>

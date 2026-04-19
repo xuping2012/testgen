@@ -561,8 +561,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(4px);
+            background: rgba(0, 0, 0, 0.85);
             z-index: 9999;
             justify-content: center;
             align-items: center;
@@ -644,7 +643,7 @@
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: background-color 0.15s, color 0.15s, box-shadow 0.15s;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             background: transparent;
@@ -678,6 +677,97 @@
             background: var(--neon-green);
             color: var(--dark-bg);
             box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
+        }
+        
+        /* Custom Confirm Dialog */
+        .confirm-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 3000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .confirm-modal.active {
+            display: flex;
+        }
+        
+        .confirm-box {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 420px;
+            width: 90%;
+            box-shadow: 0 0 40px rgba(255, 0, 85, 0.2);
+            position: relative;
+        }
+        
+        .confirm-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, var(--neon-pink), #ff0055);
+        }
+        
+        .confirm-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--neon-pink);
+            margin-bottom: 12px;
+        }
+        
+        .confirm-message {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+        
+        .confirm-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+        
+        .confirm-btn {
+            padding: 10px 28px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background-color 0.15s, color 0.15s;
+        }
+        
+        .confirm-btn-cancel {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--dark-border);
+        }
+        
+        .confirm-btn-cancel:hover {
+            border-color: var(--text-primary);
+            color: var(--text-primary);
+        }
+        
+        .confirm-btn-ok {
+            background: transparent;
+            color: #ff0055;
+            border: 1px solid #ff0055;
+        }
+        
+        .confirm-btn-ok:hover {
+            background: #ff0055;
+            color: var(--dark-bg);
         }
         
         /* Delete button */
@@ -1808,9 +1898,7 @@
             
             const apiType = typeMap[itemType] || 'case';
             
-            if (!confirm(`确定要删除此${getTypeLabel(apiType)}吗？`)) {
-                return;
-            }
+            showConfirm('确认删除', `确定要删除此${getTypeLabel(apiType)}吗？此操作不可恢复。`, async function() {
 
             try {
                 const response = await fetch('/api/rag/delete', {
@@ -1835,6 +1923,7 @@
                 console.error('删除失败:', error);
                 showToast('删除失败', 'error');
             }
+            });
         }
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -1858,6 +1947,18 @@
         </div>
     </div>
 
+    <!-- 自定义确认弹窗 -->
+    <div class="confirm-modal" id="confirmModal">
+        <div class="confirm-box">
+            <div class="confirm-title" id="confirmTitle">确认操作</div>
+            <div class="confirm-message" id="confirmMessage">确定要执行此操作吗？</div>
+            <div class="confirm-actions">
+                <button class="confirm-btn confirm-btn-cancel" id="confirmCancel">取消</button>
+                <button class="confirm-btn confirm-btn-ok" id="confirmOk">确定</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 提示弹窗 -->
     <div class="toast-modal" id="toastModal">
         <div class="toast-box" id="toastBox">
@@ -1868,6 +1969,44 @@
     </div>
 
     <script>
+        // 自定义确认弹窗
+        let _confirmCallback = null;
+        
+        function showConfirm(title, message, onOk) {
+            document.getElementById('confirmTitle').textContent = title;
+            document.getElementById('confirmMessage').textContent = message;
+            document.getElementById('confirmModal').classList.add('active');
+            _confirmCallback = onOk;
+        }
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            const okBtn = document.getElementById('confirmOk');
+            const cancelBtn = document.getElementById('confirmCancel');
+            const overlay = document.getElementById('confirmModal');
+            
+            if (okBtn) {
+                okBtn.addEventListener('click', function() {
+                    overlay.classList.remove('active');
+                    if (_confirmCallback) _confirmCallback();
+                    _confirmCallback = null;
+                });
+            }
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', function() {
+                    overlay.classList.remove('active');
+                    _confirmCallback = null;
+                });
+            }
+            if (overlay) {
+                overlay.addEventListener('click', function(e) {
+                    if (e.target === this) {
+                        this.classList.remove('active');
+                        _confirmCallback = null;
+                    }
+                });
+            }
+        });
+
         // 提示弹窗
         function showToast(message, type = 'info') {
             const toastModal = document.getElementById('toastModal');

@@ -12,7 +12,7 @@ sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
-from flask import Blueprint, request, jsonify, send_from_directory, send_file
+from flask import Blueprint, request, jsonify, send_from_directory, send_file, Response
 from werkzeug.utils import secure_filename
 from datetime import datetime
 import json
@@ -1131,6 +1131,44 @@ def rag_upsert():
 
     except Exception as e:
         db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/rag/delete", methods=["POST"])
+def rag_delete():
+    """
+    从向量库删除数据
+    POST /api/rag/delete
+
+    Request Body:
+    {
+        "type": "case/defect/requirement",
+        "id": "唯一标识"
+    }
+    """
+    try:
+        if not vector_store:
+            return jsonify({"error": "向量库未初始化"}), 500
+
+        data = request.json
+        if not data or "type" not in data or "id" not in data:
+            return jsonify({"error": "缺少必要字段: type, id"}), 400
+
+        item_type = data["type"]
+        item_id = data["id"]
+
+        if item_type == "case":
+            vector_store.delete_case(item_id)
+        elif item_type == "defect":
+            vector_store.delete_defect(item_id)
+        elif item_type == "requirement":
+            vector_store.delete_requirement(item_id)
+        else:
+            return jsonify({"error": f"不支持的类型: {item_type}"}), 400
+
+        return jsonify({"success": True, "message": "删除成功"})
+
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
@@ -2906,16 +2944,25 @@ def get_rag_evaluation_summary():
 @api_bp.route("/chat", methods=["POST"])
 def chat_with_llm():
     """
-    与大模型对话
+    与大模型对话（支持流式响应）
     POST /api/chat
 
     Request Body:
     {
         "messages": [{"role": "user", "content": "..."}, ...],
-        "config_name": "llm配置名称（可选，默认使用默认配置）"
+        "config_name": "llm配置名称（可选，默认使用默认配置）",
+        "stream": true/false (是否使用流式响应，默认true)
     }
 
-    Response:
+    Response (stream=true):
+    Server-Sent Events (SSE)
+    event: message
+    data: {"content": "...", "done": false}
+    
+    event: done
+    data: {"content": "...", "model": "...", "usage": {...}}
+
+    Response (stream=false):
     {
         "success": true,
         "content": "AI回复内容",
@@ -2931,6 +2978,7 @@ def chat_with_llm():
 
         messages = data["messages"]
         config_name = data.get("config_name")
+        stream = data.get("stream", True)  # 默认使用流式响应
 
         # 验证 messages 格式
         if not isinstance(messages, list) or len(messages) == 0:
@@ -2944,23 +2992,48 @@ def chat_with_llm():
         adapter = llm_manager.get_adapter(config_name)
         config_info = llm_manager.get_config_info(config_name)
 
-        # 调用 LLM
-        response = adapter.chat(messages)
-
-        if response.success:
-            return jsonify({
-                "success": True,
-                "content": response.content,
-                "model": config_info.get("model_id", response.model),
-                "usage": response.usage,
-                "config_name": config_info.get("name", "")
+        if stream:
+            # 流式响应 - 真正的逐块返回
+            def generate():
+                try:
+                    # 使用流式生成器
+                    for chunk in adapter.chat_stream(messages):
+                        yield f"event: message\n"
+                        yield f"data: {json.dumps({'content': chunk, 'done': False}, ensure_ascii=False)}\n\n"
+                    
+                    # 发送完成事件
+                    yield f"event: done\n"
+                    yield f"data: {json.dumps({
+                        'model': config_info.get('model_id', adapter.model_id),
+                        'config_name': config_info.get('name', '')
+                    }, ensure_ascii=False)}\n\n"
+                except Exception as e:
+                    yield f"event: error\n"
+                    yield f"data: {json.dumps({'error': f'LLM调用失败: {str(e)}'}, ensure_ascii=False)}\n\n"
+            
+            return Response(generate(), mimetype='text/event-stream', headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no',  # 禁用nginx缓冲
+                'Connection': 'keep-alive'
             })
         else:
-            return jsonify({
-                "success": False,
-                "error": response.error_message,
-                "model": config_info.get("model_id", response.model)
-            }), 500
+            # 非流式响应（兼容旧版）
+            response = adapter.chat(messages, stream=False)
+
+            if response.success:
+                return jsonify({
+                    "success": True,
+                    "content": response.content,
+                    "model": config_info.get("model_id", response.model),
+                    "usage": response.usage,
+                    "config_name": config_info.get("name", "")
+                })
+            else:
+                return jsonify({
+                    "success": False,
+                    "error": response.error_message,
+                    "model": config_info.get("model_id", response.model)
+                }), 500
 
     except ValueError as e:
         return jsonify({"error": str(e)}), 400

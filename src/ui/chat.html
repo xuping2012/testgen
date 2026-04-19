@@ -621,8 +621,8 @@
         let isLoading = false;
         let llmConfigs = [];
 
-        // ==================== Initialization ====================
-        async function init() {
+        // ==================== Event Listeners ====================
+        document.addEventListener('DOMContentLoaded', function() {
             // Setup confirm dialog listeners (DOM must be ready)
             const confirmOkBtn = document.getElementById('confirmOk');
             const confirmCancelBtn = document.getElementById('confirmCancel');
@@ -649,16 +649,33 @@
                 });
             }
 
+            const messageInput = document.getElementById('messageInput');
+            if (messageInput) {
+                messageInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        sendMessage();
+                    }
+                });
+
+                // Auto-resize textarea
+                messageInput.addEventListener('input', function() {
+                    this.style.height = 'auto';
+                    this.style.height = Math.min(this.scrollHeight, 150) + 'px';
+                });
+            }
+
+            // Initialize
             loadSessionsFromStorage();
             renderSessions();
-            await loadLLMConfigs();
-            
-            if (sessions.length === 0) {
-                createNewSession();
-            } else if (!currentSessionId || !sessions.find(s => s.id === currentSessionId)) {
-                switchSession(sessions[0].id);
-            }
-        }
+            loadLLMConfigs().then(() => {
+                if (sessions.length === 0) {
+                    createNewSession();
+                } else if (!currentSessionId || !sessions.find(s => s.id === currentSessionId)) {
+                    switchSession(sessions[0].id);
+                }
+            });
+        });
 
         // ==================== Session Management ====================
         function loadSessionsFromStorage() {
@@ -871,19 +888,75 @@
                     content: m.content
                 }));
                 
-                // Call API
+                // Add placeholder for AI response
+                const aiMessageIndex = session.messages.length;
+                session.messages.push({ role: 'assistant', content: '', model: '' });
+                renderMessages();
+                
+                // Call API with streaming
                 const response = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ messages, config_name: configName })
+                    body: JSON.stringify({ messages, config_name: configName, stream: true })
                 });
                 
-                const data = await response.json();
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || '请求失败');
+                }
                 
-                if (data.success) {
-                    addMessageToSession('assistant', data.content, data.model);
-                } else {
-                    addMessageToSession('assistant', `错误: ${data.error}`, '');
+                // 读取SSE流
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let fullContent = '';
+                let currentEvent = 'message';
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    
+                    if (done) {
+                        break;
+                    }
+                    
+                    // 解码数据
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || ''; // 保留最后一行（可能不完整）
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('event: ')) {
+                            currentEvent = line.slice(7);
+                        } else if (line.startsWith('data: ')) {
+                            const dataStr = line.slice(6);
+                            try {
+                                const data = JSON.parse(dataStr);
+                                
+                                if (currentEvent === 'message') {
+                                    // 收到消息块
+                                    if (data.content) {
+                                        fullContent += data.content;
+                                        // 更新消息内容
+                                        session.messages[aiMessageIndex].content = fullContent;
+                                        saveSessionsToStorage();
+                                        renderMessages();
+                                    }
+                                } else if (currentEvent === 'done') {
+                                    // 完成事件
+                                    session.messages[aiMessageIndex].model = data.model || '';
+                                    saveSessionsToStorage();
+                                    renderMessages();
+                                } else if (currentEvent === 'error') {
+                                    // 错误事件
+                                    session.messages[aiMessageIndex].content = `错误: ${data.error}`;
+                                    saveSessionsToStorage();
+                                    renderMessages();
+                                }
+                            } catch (e) {
+                                console.error('解析SSE数据失败:', e);
+                            }
+                        }
+                    }
                 }
             } catch (e) {
                 addMessageToSession('assistant', `请求失败: ${e.message}`, '');
@@ -919,28 +992,6 @@
             document.getElementById('confirmOverlay').classList.add('active');
             confirmCallback = onOk;
         }
-
-        // ==================== Event Listeners ====================
-        document.addEventListener('DOMContentLoaded', function() {
-            const messageInput = document.getElementById('messageInput');
-            if (messageInput) {
-                messageInput.addEventListener('keydown', function(e) {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        sendMessage();
-                    }
-                });
-
-                // Auto-resize textarea
-                messageInput.addEventListener('input', function() {
-                    this.style.height = 'auto';
-                    this.style.height = Math.min(this.scrollHeight, 150) + 'px';
-                });
-            }
-        });
-
-        // Initialize on load
-        init();
     </script>
 
     <!-- Custom Confirm Dialog -->
