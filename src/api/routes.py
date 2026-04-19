@@ -2898,3 +2898,71 @@ def get_rag_evaluation_summary():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ==================== Chat 对话接口 ====================
+
+
+@api_bp.route("/chat", methods=["POST"])
+def chat_with_llm():
+    """
+    与大模型对话
+    POST /api/chat
+
+    Request Body:
+    {
+        "messages": [{"role": "user", "content": "..."}, ...],
+        "config_name": "llm配置名称（可选，默认使用默认配置）"
+    }
+
+    Response:
+    {
+        "success": true,
+        "content": "AI回复内容",
+        "model": "模型名称",
+        "usage": {"prompt_tokens": 100, "completion_tokens": 200}
+    }
+    """
+    try:
+        data = request.json
+
+        if not data or "messages" not in data:
+            return jsonify({"error": "缺少必要字段: messages"}), 400
+
+        messages = data["messages"]
+        config_name = data.get("config_name")
+
+        # 验证 messages 格式
+        if not isinstance(messages, list) or len(messages) == 0:
+            return jsonify({"error": "messages 必须是非空数组"}), 400
+
+        # 检查配置是否存在
+        if config_name and not llm_manager.has_adapter(config_name):
+            return jsonify({"error": f"LLM配置不存在: {config_name}"}), 400
+
+        # 获取 LLM 适配器
+        adapter = llm_manager.get_adapter(config_name)
+        config_info = llm_manager.get_config_info(config_name)
+
+        # 调用 LLM
+        response = adapter.chat(messages)
+
+        if response.success:
+            return jsonify({
+                "success": True,
+                "content": response.content,
+                "model": config_info.get("model_id", response.model),
+                "usage": response.usage,
+                "config_name": config_info.get("name", "")
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": response.error_message,
+                "model": config_info.get("model_id", response.model)
+            }), 500
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"LLM调用失败: {str(e)}"}), 500

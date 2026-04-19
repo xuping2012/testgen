@@ -1016,6 +1016,10 @@
         <aside class="sidebar">
             <div class="logo">◈ TestGen</div>
             <ul class="nav-menu">
+                <li class="nav-item" onclick="location.href='chat.html'">
+                    <span class="nav-icon">▣</span>
+                    <span>Chat 对话</span>
+                </li>
                 <li class="nav-item" onclick="location.href='requirements.html'">
                     <span class="nav-icon">◉</span>
                     <span>需求管理</span>
@@ -1300,7 +1304,7 @@
                     <div class="config-actions">
                         <button class="btn btn-secondary" onclick="testConfigFromList(${c.id})" title="测试连接" aria-label="测试连接">🔗</button>
                         <button class="btn btn-secondary" onclick="editConfig(${c.id})" title="编辑" aria-label="编辑">✏️</button>
-                        ${!c.is_default ? `<button class="btn btn-secondary" onclick="setDefault(${c.id})" title="设为默认" aria-label="设为默认">⭐</button>` : `<button class="btn btn-secondary" onclick="unsetDefault(${c.id})" title="取消默认" aria-label="取消默认">☆</button>`}
+                        ${!c.is_default ? `<button class="btn btn-secondary" onclick="setDefault(${c.id})" title="设为默认" aria-label="设为默认">☆</button>` : `<button class="btn btn-secondary" onclick="unsetDefault(${c.id})" title="取消默认" aria-label="取消默认" style="color: var(--neon-yellow);">★</button>`}
                         <button class="btn btn-secondary" onclick="deleteConfig(${c.id})" title="删除" aria-label="删除">🗑️</button>
                     </div>
                 </div>

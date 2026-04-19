@@ -11,7 +11,7 @@ import sys
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from flask import Flask, send_from_directory
+from flask import Flask, send_from_directory, make_response
 from flask_cors import CORS
 
 # 导入新模块
@@ -116,6 +116,14 @@ def create_app():
     @app.route('/')
     def index():
         return send_from_directory(app.config['UI_FOLDER'], 'index.html')
+
+    @app.route('/chat')
+    def chat_page():
+        response = make_response(send_from_directory(app.config['UI_FOLDER'], 'chat.html'))
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
 
     @app.route('/requirements')
     def requirements_page():
