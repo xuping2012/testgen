@@ -1515,6 +1515,7 @@
             </div>
             <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
                 <input type="hidden" id="reviewTaskId">
+                <input type="hidden" id="reviewItems">
                 
                 <!-- 需求分析结果 -->
                 <div class="form-group">
@@ -1607,6 +1608,109 @@
                 <div id="retryContainer" style="display: none; margin-top: 20px; text-align: center;">
                     <button class="btn btn-primary" onclick="retryGeneration()">重新生成</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 质检报告弹窗 -->
+    <div class="modal" id="qualityReportModal">
+        <div class="modal-content modal-lg" style="max-width: 1000px;">
+            <div class="modal-header">
+                <h3>// 质检报告</h3>
+                <button class="close-btn" onclick="closeQualityReport()">&times;</button>
+            </div>
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <!-- 摘要统计 -->
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-title">摘要统计</div>
+                    <div class="progress-info" style="grid-template-columns: repeat(4, 1fr);">
+                        <div class="info-item">
+                            <div class="info-label">总用例数</div>
+                            <div class="info-value" id="qrTotalCases">0</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">覆盖度</div>
+                            <div class="info-value" id="qrCoverageRate">0%</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">重复率</div>
+                            <div class="info-value" id="qrDuplicateRate">0%</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">质量评分</div>
+                            <div class="info-value" id="qrQualityScore">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 未覆盖测试点 -->
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-title">未覆盖测试点 (<span id="qrUncoveredCount">0</span>)</div>
+                    <div id="qrUncoveredPoints" style="max-height: 200px; overflow-y: auto;">
+                        <div style="color: var(--text-secondary); padding: 10px; text-align: center;">无未覆盖测试点</div>
+                    </div>
+                </div>
+
+                <!-- 低质量用例 -->
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-title">低质量用例 (< 60分) (<span id="qrLowQualityCount">0</span>)</div>
+                    <div id="qrLowQualityCases" style="max-height: 200px; overflow-y: auto;">
+                        <div style="color: var(--text-secondary); padding: 10px; text-align: center;">无低质量用例</div>
+                    </div>
+                </div>
+
+                <!-- 建议 -->
+                <div class="card">
+                    <div class="card-title">建议</div>
+                    <div id="qrRecommendations" style="max-height: 200px; overflow-y: auto;">
+                        <div style="color: var(--text-secondary); padding: 10px; text-align: center;">暂无建议</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeQualityReport()">关闭</button>
+                <button class="btn btn-primary" onclick="supplementGeneration()">补充生成</button>
+                <button class="btn btn-success" onclick="confirmToDatabase()">确认入库</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 策略配置弹窗 -->
+    <div class="modal" id="strategyConfigModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>// 生成策略配置</h3>
+                <button class="close-btn" onclick="closeStrategyConfig()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>覆盖度要求</label>
+                    <select class="form-control" id="strategyCoverage">
+                        <option value="aggressive">激进 - 全覆盖，尽可能多生成用例</option>
+                        <option value="standard" selected>标准 - 覆盖核心测试点，平衡数量与质量</option>
+                        <option value="minimal">精简 - 仅覆盖核心P0用例，快速验证</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>优先级分配</label>
+                    <select class="form-control" id="strategyPriority">
+                        <option value="core_p0" selected>核心P0 - 核心模块P0，其他P1</option>
+                        <option value="all_p0">全部P0 - 所有用例P0优先级</option>
+                        <option value="auto">自动 - 根据测试点类型自动分配</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>质量阈值</label>
+                    <select class="form-control" id="strategyQualityThreshold">
+                        <option value="0.8">80% - 基础质量要求</option>
+                        <option value="0.9" selected>90% - 标准质量要求</option>
+                        <option value="0.95">95% - 高质量要求</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeStrategyConfig()">取消</button>
+                <button class="btn btn-primary" onclick="startGeneration()">开始生成</button>
             </div>
         </div>
     </div>
@@ -2301,6 +2405,14 @@
             // 填充评审弹窗数据
             document.getElementById('reviewTaskId').value = currentTaskId;
             
+            // 保存items数组（用于后续生成）
+            const itemsInput = document.getElementById('reviewItems');
+            if (analysisResult.items && analysisResult.items.length > 0) {
+                itemsInput.value = JSON.stringify(analysisResult.items);
+            } else {
+                itemsInput.value = '[]';
+            }
+            
             // 功能模块（可编辑）
             const modulesDiv = document.getElementById('reviewModules');
             if (analysisResult.modules && analysisResult.modules.length > 0) {
@@ -2379,30 +2491,37 @@
                 // 获取用户编辑后的功能模块和测试点
                 const reviewedPlan = {
                     modules: document.getElementById('reviewModules').value,
-                    points: document.getElementById('reviewPoints').value
+                    points: document.getElementById('reviewPoints').value,
+                    items: JSON.parse(document.getElementById('reviewItems').value || '[]')
                 };
                 
                 // 关闭评审弹窗
                 closeReviewModal();
                 
-                // 调用阶段2：RAG检索+LLM生成（异步）
+                // 直接调用Phase 2生成，使用默认策略配置
+                showToast('正在启动用例生成...', 'info');
+                
                 const response = await fetch('/api/generate/continue', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
                         task_id: currentTaskId,
-                        reviewed_plan: reviewedPlan
+                        reviewed_plan: reviewedPlan,
+                        generation_strategy: {
+                            coverage_rule: 'standard',
+                            priority_allocation: 'core_p0',
+                            quality_threshold: 0.9
+                        }
                     })
                 });
                 
                 const data = await response.json();
                 if (data.task_id) {
-                    // 显示轻提示，不再阻塞等待
+                    currentTaskId = data.task_id;
                     showToast('用例生成中，可在「生成进度」查看进度', 'info');
-                    // 可选：自动跳转到进度页面
-                    // window.location.href = '/progress';
+                    loadRequirements(currentPage);
                 } else {
-                    showToast(`继续生成失败：${data.error || '未知错误'}`, 'error');
+                    showToast(`生成失败：${data.error || '未知错误'}`, 'error');
                 }
             } catch (error) {
                 console.error('继续生成失败:', error);
@@ -2546,6 +2665,14 @@
                     // 根据进度更新workflow步骤
                     const progress = progressNum;
                     
+                    // ITEM级别进度显示
+                    if (data.current_item && data.total_items) {
+                        const currentItemInfo = `正在生成模块 ${data.current_item}/${data.total_items}: ${data.item_title || ''}  ${Math.round(progressNum)}%`;
+                        document.getElementById('taskMessage').textContent = currentItemInfo;
+                    } else {
+                        document.getElementById('taskMessage').textContent = message;
+                    }
+                    
                     // 需求分析阶段 (已在Phase 1完成，从25%开始)
                     if (progress >= 25 && progress < 30) {
                         updateWorkflowStep('analysis', 'completed', '✅ 完成');
@@ -2582,16 +2709,26 @@
                             // 获取生成的用例数量
                             const caseCount = (data.result && data.result.total_count) || 0;
                             
-                            setTimeout(() => {
-                                closeProgressModal();
-                                showToast(`生成完成！共生成 ${caseCount} 条测试用例`, 'success');
-                                loadRequirements(currentPage);
-                                
-                                // 显示导航提示
+                            // 检查是否有质检报告
+                            if (data.result && data.result.quality_report) {
                                 setTimeout(() => {
-                                    showCaseNavigationPrompt(caseCount, currentRequirementId);
-                                }, 500);
-                            }, 1000);
+                                    closeProgressModal();
+                                    showQualityReport(data.result.quality_report);
+                                    showToast(`生成完成！共生成 ${caseCount} 条测试用例`, 'success');
+                                    loadRequirements(currentPage);
+                                }, 1000);
+                            } else {
+                                setTimeout(() => {
+                                    closeProgressModal();
+                                    showToast(`生成完成！共生成 ${caseCount} 条测试用例`, 'success');
+                                    loadRequirements(currentPage);
+                                    
+                                    // 显示导航提示
+                                    setTimeout(() => {
+                                        showCaseNavigationPrompt(caseCount, currentRequirementId);
+                                    }, 500);
+                                }, 1000);
+                            }
                         } else if (data.status === 'failed') {
                             // 标记当前活跃步骤为错误
                             const steps = ['analysis', 'rag', 'plan', 'generate', 'save'];
@@ -2661,6 +2798,188 @@
                 setTimeout(() => {
                     notification.remove();
                 }, 300);
+            }
+        }
+
+        // ========== 质检报告相关函数 ==========
+        let currentQualityReport = null;
+
+        function showQualityReport(report) {
+            currentQualityReport = report;
+            
+            // 填充摘要统计
+            document.getElementById('qrTotalCases').textContent = report.total_cases || 0;
+            document.getElementById('qrCoverageRate').textContent = report.coverage ? Math.round(report.coverage.coverage_rate * 100) + '%' : '0%';
+            
+            // 计算重复率
+            const duplicateRate = report.duplicates && report.duplicates.length > 0 
+                ? Math.round((report.duplicates.length / report.total_cases) * 100) 
+                : 0;
+            document.getElementById('qrDuplicateRate').textContent = duplicateRate + '%';
+            
+            document.getElementById('qrQualityScore').textContent = report.quality_score ? Math.round(report.quality_score.average_score) : 0;
+            
+            // 填充未覆盖测试点
+            const uncoveredPoints = report.coverage?.uncovered_points || [];
+            document.getElementById('qrUncoveredCount').textContent = uncoveredPoints.length;
+            const uncoveredDiv = document.getElementById('qrUncoveredPoints');
+            if (uncoveredPoints.length > 0) {
+                uncoveredDiv.innerHTML = uncoveredPoints.map(point => `
+                    <div class="case-item">
+                        <div>
+                            <span style="color: var(--neon-cyan);">[${point.item_id}] ${point.item_title}</span>
+                            <span style="color: var(--text-secondary); margin-left: 10px;">→ ${point.point_title}</span>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                uncoveredDiv.innerHTML = '<div style="color: var(--neon-green); padding: 10px; text-align: center;">✓ 所有测试点已覆盖</div>';
+            }
+            
+            // 填充低质量用例
+            const lowQualityCases = report.quality_score?.low_quality_cases || [];
+            document.getElementById('qrLowQualityCount').textContent = lowQualityCases.length;
+            const lowQualityDiv = document.getElementById('qrLowQualityCases');
+            if (lowQualityCases.length > 0) {
+                lowQualityDiv.innerHTML = lowQualityCases.map(caseItem => `
+                    <div class="case-item">
+                        <div>
+                            <span style="color: var(--text-primary);">${caseItem.case_title || '未命名用例'}</span>
+                            <span style="color: #ff0055; margin-left: 10px;">得分: ${caseItem.score || 0}</span>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                lowQualityDiv.innerHTML = '<div style="color: var(--neon-green); padding: 10px; text-align: center;">✓ 无低质量用例</div>';
+            }
+            
+            // 填充建议
+            const recommendations = report.recommendations || [];
+            const recommendationsDiv = document.getElementById('qrRecommendations');
+            if (recommendations.length > 0) {
+                recommendationsDiv.innerHTML = recommendations.map(rec => `
+                    <div class="case-item">
+                        <div style="color: var(--text-primary);">💡 ${rec}</div>
+                    </div>
+                `).join('');
+            } else {
+                recommendationsDiv.innerHTML = '<div style="color: var(--neon-green); padding: 10px; text-align: center;">✓ 暂无建议</div>';
+            }
+            
+            // 显示弹窗
+            document.getElementById('qualityReportModal').classList.add('active');
+        }
+
+        function closeQualityReport() {
+            document.getElementById('qualityReportModal').classList.remove('active');
+            currentQualityReport = null;
+        }
+
+        async function supplementGeneration() {
+            if (!currentQualityReport) {
+                showToast('无质检报告数据', 'error');
+                return;
+            }
+            
+            closeQualityReport();
+            showToast('正在补充生成未覆盖的测试点...', 'info');
+            
+            try {
+                const response = await fetch('/api/generate/supplement', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        task_id: currentTaskId,
+                        uncovered_points: currentQualityReport.coverage?.uncovered_points || []
+                    })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    showToast(`补充生成完成！新增 ${data.supplement_count || 0} 条用例`, 'success');
+                    loadRequirements(currentPage);
+                } else {
+                    showToast(`补充生成失败：${data.error || '未知错误'}`, 'error');
+                }
+            } catch (error) {
+                console.error('补充生成失败:', error);
+                showToast('补充生成失败', 'error');
+            }
+        }
+
+        async function confirmToDatabase() {
+            showConfirm('确认将所有生成的用例入库？', async () => {
+                closeQualityReport();
+                showToast('正在入库...', 'info');
+                
+                try {
+                    const response = await fetch('/api/cases/commit', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ task_id: currentTaskId })
+                    });
+                    
+                    const data = await response.json();
+                    if (response.ok) {
+                        showToast(`入库完成！共 ${data.committed_count || 0} 条用例`, 'success');
+                        loadRequirements(currentPage);
+                    } else {
+                        showToast(`入库失败：${data.error || '未知错误'}`, 'error');
+                    }
+                } catch (error) {
+                    console.error('入库失败:', error);
+                    showToast('入库失败', 'error');
+                }
+            });
+        }
+
+        // ========== 策略配置相关函数 ==========
+        function showStrategyConfig() {
+            document.getElementById('strategyConfigModal').classList.add('active');
+        }
+
+        function closeStrategyConfig() {
+            document.getElementById('strategyConfigModal').classList.remove('active');
+        }
+
+        async function startGeneration() {
+            const coverage = document.getElementById('strategyCoverage').value;
+            const priority = document.getElementById('strategyPriority').value;
+            const qualityThreshold = parseFloat(document.getElementById('strategyQualityThreshold').value);
+            
+            closeStrategyConfig();
+            showToast('正在启动用例生成...', 'info');
+            
+            try {
+                const response = await fetch('/api/generate/continue', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        task_id: currentTaskId,
+                        reviewed_plan: {
+                            modules: document.getElementById('reviewModules').value,
+                            points: document.getElementById('reviewPoints').value,
+                            items: JSON.parse(document.getElementById('reviewItems').value || '[]')
+                        },
+                        generation_strategy: {
+                            coverage_rule: coverage,
+                            priority_allocation: priority,
+                            quality_threshold: qualityThreshold
+                        }
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.task_id) {
+                    currentTaskId = data.task_id;
+                    showToast('用例生成中，可在「生成进度」查看进度', 'info');
+                    loadRequirements(currentPage);
+                } else {
+                    showToast(`生成失败：${data.error || '未知错误'}`, 'error');
+                }
+            } catch (error) {
+                console.error('启动生成失败:', error);
+                showToast('启动生成失败', 'error');
             }
         }
 
@@ -3202,7 +3521,7 @@
 
         function startProgressPolling() {
             stopProgressPolling();
-            pollInterval = setInterval(() => {
+            progressInterval = setInterval(() => {
                 const hasProcessing = document.querySelector('.status-processing');
                 if (hasProcessing) {
                     loadTasks();
@@ -3211,9 +3530,9 @@
         }
 
         function stopProgressPolling() {
-            if (pollInterval) {
-                clearInterval(pollInterval);
-                pollInterval = null;
+            if (progressInterval) {
+                clearInterval(progressInterval);
+                progressInterval = null;
             }
         }
     </script>

@@ -498,13 +498,23 @@ def continue_generation():
     }
     """
     try:
+        print(f"[调试][API] /api/generate/continue 被调用")
         data = request.json
+        print(f"[调试][API] request.json: {data}")
 
         if not data or "task_id" not in data:
+            print(f"[调试][API] 缺少task_id字段")
             return jsonify({"error": "缺少必要字段: task_id"}), 400
 
         task_id = data["task_id"]
         reviewed_plan = data.get("reviewed_plan")  # 用户可能编辑过的规划
+        print(f"[调试][API] task_id: {task_id}")
+        print(f"[调试][API] reviewed_plan keys: {list(reviewed_plan.keys()) if reviewed_plan else 'None'}")
+        if reviewed_plan:
+            items = reviewed_plan.get("items", [])
+            print(f"[调试][API] reviewed_plan.items 数量: {len(items)}")
+            if items:
+                print(f"[调试][API] 第一个item: {items[0]}")
 
         # 获取任务
         task = generation_service.get_task(task_id)

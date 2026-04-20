@@ -7,9 +7,47 @@ TestGen - AI测试用例生成平台 (重构版)
 
 import os
 import sys
+import io
+
+# 修复 Windows 控制台编码问题
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# ==================== 配置日志目录 ====================
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+# 使用 logging 模块输出日志
+import logging
+from logging.handlers import RotatingFileHandler
+
+# 配置 root logger
+log_formatter = logging.Formatter('%(asctime)s [%(name)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+
+# 文件 handler (轮转日志，最大 10MB，保留 5 个文件)
+file_handler = RotatingFileHandler(
+    os.path.join(LOG_DIR, "flask.log"),
+    maxBytes=10*1024*1024,  # 10MB
+    backupCount=5,
+    encoding='utf-8'
+)
+file_handler.setFormatter(log_formatter)
+file_handler.setLevel(logging.INFO)
+
+# 控制台 handler
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(log_formatter)
+console_handler.setLevel(logging.INFO)
+
+# 配置根 logger
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.addHandler(file_handler)
+root_logger.addHandler(console_handler)
 
 from flask import Flask, send_from_directory, make_response
 from flask_cors import CORS
@@ -168,8 +206,10 @@ def create_app():
 app = create_app()
 
 if __name__ == '__main__':
-    print("=" * 60)
-    print("TestGen - AI测试用例生成平台")
-    print("基于PRD需求规格说明书 v0.1")
-    print("=" * 60)
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    import logging
+    logging.info("=" * 60)
+    logging.info("TestGen - AI测试用例生成平台")
+    logging.info("基于PRD需求规格说明书 v0.1")
+    logging.info("=" * 60)
+    # 禁用 reloader 避免日志重复输出
+    app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=False)

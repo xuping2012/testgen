@@ -3,13 +3,12 @@ __pycache__/
 .pytest_cache/
 *.py[cod]
 *$py.class
-*.md
 
 # Data
 /data/
-flask.log
-nul
 /testcase-generator/
+/docs/
+/openspec/
 
 # IDE
 .vscode/
@@ -22,3 +21,8 @@ Thumbs.db
 # Virtual environments
 venv/
 env/
+
+# 日志文件（不提交到git）
+/logs/
+*.log
+nul

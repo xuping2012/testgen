@@ -7,7 +7,7 @@
 import uuid
 import json
 import threading
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional, Callable, List
 from datetime import datetime
 from dataclasses import dataclass, asdict
 from enum import Enum
@@ -785,6 +785,8 @@ class GenerationService:
             task.status = custom_status or TaskStatus.COMPLETED.value
             task.progress = 100.0
             task.result = result
+            # 提取用例数到task对象（用于前端显示）
+            task.case_count = result.get("case_count", result.get("total_cases", 0))
             task.message = "生成完成"
             task.completed_at = datetime.utcnow().isoformat()
             # 同步到数据库
@@ -955,15 +957,1249 @@ class GenerationService:
 
         return result
 
+    def prepare_generation_context(
+        self,
+        requirement: Any,
+        test_plan_data: Dict[str, Any],
+        generation_strategy: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        准备生成上下文（Phase 2开始时执行一次）
+        
+        Args:
+            requirement: 需求对象
+            test_plan_data: 测试计划数据
+            generation_strategy: 生成策略配置（可选）
+            
+        Returns:
+            全局上下文字典，包含：
+            - plan_summary: 测试计划摘要
+            - business_rules: 业务规则
+            - generation_strategy: 生成策略
+            - requirement_content: 需求内容
+            - requirement: 需求对象
+        """
+        # 1. 测试计划摘要
+        items = test_plan_data.get("items", [])
+        plan_summary = {
+            "total_modules": len(items),
+            "total_points": sum(len(item.get("points", [])) for item in items),
+            "core_modules": [
+                item.get("title", "")
+                for item in items
+                if item.get("priority") == "P0"
+            ],
+        }
+
+        # 2. 业务规则提取（从测试计划中）
+        business_rules = test_plan_data.get("business_rules", [])
+
+        # 3. 生成策略
+        strategy = generation_strategy or {
+            "coverage_rule": "standard",
+            "priority_allocation": "core_p0",
+            "quality_threshold": 0.9,
+        }
+
+        return {
+            "plan_summary": plan_summary,
+            "business_rules": business_rules,
+            "generation_strategy": strategy,
+            "requirement_content": getattr(requirement, "content", ""),
+            "requirement": requirement,
+        }
+
+    def format_plan_summary(self, summary: Dict[str, Any]) -> str:
+        """
+        格式化测试计划摘要用于Prompt
+        
+        Args:
+            summary: 测试计划摘要字典
+            
+        Returns:
+            格式化后的字符串
+        """
+        if not summary:
+            return "无测试计划摘要"
+
+        text = f"## 测试计划摘要\n"
+        text += f"- 总模块数: {summary.get('total_modules', 0)}\n"
+        text += f"- 总测试点数: {summary.get('total_points', 0)}\n"
+
+        core_modules = summary.get("core_modules", [])
+        if core_modules:
+            text += f"- 核心模块(P0): {', '.join(core_modules)}\n"
+
+        return text
+
+    def format_business_rules(self, rules: List[Any]) -> str:
+        """
+        格式化业务规则用于Prompt
+        
+        Args:
+            rules: 业务规则列表
+            
+        Returns:
+            格式化后的字符串
+        """
+        if not rules:
+            return "## 业务规则\n无特定业务规则\n"
+
+        text = "## 业务规则\n"
+        for i, rule in enumerate(rules, 1):
+            if isinstance(rule, dict):
+                content = rule.get("content", rule.get("rule", ""))
+                module = rule.get("module", "")
+                text += f"{i}. {content}"
+                if module:
+                    text += f" (模块: {module})"
+                text += "\n"
+            else:
+                text += f"{i}. {str(rule)}\n"
+
+        return text
+
+    def format_item_points(self, points: List[Any]) -> str:
+        """
+        格式化ITEM的测试点用于Prompt
+        
+        Args:
+            points: 测试点列表
+            
+        Returns:
+            格式化后的字符串
+        """
+        if not points:
+            return "无测试点"
+
+        text = ""
+        for i, point in enumerate(points, 1):
+            if isinstance(point, dict):
+                title = point.get("title", point.get("name", ""))
+                description = point.get("description", "")
+                priority = point.get("priority", "")
+
+                text += f"{i}. {title}"
+                if description:
+                    text += f" - {description}"
+                if priority:
+                    text += f" [{priority}]"
+                text += "\n"
+            else:
+                text += f"{i}. {str(point)}\n"
+
+        return text
+
+    def format_recent_cases(self, cases: List[Dict[str, Any]]) -> str:
+        """
+        格式化最近生成的用例用于Prompt（保持风格连贯）
+        
+        Args:
+            cases: 最近生成的用例列表（通常5条）
+            
+        Returns:
+            格式化后的字符串
+        """
+        if not cases:
+            return ""
+
+        text = "## 最近生成的用例（参考格式和详细程度）\n"
+        for i, case in enumerate(cases[-5:], 1):
+            if isinstance(case, dict):
+                name = case.get("name", case.get("title", ""))
+                module = case.get("module", "")
+                priority = case.get("priority", "")
+                test_steps = case.get("test_steps", [])
+                expected_results = case.get("expected_results", [])
+
+                text += f"\n### 用例{i}: {name}\n"
+                if module:
+                    text += f"- 模块: {module}\n"
+                if priority:
+                    text += f"- 优先级: {priority}\n"
+                if test_steps:
+                    steps_text = (
+                        "\n".join(test_steps)
+                        if isinstance(test_steps, list)
+                        else str(test_steps)
+                    )
+                    text += f"- 测试步骤:\n{steps_text}\n"
+                if expected_results:
+                    results_text = (
+                        "\n".join(expected_results)
+                        if isinstance(expected_results, list)
+                        else str(expected_results)
+                    )
+                    text += f"- 预期结果:\n{results_text}\n"
+
+        return text
+
+    def generate_item_cases(
+        self,
+        item: Dict[str, Any],
+        global_context: Dict[str, Any],
+        recent_cases: Optional[List[Dict[str, Any]]] = None,
+        task_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        为单个ITEM生成测试用例
+        
+        Args:
+            item: 测试项数据（包含title, points, priority等）
+            global_context: 全局上下文（由prepare_generation_context准备）
+            recent_cases: 最近生成的用例列表（用于保持风格连贯）
+            task_id: 任务ID（用于进度更新）
+            
+        Returns:
+            生成的测试用例列表
+        """
+        if not self.llm_manager:
+            print("[生成服务] LLM管理器不可用，返回空用例列表")
+            return []
+
+        try:
+            # 1. 构建Prompt
+            item_title = item.get("title", item.get("name", "未命名模块"))
+            item_points = item.get("points", [])
+            item_priority = item.get("priority", "P1")
+
+            # [调试] 打印item信息
+            print(f"[调试][generate_item_cases] 开始生成 - title: {item_title}")
+            print(f"[调试][generate_item_cases]   - item keys: {list(item.keys())}")
+            print(f"[调试][generate_item_cases]   - points: {len(item_points) if item_points else 0}")
+            print(f"[调试][generate_item_cases]   - priority: {item_priority}")
+
+            # 格式化各部分
+            plan_summary_str = self.format_plan_summary(
+                global_context.get("plan_summary", {})
+            )
+            business_rules_str = self.format_business_rules(
+                global_context.get("business_rules", [])
+            )
+            item_points_str = self.format_item_points(item_points)
+            recent_cases_str = self.format_recent_cases(recent_cases or [])
+
+            # 构建Prompt - 尝试从数据库加载模板
+            # 注意：分批生成需要专用的模板，包含 {item_title}, {item_points} 等变量
+            db_template = self._load_prompt_template("generate_optimized")
+            
+            # [调试] 打印模板加载情况
+            print(f"[调试][generate_item_cases] db_template: {'loaded' if db_template else 'NOT FOUND, using fallback'}")
+            if db_template:
+                print(f"[调试][generate_item_cases]   - 模板长度: {len(db_template)} 字符")
+                print(f"[调试][generate_item_cases]   - 前100字符: {db_template[:100]}")
+            
+            if db_template:
+                # 使用数据库模板
+                # 注意：默认模板可能不支持分批生成的变量，需要fallback
+                try:
+                    prompt = db_template.format(
+                        requirement_content=global_context.get('requirement_content', ''),
+                        item_title=item_title,
+                        item_points=item_points_str,
+                        plan_summary=plan_summary_str,
+                        business_rules=business_rules_str,
+                        recent_cases=recent_cases_str,
+                        item_priority=item_priority,
+                        rag_context="",  # 分批生成不使用RAG上下文
+                        test_plan="",   # 分批生成不使用完整测试计划
+                    )
+                except KeyError:
+                    # 模板变量不匹配，fallback到硬编码
+                    db_template = None
+            
+            if not db_template:
+                # 使用硬编码默认模板（fallback）
+                prompt = f"""# 角色定义
+
+你是资深的测试用例设计专家，擅长将测试点转化为详细、可执行的测试用例。
+
+## 需求文档
+{global_context.get('requirement_content', '')}
+
+{plan_summary_str}
+
+{business_rules_str}
+
+## 当前模块信息
+- 模块名称: {item_title}
+- 模块优先级: {item_priority}
+
+### 测试点列表
+{item_points_str}
+
+{recent_cases_str}
+
+# 用例生成规则
+
+## 1. 正向场景（优先）
+- 生成核心功能的正向场景用例
+- **优先级：P0或P1**
+- 必须覆盖每个业务流程步骤
+- 每个测试点至少1个正向用例
+
+## 2. 边界值
+- 生成最小值、最大值、边界外用例
+- **优先级：P2**
+- 格式：min-1/min/max+1
+- 有边界值的测试点至少1-2个边界用例
+
+## 3. 异常场景
+- 生成需求明确提及的异常分支用例
+- **优先级：P2**
+- 包括：驳回、报错、状态拦截
+- 有异常处理的测试点至少1-2个异常用例
+
+## 4. 反向场景
+- 生成需求明确提及的反向流程用例
+- **优先级：P2或P3**
+- 包括：取消、重试、返回
+- 有反向流程的测试点至少1个反向用例
+
+## 5. 优先级判定规则（必须严格遵守）
+
+| 级别 | 占比 | 包含内容 | 判定方法 |
+|------|------|----------|----------|
+| **P0** | 10-15% | 核心功能正向流程 | 该功能失效是否导致核心业务中断？是→P0 |
+| **P1** | 20-30% | 基本功能 + 常见异常 | 功能可用但非核心流程？是→P1 |
+| **P2** | 35-45% | 边界值 + 异常流 + 权限限制 | 是否验证约束条件的边界或违反情况？是→P2 |
+| **P3** | 10-15% | UI展示 + 极端场景 + 体验优化 | 是否仅为UI展示、极端边界或体验优化？是→P3 |
+
+**重要约束：P0+P1合计≤40%，P2应占最大比例**
+
+## 6. 用例格式规范（必须遵守）
+
+### 标题规范
+- **长度：15-30字**（禁止10字以下的短标题）
+- **结构**：
+  - 正向场景：`[角色] + 操作动作 + 成功结果`
+  - 反向场景：`[反向] + 错误条件 + 失败结果`
+  - 边界场景：`操作对象 + 边界值描述 + 验证点`
+
+### 数据要求
+- **测试数据必须具体**：使用具体值（如 `13800138000`、`北京市朝阳区XX街道`）
+- **禁止使用占位符**：如 `{{username}}`、`{{xxx}}`、`{{password}}`
+- **预期结果必须可验证**：包含具体的UI变化或数据变化
+
+# 输出格式
+
+输出JSON数组，每个用例包含以下字段：
+```json
+{{
+  "case_id": "用例编号，如TC_000001",
+  "module": "{item_title}",
+  "test_point": "测试点描述，说明测什么（禁止与模块名相同）",
+  "name": "用例标题，15-30字，清晰描述测试目的",
+  "preconditions": "前置条件，包括环境、数据、权限等准备",
+  "test_steps": ["步骤1：具体操作", "步骤2：具体操作", "步骤3：具体操作"],
+  "expected_results": ["结果1：具体可验证的结果", "结果2：具体可验证的结果"],
+  "priority": "P0/P1/P2/P3",
+  "requirement_clause": "对应需求条款编号",
+  "case_type": "功能/边界/异常/性能/安全/兼容"
+}}
+```
+
+# 重要提示
+1. 必须覆盖当前模块的所有测试点
+2. 边界值和异常场景不能遗漏
+3. 测试步骤要详细到可执行程度，使用具体数据
+4. 预期结果要明确可验证，禁止模糊描述
+5. **P0+P1合计≤40%，P2应占最大比例**
+6. **禁止使用任何占位符，必须使用具体测试数据**
+7. 直接输出JSON数组，不要包含其他说明文字"""
+
+            # 2. 调用LLM生成
+            adapter = self.llm_manager.get_adapter()
+
+            if task_id:
+                self.update_progress(task_id, None, f"🤖 正在生成模块: {item_title}")
+
+            # [调试] 打印LLM调用信息
+            print(f"[调试][generate_item_cases] 调用LLM - adapter: {type(adapter).__name__}")
+            print(f"[调试][generate_item_cases]   - prompt长度: {len(prompt)} 字符")
+            print(f"[调试][generate_item_cases]   - temperature: 0.7, max_tokens: 4096, timeout: 120")
+
+            response = adapter.generate(
+                prompt,
+                temperature=0.7,
+                max_tokens=4096,
+                timeout=120,
+                max_retries=2,
+                retry_delay=3,
+            )
+
+            # [调试] 打印LLM响应
+            print(f"[调试][generate_item_cases] LLM响应 - success: {response.success}")
+            if response.success:
+                print(f"[调试][generate_item_cases]   - 响应长度: {len(response.content) if response.content else 0} 字符")
+            else:
+                print(f"[调试][generate_item_cases]   - 错误: {response.error_message}")
+
+            if not response.success:
+                raise Exception(f"LLM生成失败: {response.error_message}")
+
+            # 3. 解析生成的用例
+            test_cases = self._parse_generated_cases(response.content)
+
+            # 4. 附加元数据到每个用例
+            for case in test_cases:
+                case["item_id"] = item.get("id", "")
+                case["item_title"] = item_title
+                case["item_priority"] = item_priority
+
+            print(f"[分批生成] 模块 '{item_title}' 生成 {len(test_cases)} 条用例")
+            return test_cases
+
+        except Exception as e:
+            print(f"[分批生成] 模块 '{item.get('title', '未知')}' 生成失败: {e}")
+            return []
+
+    def detect_duplicates(
+        self, cases: List[Dict[str, Any]], threshold: float = 0.85
+    ) -> List[Dict[str, Any]]:
+        """
+        使用 TF-IDF + 余弦相似度检测重复用例
+
+        Args:
+            cases: 测试用例列表
+            threshold: 相似度阈值（默认0.85）
+
+        Returns:
+            重复对列表，包含: case1_index, case2_index, case1_title, case2_title, similarity
+        """
+        if not cases or len(cases) < 2:
+            return []
+
+        try:
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            from sklearn.metrics.pairwise import cosine_similarity
+        except ImportError:
+            print("[质检] sklearn 未安装，跳过重复检测")
+            return []
+
+        try:
+            # 提取用例描述：case_title + test_steps
+            documents = []
+            for case in cases:
+                title = case.get("name", case.get("case_title", ""))
+                steps = case.get("test_steps", [])
+                steps_text = " ".join(steps) if isinstance(steps, list) else str(steps)
+                documents.append(f"{title} {steps_text}")
+
+            # TF-IDF 向量化
+            vectorizer = TfidfVectorizer(
+                analyzer="char_wb", ngram_range=(2, 4), max_features=10000
+            )
+            tfidf_matrix = vectorizer.fit_transform(documents)
+
+            # 计算余弦相似度矩阵
+            similarity_matrix = cosine_similarity(tfidf_matrix)
+
+            # 识别重复对（similarity > threshold）
+            duplicate_pairs = []
+            num_cases = len(cases)
+            for i in range(num_cases):
+                for j in range(i + 1, num_cases):
+                    similarity = similarity_matrix[i][j]
+                    if similarity > threshold:
+                        duplicate_pairs.append(
+                            {
+                                "case1_index": i,
+                                "case2_index": j,
+                                "case1_title": cases[i].get(
+                                    "name", cases[i].get("case_title", "")
+                                ),
+                                "case2_title": cases[j].get(
+                                    "name", cases[j].get("case_title", "")
+                                ),
+                                "similarity": round(float(similarity), 4),
+                            }
+                        )
+
+            print(f"[质检] 重复检测完成 - 发现 {len(duplicate_pairs)} 对重复用例")
+            return duplicate_pairs
+
+        except Exception as e:
+            print(f"[质检] 重复检测失败: {e}")
+            return []
+
+    def extract_point_id_from_case(self, case: Dict[str, Any]) -> Optional[str]:
+        """
+        从用例标题或标签中提取测试点ID
+
+        Args:
+            case: 测试用例字典
+
+        Returns:
+            测试点ID，如果未找到则返回None
+        """
+        # 尝试从 test_point 字段提取
+        test_point = case.get("test_point", "")
+        if test_point:
+            return test_point
+
+        # 尝试从标签提取
+        tags = case.get("tags", [])
+        if isinstance(tags, list):
+            for tag in tags:
+                if isinstance(tag, str) and ("POINT" in tag.upper() or "测试点" in tag):
+                    return tag
+
+        # 尝试从标题提取（如 "TP_001_用户登录验证"）
+        name = case.get("name", case.get("case_title", ""))
+        import re
+
+        match = re.search(r"(TP[\-_]?\d+|测试点[\-_]?\d+)", name)
+        if match:
+            return match.group(1)
+
+        return None
+
+    def check_coverage(
+        self, cases: List[Dict[str, Any]], test_plan: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        检查测试点覆盖度
+
+        Args:
+            cases: 测试用例列表
+            test_plan: 测试计划数据（包含items和points）
+
+        Returns:
+            覆盖度字典：total_points, covered_points, coverage_rate, uncovered_points
+        """
+        if not test_plan or not cases:
+            return {
+                "total_points": 0,
+                "covered_points": 0,
+                "coverage_rate": 0.0,
+                "uncovered_points": [],
+            }
+
+        try:
+            # 构建所有测试点列表
+            items = test_plan.get("items", [])
+            all_points = []
+            for item in items:
+                item_id = item.get("id", item.get("name", ""))
+                item_title = item.get("title", item.get("name", "未命名模块"))
+                points = item.get("points", [])
+                for point in points:
+                    point_id = point.get("id", point.get("name", ""))
+                    point_title = point.get("title", point.get("name", ""))
+                    all_points.append(
+                        {
+                            "item_id": item_id,
+                            "item_title": item_title,
+                            "point_id": point_id,
+                            "point_title": point_title,
+                        }
+                    )
+
+            # 构建 coverage_map: point_id -> list of cases
+            coverage_map = {}
+            for point in all_points:
+                point_id = point["point_id"]
+                if point_id not in coverage_map:
+                    coverage_map[point_id] = []
+
+            # 从用例提取 point_id 并映射
+            for case in cases:
+                case_point_id = self.extract_point_id_from_case(case)
+                if case_point_id and case_point_id in coverage_map:
+                    coverage_map[case_point_id].append(case)
+
+            # 计算覆盖度
+            covered_points = sum(
+                1 for point_id, covered_cases in coverage_map.items() if covered_cases
+            )
+            total_points = len(all_points)
+            coverage_rate = covered_points / total_points if total_points > 0 else 0.0
+
+            # 识别未覆盖的测试点
+            uncovered_points = []
+            for point in all_points:
+                point_id = point["point_id"]
+                if not coverage_map.get(point_id):
+                    uncovered_points.append(point)
+
+            print(
+                f"[质检] 覆盖度检查完成 - {covered_points}/{total_points} ({coverage_rate:.2%})"
+            )
+
+            return {
+                "total_points": total_points,
+                "covered_points": covered_points,
+                "coverage_rate": round(coverage_rate, 4),
+                "uncovered_points": uncovered_points,
+            }
+
+        except Exception as e:
+            print(f"[质检] 覆盖度检查失败: {e}")
+            return {
+                "total_points": 0,
+                "covered_points": 0,
+                "coverage_rate": 0.0,
+                "uncovered_points": [],
+                "error": str(e),
+            }
+
+    def calculate_quality_score(
+        self, cases: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        质量评分（100分制）
+
+        评分维度：
+        - 格式完整性（30分）：case_title(10), test_steps(10), expected_result(10)
+        - 步骤合理性（30分）：步骤数量2-10(20), 步骤描述长度>5(10)
+        - 优先级合理性（20分）：priority in [P0,P1,P2,P3]
+        - 边界条件覆盖（20分）：包含关键词 异常/边界/超时/失败/错误
+
+        Args:
+            cases: 测试用例列表
+
+        Returns:
+            质量评分字典：average_score, min_score, max_score, high_quality_count, low_quality_count
+        """
+        if not cases:
+            return {
+                "average_score": 0.0,
+                "min_score": 0.0,
+                "max_score": 0.0,
+                "high_quality_count": 0,
+                "low_quality_count": 0,
+                "case_scores": [],
+            }
+
+        case_scores = []
+        boundary_keywords = ["异常", "边界", "超时", "失败", "错误", "拒绝", "无效", "限制"]
+        valid_priorities = ["P0", "P1", "P2", "P3"]
+
+        for case in cases:
+            score = 0
+
+            # 1. 格式完整性（30分）
+            # case_title (10分)
+            title = case.get("name", case.get("case_title", ""))
+            if title and len(title.strip()) > 0:
+                score += 10
+
+            # test_steps (10分)
+            test_steps = case.get("test_steps", [])
+            if test_steps:
+                steps_list = (
+                    test_steps
+                    if isinstance(test_steps, list)
+                    else [test_steps]
+                )
+                if len(steps_list) > 0:
+                    score += 10
+
+                    # 步骤描述长度>5 (10分中的子项，计入步骤合理性)
+                    has_long_steps = any(
+                        len(str(step).strip()) > 5 for step in steps_list
+                    )
+                    if has_long_steps:
+                        score += 10  # 步骤描述长度得分
+                else:
+                    score += 0  # 空步骤列表，不得分
+            else:
+                score += 0  # 无步骤，不得分
+
+            # expected_result (10分)
+            expected_results = case.get("expected_results", [])
+            if expected_results:
+                results_list = (
+                    expected_results
+                    if isinstance(expected_results, list)
+                    else [expected_results]
+                )
+                if len(results_list) > 0:
+                    score += 10
+
+            # 2. 步骤合理性（30分）
+            # 步骤数量2-10 (20分)
+            if test_steps:
+                steps_list = (
+                    test_steps if isinstance(test_steps, list) else [test_steps]
+                )
+                step_count = len(steps_list)
+                if 2 <= step_count <= 10:
+                    score += 20
+                elif step_count == 1:
+                    score += 10  # 只有1步，给一半分
+                # >10步不给分（步骤过多）
+
+            # 步骤描述长度>5 已在上面计分
+
+            # 3. 优先级合理性（20分）
+            priority = case.get("priority", "")
+            if priority in valid_priorities:
+                score += 20
+
+            # 4. 边界条件覆盖（20分）
+            case_text = f"{title} {test_steps}".lower()
+            if any(kw in case_text for kw in boundary_keywords):
+                score += 20
+
+            case_scores.append(
+                {
+                    "case_id": case.get("case_id", case.get("name", "")),
+                    "score": score,
+                }
+            )
+
+        # 计算统计信息
+        scores = [cs["score"] for cs in case_scores]
+        average_score = sum(scores) / len(scores)
+        min_score = min(scores)
+        max_score = max(scores)
+        high_quality_count = sum(1 for s in scores if s >= 80)
+        low_quality_count = sum(1 for s in scores if s < 60)
+
+        print(
+            f"[质检] 质量评分完成 - 平均分: {average_score:.1f}, 高质量: {high_quality_count}, 低质量: {low_quality_count}"
+        )
+
+        return {
+            "average_score": round(average_score, 2),
+            "min_score": min_score,
+            "max_score": max_score,
+            "high_quality_count": high_quality_count,
+            "low_quality_count": low_quality_count,
+            "case_scores": case_scores,
+        }
+
+    def run_quality_check(
+        self, cases: List[Dict[str, Any]], test_plan: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        质检主流程
+
+        Args:
+            cases: 测试用例列表
+            test_plan: 测试计划数据
+
+        Returns:
+            质检报告字典
+        """
+        print("[质检] 开始执行质量检查...")
+
+        if not cases:
+            return {
+                "total_cases": 0,
+                "coverage": {
+                    "total_points": 0,
+                    "covered_points": 0,
+                    "coverage_rate": 0.0,
+                    "uncovered_points": [],
+                },
+                "duplicates": {"total_pairs": 0, "duplicate_rate": 0.0, "details": []},
+                "quality_score": {
+                    "average_score": 0.0,
+                    "min_score": 0.0,
+                    "max_score": 0.0,
+                    "high_quality_count": 0,
+                    "low_quality_count": 0,
+                },
+                "recommendations": ["未生成任何用例，请检查需求文档和Prompt配置"],
+            }
+
+        # 1. 重复检测
+        print("[质检] Step 1: 重复检测...")
+        duplicates = self.detect_duplicates(cases, threshold=0.85)
+        duplicate_rate = (
+            len(duplicates) / len(cases) if len(cases) > 0 else 0.0
+        )
+
+        # 2. 覆盖度检查
+        print("[质检] Step 2: 覆盖度检查...")
+        coverage = self.check_coverage(cases, test_plan)
+
+        # 3. 质量评分
+        print("[质检] Step 3: 质量评分...")
+        quality_score = self.calculate_quality_score(cases)
+
+        # 4. 生成建议
+        recommendations = []
+
+        # 覆盖度建议
+        if coverage["coverage_rate"] < 0.9:
+            recommendations.append(
+                f"测试点覆盖度较低 ({coverage['coverage_rate']:.2%})，建议补充生成未覆盖的测试点用例"
+            )
+        elif coverage["coverage_rate"] < 0.95:
+            recommendations.append(
+                f"测试点覆盖度良好 ({coverage['coverage_rate']:.2%})，仍有{len(coverage['uncovered_points'])}个测试点未覆盖"
+            )
+
+        # 重复建议
+        if len(duplicates) > 0:
+            recommendations.append(
+                f"发现 {len(duplicates)} 对重复用例，建议合并或删除冗余用例"
+            )
+
+        # 质量评分建议
+        if quality_score["low_quality_count"] > 0:
+            recommendations.append(
+                f"有 {quality_score['low_quality_count']} 条用例质量评分低于60分，建议优化或重写"
+            )
+        if quality_score["average_score"] < 70:
+            recommendations.append(
+                f"平均质量评分较低 ({quality_score['average_score']:.1f}分)，建议调整Prompt模板后重新生成"
+            )
+
+        # 优先级分布建议
+        priority_counts = {}
+        for case in cases:
+            priority = case.get("priority", "P2")
+            priority_counts[priority] = priority_counts.get(priority, 0) + 1
+
+        total = len(cases)
+        p0_p1_ratio = (priority_counts.get("P0", 0) + priority_counts.get("P1", 0)) / total if total > 0 else 0
+        if p0_p1_ratio > 0.5:
+            recommendations.append(
+                f"P0+P1占比过高 ({p0_p1_ratio:.2%})，建议调整为P0:10-15%, P1:20-30%, P2:35-45%"
+            )
+
+        if not recommendations:
+            recommendations.append("质检通过，用例质量良好")
+
+        # 构建质检报告
+        quality_report = {
+            "total_cases": len(cases),
+            "coverage": coverage,
+            "duplicates": {
+                "total_pairs": len(duplicates),
+                "duplicate_rate": round(duplicate_rate, 4),
+                "details": duplicates,
+            },
+            "quality_score": quality_score,
+            "recommendations": recommendations,
+        }
+
+        print(f"[质检] 质量检查完成 - 生成 {len(recommendations)} 条建议")
+        return quality_report
+
+    def generate_missing_cases(
+        self,
+        uncovered_points: List[Dict[str, Any]],
+        global_context: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """
+        补充生成未覆盖测试点的用例
+
+        Args:
+            uncovered_points: 未覆盖的测试点列表
+            global_context: 全局上下文（由prepare_generation_context准备）
+
+        Returns:
+            补充生成的用例列表
+        """
+        if not uncovered_points:
+            return []
+
+        if not self.llm_manager:
+            print("[补充生成] LLM管理器不可用，跳过补充生成")
+            return []
+
+        supplement_cases = []
+        requirement_content = global_context.get("requirement_content", "")
+
+        for point in uncovered_points:
+            point_id = point.get("point_id", "")
+            point_title = point.get("point_title", "")
+            item_title = point.get("item_title", "")
+
+            print(f"[补充生成] 为测试点 '{point_title}' 补充生成用例...")
+
+            # 构建补充生成Prompt
+            prompt = f"""你是资深的测试用例设计专家，请为以下未覆盖的测试点补充生成测试用例。
+
+## 需求文档
+{requirement_content[:2000]}
+
+## 模块信息
+- 模块名称: {item_title}
+- 测试点: {point_title}
+
+## 生成要求
+请为这个测试点生成2条测试用例：
+1. 正向场景用例（正常流程）
+2. 逆向场景用例（异常/边界情况）
+
+## 用例格式规范
+- 标题长度：15-30字
+- 测试步骤：2-10步，每步具体可执行
+- 预期结果：与步骤对应，明确可验证
+- 优先级：P0/P1/P2/P3
+- 使用具体测试数据，禁止占位符
+
+## 输出格式
+输出JSON数组，每个用例包含以下字段：
+```json
+[
+  {{
+    "case_id": "TC_SUPP_001",
+    "module": "{item_title}",
+    "test_point": "{point_title}",
+    "name": "用例标题",
+    "preconditions": "前置条件",
+    "test_steps": ["步骤1", "步骤2", "步骤3"],
+    "expected_results": ["结果1", "结果2", "结果3"],
+    "priority": "P2",
+    "requirement_clause": "",
+    "case_type": "功能"
+  }}
+]
+```
+
+直接输出JSON数组，不要包含其他说明文字。"""
+
+            try:
+                # 调用LLM生成
+                adapter = self.llm_manager.get_adapter()
+                response = adapter.generate(
+                    prompt,
+                    temperature=0.7,
+                    max_tokens=2048,
+                    timeout=60,
+                    max_retries=2,
+                    retry_delay=3,
+                )
+
+                if response.success:
+                    # 解析生成的用例
+                    parsed_cases = self._parse_generated_cases(response.content)
+
+                    # 附加元数据
+                    for case in parsed_cases:
+                        case["item_id"] = point.get("item_id", "")
+                        case["item_title"] = item_title
+                        case["is_supplement"] = True
+                        case["supplement_point"] = point_title
+
+                    supplement_cases.extend(parsed_cases)
+                    print(
+                        f"[补充生成] 测试点 '{point_title}' 生成 {len(parsed_cases)} 条用例"
+                    )
+                else:
+                    print(
+                        f"[补充生成] 测试点 '{point_title}' 生成失败: {response.error_message}"
+                    )
+
+            except Exception as e:
+                print(f"[补充生成] 测试点 '{point_title}' 生成异常: {e}")
+
+        print(f"[补充生成] 补充生成完成 - 共生成 {len(supplement_cases)} 条用例")
+        return supplement_cases
+
     def execute_phase2_generation(
-        self, task_id: str, reviewed_plan: Optional[Dict] = None
+        self,
+        task_id: str,
+        reviewed_plan: Optional[Dict] = None,
+        generation_strategy: Optional[Dict[str, Any]] = None,
     ):
         """
-        阶段2：RAG检索 + LLM生成（异步执行）
-
+        阶段2：分批生成测试用例（异步执行）
+        
+        按ITEM（功能模块）分批生成，共享全局上下文，每个ITEM独立调用LLM
+        
         Args:
             task_id: 任务ID
             reviewed_plan: 用户评审后可能编辑过的测试规划
+            generation_strategy: 生成策略配置（可选）
+        """
+        print(f"[调试][execute_phase2_generation] 方法被调用 - task_id: {task_id}")
+        print(f"[调试][execute_phase2_generation] reviewed_plan: {'provided' if reviewed_plan else 'None'}")
+
+        def run_phase2_batch():
+            print(f"[调试][run_phase2_batch] ===== 后台线程开始执行 =====")
+            print(f"[调试][run_phase2_batch] task_id: {task_id}")
+            print(f"[调试][run_phase2_batch] reviewed_plan: {'provided' if reviewed_plan else 'None'}")
+            try:
+                task_obj = self.get_task(task_id)
+                print(f"[调试][run_phase2_batch] task_obj: {'found' if task_obj else 'NOT FOUND'}")
+                if not task_obj:
+                    print(f"[调试][run_phase2_batch] 任务不存在，退出")
+                    return
+
+                # 立即更新状态为running，避免显示为待评审
+                with self._lock:
+                    task_obj.status = "running"
+                    task_obj.started_at = datetime.utcnow().isoformat()
+                    task_obj.message = "🚀 正在启动分批生成任务..."
+                    self._sync_task_to_db(task_obj)
+
+                requirement_id = task_obj.requirement_id
+
+                # 从数据库获取需求内容
+                if self.db_session:
+                    from src.database.models import Requirement
+
+                    requirement = self.db_session.query(Requirement).get(requirement_id)
+                    if not requirement:
+                        self.fail_task(task_id, "需求不存在")
+                        return
+                else:
+                    self.fail_task(task_id, "数据库会话不可用")
+                    return
+
+                # 解析测试计划
+                test_plan_data = reviewed_plan or {}
+                items = test_plan_data.get("items", [])
+
+                # [调试] 打印测试计划数据
+                print(f"[调试] reviewed_plan 类型: {type(reviewed_plan)}")
+                print(f"[调试] test_plan_data keys: {list(test_plan_data.keys())}")
+                print(f"[调试] items 数量: {len(items)}")
+                if items:
+                    print(f"[调试] 第一个item: {items[0]}")
+
+                if not items:
+                    self.fail_task(task_id, "测试计划中未找到测试项")
+                    return
+
+                total_items = len(items)
+                all_generated_cases = []
+                failed_items = []
+
+                print(f"[调试] 开始分批生成 - 总共 {total_items} 个ITEM")
+
+                # ========== 步骤1: 准备全局上下文（执行一次）==========
+                self.update_progress(task_id, 30.0, "📋 正在准备生成上下文...")
+
+                global_context = self.prepare_generation_context(
+                    requirement, test_plan_data, generation_strategy
+                )
+
+                # 执行RAG召回（全局一次）
+                rag_context = ""
+                rag_stats = {"cases": 0, "defects": 0, "requirements": 0}
+
+                if self.vector_store:
+                    try:
+                        self.update_progress(
+                            task_id, 32.0, "🔎 正在召回相似历史用例..."
+                        )
+
+                        rag_context, rag_stats, rag_context_data = self._perform_rag_recall(
+                            global_context.get("requirement_content", ""),
+                            {},
+                            top_k_cases=5,
+                            top_k_defects=3,
+                            top_k_requirements=3,
+                        )
+
+                        recall_summary = f"✅ RAG召回完成 - "
+                        if rag_stats["cases"] > 0:
+                            recall_summary += f"用例:{rag_stats['cases']}条 "
+                        if rag_stats["defects"] > 0:
+                            recall_summary += f"缺陷:{rag_stats['defects']}条 "
+                        if rag_stats["requirements"] > 0:
+                            recall_summary += f"需求:{rag_stats['requirements']}条"
+
+                        self.update_progress(task_id, 35.0, recall_summary)
+                    except Exception as e:
+                        print(f"RAG召回失败: {e}")
+                        self.update_progress(task_id, 35.0, "⚠️ RAG召回失败，继续生成")
+                else:
+                    self.update_progress(task_id, 35.0, "⚠️ 向量库未初始化，跳过RAG召回")
+
+                # ========== 步骤2: 按ITEM分批生成 ==========
+                for idx, item in enumerate(items, 1):
+                    item_title = item.get("title", item.get("name", f"模块{idx}"))
+                    item_points = item.get("points", [])
+
+                    # [调试] 打印当前ITEM信息
+                    print(f"[调试] 正在处理 ITEM {idx}/{total_items}: {item_title}")
+                    print(f"[调试]   - item keys: {list(item.keys())}")
+                    print(f"[调试]   - points 数量: {len(item_points)}")
+
+                    # 更新进度: 30% + (idx / total_items) * 50%
+                    progress = 30.0 + (idx / total_items) * 50.0
+                    self.update_progress(
+                        task_id,
+                        progress,
+                        f"🔨 正在生成模块 {idx}/{total_items}: {item_title}",
+                    )
+
+                    try:
+                        # 获取最近5条用例（保持风格连贯）
+                        recent_cases = all_generated_cases[-5:]
+
+                        # [调试] 准备调用 generate_item_cases
+                        print(f"[调试] 调用 generate_item_cases for: {item_title}")
+                        
+                        # 为当前ITEM生成用例
+                        item_cases = self.generate_item_cases(
+                            item=item,
+                            global_context=global_context,
+                            recent_cases=recent_cases,
+                            task_id=task_id,
+                        )
+
+                        # [调试] 打印生成结果
+                        print(f"[调试] generate_item_cases 返回 {len(item_cases) if item_cases else 0} 条用例")
+
+                        if item_cases:
+                            # 立即保存到数据库
+                            try:
+                                self._save_test_cases(requirement_id, item_cases)
+                                print(
+                                    f"[分批生成] 模块 '{item_title}' 已保存 {len(item_cases)} 条用例"
+                                )
+                                all_generated_cases.extend(item_cases)
+                            except Exception as save_error:
+                                print(
+                                    f"[分批生成] 模块 '{item_title}' 保存失败: {save_error}"
+                                )
+                                failed_items.append(
+                                    {
+                                        "title": item_title,
+                                        "error": str(save_error),
+                                        "stage": "save",
+                                    }
+                                )
+                        else:
+                            failed_items.append(
+                                {
+                                    "title": item_title,
+                                    "error": "未生成任何用例",
+                                    "stage": "generate",
+                                }
+                            )
+
+                    except Exception as e:
+                        print(f"[分批生成] 模块 '{item_title}' 处理异常: {e}")
+                        failed_items.append(
+                            {"title": item_title, "error": str(e), "stage": "process"}
+                        )
+                        # 继续处理下一个ITEM，不中断整个流程
+
+                # ========== 步骤3: 质量检查 ==========
+                self.update_progress(
+                    task_id,
+                    85.0,
+                    f"🔍 正在执行质量检查...",
+                )
+
+                quality_report = self.run_quality_check(
+                    all_generated_cases, test_plan_data
+                )
+
+                # 如果覆盖度低于阈值，触发补充生成
+                coverage_threshold = (
+                    global_context.get("generation_strategy", {})
+                    .get("quality_threshold", 0.9)
+                )
+                supplement_cases = []
+                if (
+                    quality_report.get("coverage", {}).get("coverage_rate", 0)
+                    < coverage_threshold
+                ):
+                    self.update_progress(
+                        task_id,
+                        87.0,
+                        f"🔨 覆盖度不足，正在补充生成未覆盖测试点用例...",
+                    )
+                    uncovered_points = quality_report.get("coverage", {}).get(
+                        "uncovered_points", []
+                    )
+                    supplement_cases = self.generate_missing_cases(
+                        uncovered_points, global_context
+                    )
+
+                    # 保存补充生成的用例
+                    if supplement_cases:
+                        try:
+                            self._save_test_cases(requirement_id, supplement_cases)
+                            all_generated_cases.extend(supplement_cases)
+                            print(
+                                f"[分批生成] 补充生成 {len(supplement_cases)} 条用例"
+                            )
+                        except Exception as save_error:
+                            print(
+                                f"[分批生成] 补充用例保存失败: {save_error}"
+                            )
+
+                # 重新计算质检报告（包含补充用例）
+                if supplement_cases:
+                    quality_report = self.run_quality_check(
+                        all_generated_cases, test_plan_data
+                    )
+
+                self.update_progress(
+                    task_id,
+                    90.0,
+                    f"✅ 质检完成 - 覆盖度{quality_report.get('coverage', {}).get('coverage_rate', 0):.2%}",
+                )
+
+                # ========== 步骤4: 生成完成统计 ==========
+                total_cases = len(all_generated_cases)
+                success_items = total_items - len(failed_items)
+
+                # 如果有失败的模块，记录到结果中
+                result_data = {
+                    "case_count": total_cases,
+                    "total_count": total_cases,
+                    "rag_stats": rag_stats,
+                    "success_items": success_items,
+                    "failed_items": failed_items,
+                    "total_items": total_items,
+                    "quality_report": quality_report,
+                }
+
+                # 如果有失败模块，添加警告信息
+                if failed_items:
+                    failed_titles = [f["title"] for f in failed_items]
+                    result_data["warning"] = f"以下模块生成失败: {', '.join(failed_titles)}"
+
+                # 完成任务
+                self.update_progress(task_id, 100.0, "✅ 分批生成完成")
+                self.complete_task(task_id, result_data)
+
+                # 更新需求状态为"已完成"
+                if self.db_session:
+                    try:
+                        from src.database.models import Requirement, RequirementStatus
+
+                        task_obj = self.get_task(task_id)
+                        if task_obj:
+                            requirement = self.db_session.query(Requirement).get(
+                                task_obj.requirement_id
+                            )
+                            if requirement:
+                                requirement.status = RequirementStatus.COMPLETED
+                                self.db_session.commit()
+                                print(f"需求状态已更新为: {requirement.status.value}")
+                    except Exception as e:
+                        print(f"更新需求状态失败: {e}")
+
+            except Exception as e:
+                print(f"[调试][run_phase2_batch] ===== 捕获到异常 =====")
+                print(f"[调试][run_phase2_batch] 异常类型: {type(e).__name__}")
+                print(f"[调试][run_phase2_batch] 异常信息: {e}")
+                import traceback
+                traceback.print_exc()
+                self.fail_task(task_id, str(e))
+                print(f"[调试][run_phase2_batch] 任务已标记为失败")
+
+        # 在后台线程执行
+        print(f"[调试][execute_phase2_generation] 正在启动后台线程...")
+        thread = threading.Thread(target=run_phase2_batch)
+        thread.daemon = True
+        thread.start()
+        print(f"[调试][execute_phase2_generation] 后台线程已启动 - thread name: {thread.name}")
+
+    def execute_phase2_legacy(
+        self, task_id: str, reviewed_plan: Optional[Dict] = None
+    ):
+        """
+        [已废弃] 阶段2：RAG检索 + LLM生成（异步执行）- 旧版一次性生成方法
+        
+        注意：此方法已保留用于向后兼容，建议使用新的 execute_phase2_generation 分批生成方法
         """
 
         def run_phase2():
@@ -1455,7 +2691,7 @@ class GenerationService:
                         # 记录详细日志到文件
                         self._log_llm_response(prompt, response)
                         raise Exception(
-                            f"LLM返回的用例数据为空（响应长度: {len(response.content)}字符），请检查模型输出格式是否为JSON数组。详细日志已保存到 data/llm_response.log"
+                            f"LLM返回的用例数据为空（响应长度: {len(response.content)}字符），请检查模型输出格式是否为JSON数组。详细日志已保存到 logs/llm_response.log"
                         )
                 else:
                     # 模拟生成（无LLM时）
@@ -3216,7 +4452,7 @@ class GenerationService:
 
         Returns:
             {
-                "items": [{"name": "...", "risk_level": "..."}],
+                "items": [{"title": "...", "name": "...", "risk_level": "...", "points": [...], "priority": "P1"}],
                 "points": [{"item": "...", "name": "...", "risk_level": "...", "focus_points": []}],
                 "risk_assessment": {...}
             }
@@ -3225,51 +4461,62 @@ class GenerationService:
 
         result = {"items": [], "points": [], "risk_assessment": {}}
 
-        # 解析测试项（### 测试项：xxx）
-        item_pattern = r"### 测试项[：:]\s*(.+)"
-        items = re.findall(item_pattern, test_plan)
-
+        # 按行解析，保持item和point的关联关系
+        lines = test_plan.split('\n')
         current_item = None
-        for item_name in items:
-            item_name = item_name.strip()
-            if item_name:
-                # 根据内容判断风险等级
-                risk_level = "Medium"
-                if any(
-                    keyword in item_name
-                    for keyword in ["核心", "主要", "登录", "支付", "订单"]
-                ):
-                    risk_level = "Critical"
-                elif any(keyword in item_name for keyword in ["重要", "用户", "管理"]):
-                    risk_level = "High"
 
-                result["items"].append({"name": item_name, "risk_level": risk_level})
-                current_item = item_name
+        for line in lines:
+            line = line.strip()
 
-        # 解析测试点（- 测试点：xxx）
-        point_pattern = r"- 测试点[：:]\s*(.+)"
-        points = re.findall(point_pattern, test_plan)
+            # 检查是否是测试项
+            item_match = re.match(r'### 测试项[：:]\s*(.+)', line)
+            if item_match:
+                item_name = item_match.group(1).strip()
+                if item_name:
+                    # 根据内容判断风险等级
+                    risk_level = "Medium"
+                    if any(
+                        keyword in item_name
+                        for keyword in ["核心", "主要", "登录", "支付", "订单"]
+                    ):
+                        risk_level = "Critical"
+                    elif any(
+                        keyword in item_name for keyword in ["重要", "用户", "管理"]
+                    ):
+                        risk_level = "High"
 
-        for point_name in points:
-            point_name = point_name.strip()
-            if point_name and current_item:
-                # 根据测试点类型判断关注点
-                focus_points = []
-                if "正常" in point_name or "流程" in point_name:
-                    focus_points = ["主流程验证", "业务规则验证"]
-                elif "边界" in point_name:
-                    focus_points = ["边界值测试", "临界值验证"]
-                elif "异常" in point_name:
-                    focus_points = ["异常处理", "错误提示验证"]
+                    current_item = {
+                        "title": item_name,
+                        "name": item_name,
+                        "risk_level": risk_level,
+                        "priority": "P0" if risk_level == "Critical" else ("P1" if risk_level == "High" else "P2"),
+                        "points": []
+                    }
+                    result["items"].append(current_item)
+                continue
 
-                result["points"].append(
-                    {
-                        "item": current_item,
+            # 检查是否是测试点
+            point_match = re.match(r'- 测试点[：:]\s*(.+)', line)
+            if point_match and current_item:
+                point_name = point_match.group(1).strip()
+                if point_name:
+                    # 根据测试点类型判断关注点
+                    focus_points = []
+                    if "正常" in point_name or "流程" in point_name:
+                        focus_points = ["主流程验证", "业务规则验证"]
+                    elif "边界" in point_name:
+                        focus_points = ["边界值测试", "临界值验证"]
+                    elif "异常" in point_name:
+                        focus_points = ["异常处理", "错误提示验证"]
+
+                    point_data = {
+                        "item": current_item["name"],
                         "name": point_name,
                         "risk_level": "Medium",
                         "focus_points": focus_points,
                     }
-                )
+                    result["points"].append(point_data)
+                    current_item["points"].append(point_data)
 
         # 构建风险评估
         total_items = len(result["items"])
@@ -3788,7 +5035,7 @@ class GenerationService:
         try:
             import os
 
-            log_dir = "data"
+            log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs")
             os.makedirs(log_dir, exist_ok=True)
             log_path = os.path.join(log_dir, "llm_response.log")
             with open(log_path, "w", encoding="utf-8") as f:
@@ -3910,7 +5157,7 @@ class GenerationService:
 
         # 返回空列表
         print("所有解析方法均失败，返回空列表")
-        print(f"提示：请检查 data/llm_response.log 查看LLM原始响应")
+        print(f"提示：请检查 logs/llm_response.log 查看LLM原始响应")
         return []
 
     def _try_fix_json(self, json_str: str, expect_dict: bool = False) -> any:
@@ -3996,7 +5243,7 @@ class GenerationService:
         import os
         from datetime import datetime
 
-        log_dir = "data"
+        log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs")
         os.makedirs(log_dir, exist_ok=True)
         log_file = os.path.join(log_dir, "llm_response.log")
 
