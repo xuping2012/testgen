@@ -7,6 +7,7 @@ API路由定义 - RESTful接口
 
 import os
 import sys
+import logging
 
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -470,7 +471,7 @@ def trigger_generation():
                     "message": "需求分析完成，请评审后继续",
                 }
             ),
-            200,
+            202,
         )
 
     except Exception as e:
@@ -498,23 +499,23 @@ def continue_generation():
     }
     """
     try:
-        print(f"[调试][API] /api/generate/continue 被调用")
+        logging.info("[调试][API] /api/generate/continue 被调用")
         data = request.json
-        print(f"[调试][API] request.json: {data}")
+        logging.info("[调试][API] request.json keys: %s", list(data.keys()) if data else 'None')
 
         if not data or "task_id" not in data:
-            print(f"[调试][API] 缺少task_id字段")
+            logging.info("[调试][API] 缺少task_id字段")
             return jsonify({"error": "缺少必要字段: task_id"}), 400
 
         task_id = data["task_id"]
         reviewed_plan = data.get("reviewed_plan")  # 用户可能编辑过的规划
-        print(f"[调试][API] task_id: {task_id}")
-        print(f"[调试][API] reviewed_plan keys: {list(reviewed_plan.keys()) if reviewed_plan else 'None'}")
+        logging.info("[调试][API] task_id: %s", task_id)
+        logging.info("[调试][API] reviewed_plan keys: %s", list(reviewed_plan.keys()) if reviewed_plan else 'None')
         if reviewed_plan:
             items = reviewed_plan.get("items", [])
-            print(f"[调试][API] reviewed_plan.items 数量: {len(items)}")
+            logging.info("[调试][API] reviewed_plan.items 数量: %d", len(items))
             if items:
-                print(f"[调试][API] 第一个item: {items[0]}")
+                logging.info("[调试][API] 第一个item title: %s", items[0].get("title", items[0].get("name", "N/A")))
 
         # 获取任务
         task = generation_service.get_task(task_id)
@@ -2304,7 +2305,12 @@ def list_prompts():
     try:
         from src.database.models import PromptTemplate
 
-        templates = db_session.query(PromptTemplate).all()
+        ACTIVE_TYPES = {"analyze", "generate", "generate_optimized", "generate_with_citation", "review"}
+        templates = (
+            db_session.query(PromptTemplate)
+            .filter(PromptTemplate.template_type.in_(ACTIVE_TYPES))
+            .all()
+        )
 
         return jsonify(
             {
@@ -2316,6 +2322,7 @@ def list_prompts():
                         "template": t.template,
                         "template_type": t.template_type,
                         "is_default": bool(t.is_default),
+                        "line_count": t.template.count("\n") + 1,
                         "created_at": (
                             t.created_at.isoformat() if t.created_at else None
                         ),
@@ -2389,6 +2396,36 @@ def update_prompt(prompt_id):
         db_session.commit()
 
         return jsonify({"message": "模板更新成功"})
+
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/prompts/<int:prompt_id>", methods=["DELETE"])
+def delete_prompt(prompt_id):
+    """
+    删除Prompt模板
+    DELETE /api/prompts/{id}
+    """
+    try:
+        from src.database.models import PromptTemplate
+
+        template = db_session.query(PromptTemplate).get(prompt_id)
+        if not template:
+            return jsonify({"error": "模板不存在"}), 404
+
+        if template.is_default:
+            return jsonify({"error": "默认模板禁止删除"}), 403
+
+        ACTIVE_TYPES = {"analyze", "generate", "generate_optimized", "generate_with_citation", "review"}
+        if template.template_type in ACTIVE_TYPES:
+            return jsonify({"error": f"模板类型「{template.template_type}」为系统运行中，禁止删除"}), 403
+
+        db_session.delete(template)
+        db_session.commit()
+
+        return jsonify({"message": "模板删除成功"})
 
     except Exception as e:
         db_session.rollback()

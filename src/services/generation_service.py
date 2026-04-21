@@ -6,6 +6,7 @@
 
 import uuid
 import json
+import logging
 import threading
 from typing import Dict, Any, Optional, Callable, List
 from datetime import datetime
@@ -767,11 +768,28 @@ class GenerationService:
             # 同步到数据库
             self._sync_task_to_db(task)
 
-    def update_progress(self, task_id: str, progress: float, message: str):
+    def update_progress(self, task_id: str, progress: Optional[float], message: str):
         """更新任务进度"""
         task = self.get_task(task_id)
         if task:
-            task.progress = min(progress, 100.0)
+            # 确保 progress 始终是有效的数值
+            current_progress = getattr(task, 'progress', 0.0)
+            if current_progress is None:
+                current_progress = 0.0
+                
+            if progress is not None:
+                try:
+                    # 使用显式比较代替 min 以增强鲁棒性
+                    new_progress = float(progress)
+                    if new_progress > 100.0:
+                        new_progress = 100.0
+                    task.progress = new_progress
+                except (TypeError, ValueError):
+                    pass
+            else:
+                # 如果传入None，保持当前进度
+                task.progress = current_progress
+                
             task.message = message
             # 同步到数据库
             self._sync_task_to_db(task)
@@ -840,6 +858,7 @@ class GenerationService:
             if task_model.started_at:
                 end_time = task_model.completed_at or datetime.utcnow()
                 task_model.duration = (end_time - task_model.started_at).total_seconds()
+                task.duration = task_model.duration
 
             self.db_session.commit()
         except Exception as e:
@@ -1140,16 +1159,18 @@ class GenerationService:
         global_context: Dict[str, Any],
         recent_cases: Optional[List[Dict[str, Any]]] = None,
         task_id: Optional[str] = None,
+        rag_context: str = "",
     ) -> List[Dict[str, Any]]:
         """
         为单个ITEM生成测试用例
-        
+
         Args:
             item: 测试项数据（包含title, points, priority等）
             global_context: 全局上下文（由prepare_generation_context准备）
             recent_cases: 最近生成的用例列表（用于保持风格连贯）
             task_id: 任务ID（用于进度更新）
-            
+            rag_context: RAG召回的上下文（历史用例、缺陷、需求等）
+
         Returns:
             生成的测试用例列表
         """
@@ -1182,13 +1203,13 @@ class GenerationService:
             # 构建Prompt - 尝试从数据库加载模板
             # 注意：分批生成需要专用的模板，包含 {item_title}, {item_points} 等变量
             db_template = self._load_prompt_template("generate_optimized")
-            
+
             # [调试] 打印模板加载情况
             print(f"[调试][generate_item_cases] db_template: {'loaded' if db_template else 'NOT FOUND, using fallback'}")
-            if db_template:
-                print(f"[调试][generate_item_cases]   - 模板长度: {len(db_template)} 字符")
-                print(f"[调试][generate_item_cases]   - 前100字符: {db_template[:100]}")
-            
+
+            # 构建RAG上下文部分（优先使用传入的rag_context，其次从global_context获取）
+            rag_context_str = rag_context or global_context.get("rag_context", "")
+
             if db_template:
                 # 使用数据库模板
                 # 注意：默认模板可能不支持分批生成的变量，需要fallback
@@ -1201,13 +1222,13 @@ class GenerationService:
                         business_rules=business_rules_str,
                         recent_cases=recent_cases_str,
                         item_priority=item_priority,
-                        rag_context="",  # 分批生成不使用RAG上下文
+                        rag_context=rag_context_str,  # 使用RAG上下文
                         test_plan="",   # 分批生成不使用完整测试计划
                     )
                 except KeyError:
                     # 模板变量不匹配，fallback到硬编码
                     db_template = None
-            
+
             if not db_template:
                 # 使用硬编码默认模板（fallback）
                 prompt = f"""# 角色定义
@@ -1220,6 +1241,9 @@ class GenerationService:
 {plan_summary_str}
 
 {business_rules_str}
+
+## RAG召回的历史参考信息
+{rag_context_str if rag_context_str else '（无历史参考数据）'}
 
 ## 当前模块信息
 - 模块名称: {item_title}
@@ -1308,6 +1332,29 @@ class GenerationService:
 6. **禁止使用任何占位符，必须使用具体测试数据**
 7. 直接输出JSON数组，不要包含其他说明文字"""
 
+            if not db_template and self.db_session:
+                try:
+                    from src.database.models import PromptTemplate
+                    existing = (
+                        self.db_session.query(PromptTemplate)
+                        .filter(PromptTemplate.template_type == "generate_optimized")
+                        .first()
+                    )
+                    if not existing:
+                        fallback_template = PromptTemplate(
+                            name="default_generate_optimized",
+                            description="优化版用例生成模板（支持分批生成）- 由系统自动兜底创建",
+                            template_type="generate_optimized",
+                            template=prompt,
+                            is_default=1,
+                        )
+                        self.db_session.add(fallback_template)
+                        self.db_session.commit()
+                        print("[调试] fallback模板已自动保存到数据库")
+                except Exception as save_err:
+                    self.db_session.rollback()
+                    print(f"[调试] fallback模板保存失败: {save_err}")
+
             # 2. 调用LLM生成
             adapter = self.llm_manager.get_adapter()
 
@@ -1351,7 +1398,11 @@ class GenerationService:
             return test_cases
 
         except Exception as e:
+            import traceback
             print(f"[分批生成] 模块 '{item.get('title', '未知')}' 生成失败: {e}")
+            print(f"[分批生成] 异常类型: {type(e).__name__}")
+            print(f"[分批生成] 堆栈跟踪:")
+            traceback.print_exc()
             return []
 
     def detect_duplicates(
@@ -1651,7 +1702,17 @@ class GenerationService:
             )
 
         # 计算统计信息
-        scores = [cs["score"] for cs in case_scores]
+        scores = [cs["score"] for cs in case_scores if cs.get("score") is not None]
+        if not scores:
+            return {
+                "average_score": 0.0,
+                "min_score": 0.0,
+                "max_score": 0.0,
+                "high_quality_count": 0,
+                "low_quality_count": 0,
+                "case_scores": [],
+            }
+            
         average_score = sum(scores) / len(scores)
         min_score = min(scores)
         max_score = max(scores)
@@ -1911,18 +1972,18 @@ class GenerationService:
             reviewed_plan: 用户评审后可能编辑过的测试规划
             generation_strategy: 生成策略配置（可选）
         """
-        print(f"[调试][execute_phase2_generation] 方法被调用 - task_id: {task_id}")
-        print(f"[调试][execute_phase2_generation] reviewed_plan: {'provided' if reviewed_plan else 'None'}")
+        logging.info("[调试][execute_phase2_generation] 方法被调用 - task_id: %s", task_id)
+        logging.info("[调试][execute_phase2_generation] reviewed_plan: %s", 'provided' if reviewed_plan else 'None')
 
         def run_phase2_batch():
-            print(f"[调试][run_phase2_batch] ===== 后台线程开始执行 =====")
-            print(f"[调试][run_phase2_batch] task_id: {task_id}")
-            print(f"[调试][run_phase2_batch] reviewed_plan: {'provided' if reviewed_plan else 'None'}")
+            logging.info("[调试][run_phase2_batch] ===== 后台线程开始执行 =====")
+            logging.info("[调试][run_phase2_batch] task_id: %s", task_id)
+            logging.info("[调试][run_phase2_batch] reviewed_plan: %s", 'provided' if reviewed_plan else 'None')
             try:
                 task_obj = self.get_task(task_id)
-                print(f"[调试][run_phase2_batch] task_obj: {'found' if task_obj else 'NOT FOUND'}")
+                logging.info("[调试][run_phase2_batch] task_obj: %s", 'found' if task_obj else 'NOT FOUND')
                 if not task_obj:
-                    print(f"[调试][run_phase2_batch] 任务不存在，退出")
+                    logging.info("[调试][run_phase2_batch] 任务不存在，退出")
                     return
 
                 # 立即更新状态为running，避免显示为待评审
@@ -2031,37 +2092,24 @@ class GenerationService:
 
                         # [调试] 准备调用 generate_item_cases
                         print(f"[调试] 调用 generate_item_cases for: {item_title}")
-                        
-                        # 为当前ITEM生成用例
+
+                        # 为当前ITEM生成用例（传递RAG上下文）
                         item_cases = self.generate_item_cases(
                             item=item,
                             global_context=global_context,
                             recent_cases=recent_cases,
                             task_id=task_id,
+                            rag_context=rag_context,  # 传递RAG召回的上下文
                         )
 
                         # [调试] 打印生成结果
                         print(f"[调试] generate_item_cases 返回 {len(item_cases) if item_cases else 0} 条用例")
 
                         if item_cases:
-                            # 立即保存到数据库
-                            try:
-                                self._save_test_cases(requirement_id, item_cases)
-                                print(
-                                    f"[分批生成] 模块 '{item_title}' 已保存 {len(item_cases)} 条用例"
-                                )
-                                all_generated_cases.extend(item_cases)
-                            except Exception as save_error:
-                                print(
-                                    f"[分批生成] 模块 '{item_title}' 保存失败: {save_error}"
-                                )
-                                failed_items.append(
-                                    {
-                                        "title": item_title,
-                                        "error": str(save_error),
-                                        "stage": "save",
-                                    }
-                                )
+                            all_generated_cases.extend(item_cases)
+                            print(
+                                f"[分批生成] 模块 '{item_title}' 生成 {len(item_cases)} 条用例"
+                            )
                         else:
                             failed_items.append(
                                 {
@@ -2090,15 +2138,18 @@ class GenerationService:
                 )
 
                 # 如果覆盖度低于阈值，触发补充生成
-                coverage_threshold = (
-                    global_context.get("generation_strategy", {})
-                    .get("quality_threshold", 0.9)
-                )
+                strategy = global_context.get("generation_strategy", {}) or {}
+                coverage_threshold = strategy.get("quality_threshold", 0.9)
+                if coverage_threshold is None:
+                    coverage_threshold = 0.9
+                    
                 supplement_cases = []
-                if (
-                    quality_report.get("coverage", {}).get("coverage_rate", 0)
-                    < coverage_threshold
-                ):
+                # 确保 coverage_rate 不为 None
+                current_coverage = quality_report.get("coverage", {}).get("coverage_rate", 0)
+                if current_coverage is None:
+                    current_coverage = 0.0
+                    
+                if current_coverage < coverage_threshold:
                     self.update_progress(
                         task_id,
                         87.0,
@@ -2113,22 +2164,25 @@ class GenerationService:
 
                     # 保存补充生成的用例
                     if supplement_cases:
-                        try:
-                            self._save_test_cases(requirement_id, supplement_cases)
-                            all_generated_cases.extend(supplement_cases)
-                            print(
-                                f"[分批生成] 补充生成 {len(supplement_cases)} 条用例"
-                            )
-                        except Exception as save_error:
-                            print(
-                                f"[分批生成] 补充用例保存失败: {save_error}"
-                            )
+                        all_generated_cases.extend(supplement_cases)
+                        print(
+                            f"[分批生成] 补充生成 {len(supplement_cases)} 条用例"
+                        )
 
                 # 重新计算质检报告（包含补充用例）
                 if supplement_cases:
                     quality_report = self.run_quality_check(
                         all_generated_cases, test_plan_data
                     )
+
+                if all_generated_cases:
+                    try:
+                        self._save_test_cases(requirement_id, all_generated_cases)
+                        print(
+                            f"[分批生成] 所有用例保存完成，共 {len(all_generated_cases)} 条"
+                        )
+                    except Exception as save_error:
+                        print(f"[分批生成] 用例保存失败: {save_error}")
 
                 self.update_progress(
                     task_id,
@@ -2157,10 +2211,16 @@ class GenerationService:
                     result_data["warning"] = f"以下模块生成失败: {', '.join(failed_titles)}"
 
                 # 完成任务
-                self.update_progress(task_id, 100.0, "✅ 分批生成完成")
-                self.complete_task(task_id, result_data)
+                if total_cases > 0:
+                    self.update_progress(task_id, 100.0, "✅ 分批生成完成")
+                    self.complete_task(task_id, result_data)
+                else:
+                    error_msg = "未生成任何用例"
+                    if failed_items:
+                        error_msg += f"，失败模块: {', '.join([f['title'] for f in failed_items])}"
+                    self.fail_task(task_id, error_msg)
 
-                # 更新需求状态为"已完成"
+                # 更新需求状态
                 if self.db_session:
                     try:
                         from src.database.models import Requirement, RequirementStatus
@@ -2171,27 +2231,31 @@ class GenerationService:
                                 task_obj.requirement_id
                             )
                             if requirement:
-                                requirement.status = RequirementStatus.COMPLETED
+                                # 只有生成了用例才标记为已完成
+                                if total_cases > 0:
+                                    requirement.status = RequirementStatus.COMPLETED
+                                else:
+                                    requirement.status = RequirementStatus.FAILED
                                 self.db_session.commit()
                                 print(f"需求状态已更新为: {requirement.status.value}")
                     except Exception as e:
                         print(f"更新需求状态失败: {e}")
 
             except Exception as e:
-                print(f"[调试][run_phase2_batch] ===== 捕获到异常 =====")
-                print(f"[调试][run_phase2_batch] 异常类型: {type(e).__name__}")
-                print(f"[调试][run_phase2_batch] 异常信息: {e}")
+                logging.info("[调试][run_phase2_batch] ===== 捕获到异常 =====")
+                logging.info("[调试][run_phase2_batch] 异常类型: %s", type(e).__name__)
+                logging.info("[调试][run_phase2_batch] 异常信息: %s", str(e))
                 import traceback
-                traceback.print_exc()
+                logging.info("[调试][run_phase2_batch] 堆栈跟踪:\n%s", traceback.format_exc())
                 self.fail_task(task_id, str(e))
-                print(f"[调试][run_phase2_batch] 任务已标记为失败")
+                logging.info("[调试][run_phase2_batch] 任务已标记为失败")
 
         # 在后台线程执行
-        print(f"[调试][execute_phase2_generation] 正在启动后台线程...")
+        logging.info("[调试][execute_phase2_generation] 正在启动后台线程...")
         thread = threading.Thread(target=run_phase2_batch)
         thread.daemon = True
         thread.start()
-        print(f"[调试][execute_phase2_generation] 后台线程已启动 - thread name: {thread.name}")
+        logging.info("[调试][execute_phase2_generation] 后台线程已启动 - thread name: %s", thread.name)
 
     def execute_phase2_legacy(
         self, task_id: str, reviewed_plan: Optional[Dict] = None

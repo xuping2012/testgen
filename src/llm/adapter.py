@@ -170,8 +170,15 @@ class OpenAIAdapter(BaseLLMAdapter):
         
         # 超时配置
         ttft_timeout = 30  # 首字节超时（Time To First Token）
-        idle_timeout = 60  # 空闲超时（如果60秒内没有新数据，认为连接已断开）
-        max_total_timeout = max(base_timeout * 3, 600)  # 最大总体超时（至少10分钟）
+        idle_timeout = 60  # 空闲超时
+        
+        # 确保 base_timeout 是数值
+        try:
+            b_timeout = float(base_timeout) if base_timeout is not None else 120.0
+        except (TypeError, ValueError):
+            b_timeout = 120.0
+            
+        max_total_timeout = max(b_timeout * 3, 600.0)  # 最大总体超时（至少10分钟）
         
         content = []
         last_data_time = datetime.datetime.now()
@@ -531,7 +538,14 @@ class UniAIXAdapter(BaseLLMAdapter):
         # 超时配置
         ttft_timeout = 30
         idle_timeout = 60
-        max_total_timeout = max(base_timeout * 3, 600)
+        
+        # 确保 base_timeout 是数值
+        try:
+            b_timeout = float(base_timeout) if base_timeout is not None else 120.0
+        except (TypeError, ValueError):
+            b_timeout = 120.0
+            
+        max_total_timeout = max(b_timeout * 3, 600.0)
         
         content = []
         last_data_time = datetime.datetime.now()

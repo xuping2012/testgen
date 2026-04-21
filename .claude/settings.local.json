@@ -13,7 +13,14 @@
       "Bash(python -c \"import src.api.routes; print\\('routes OK'\\)\" 2>&1)",
       "Bash(python -m pytest tests/test_confidence_api.py -v 2>&1 | tail -15)",
       "Bash(python -m pytest tests/test_confidence_calculator.py tests/test_citation_parser.py tests/test_confidence_api.py -v 2>&1 | tail -8)",
-      "Bash(python -m pytest tests/test_confidence_calculator.py tests/test_citation_parser.py tests/test_confidence_api.py -v 2>&1 | grep -E \"PASSED|FAILED|ERROR|passed|failed\")"
+      "Bash(python -m pytest tests/test_confidence_calculator.py tests/test_citation_parser.py tests/test_confidence_api.py -v 2>&1 | grep -E \"PASSED|FAILED|ERROR|passed|failed\")",
+      "Bash(find . -type f -name \"*.md\" -o -name \"*.txt\" -o -name \"*.json\" -o -name \"*.yaml\" -o -name \"*.yml\" -o -name \"*.toml\" 2>/dev/null | head -50)",
+      "Bash(python -m pytest tests/ -v --tb=short 2>&1 | head -100)",
+      "Bash(python -m pytest tests/test_api.py::TestGenerationAPI::test_trigger_generation tests/test_case_import.py::test_case_loading_after_generation -v --tb=long 2>&1 | tail -80)",
+      "Bash(python -m pytest tests/test_api.py::TestGenerationAPI::test_trigger_generation tests/test_case_loading_after_generation.py::test_case_loading_after_generation -v --tb=long 2>&1)",
+      "Bash(python -m pytest tests/test_api.py::TestGenerationAPI::test_trigger_generation tests/test_case_loading_after_generation.py::test_case_loading_after_generation -v --tb=short 2>&1)",
+      "Bash(python -m pytest tests/ -v --tb=short 2>&1 | tail -30)",
+      "Bash(openspec new:*)"
     ]
   }
 }

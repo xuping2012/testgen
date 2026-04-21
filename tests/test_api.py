@@ -158,7 +158,7 @@ class TestGenerationAPI:
         assert response.status_code == 202
         data = json.loads(response.data)
         assert 'task_id' in data
-        assert data['status'] == 'pending'
+        assert data['status'] == 'awaiting_review'
     
     def test_trigger_generation_missing_requirement(self, client):
         """测试触发不存在的需求的生成"""

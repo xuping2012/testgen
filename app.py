@@ -74,21 +74,21 @@ def create_app():
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     
     # ==================== 初始化数据库 ====================
-    print("正在初始化数据库...")
+    logging.info("正在初始化数据库...")
     engine = init_database("data/testgen.db")
     db_session = get_session(engine)
 
     # ==================== 初始化FTS5增量更新监听器 ====================
-    print("正在设置FTS5增量更新监听器...")
+    logging.info("正在设置FTS5增量更新监听器...")
     try:
         from src.database.fts5_listeners import setup_fts5_listeners
         setup_fts5_listeners(engine)
-        print("  FTS5监听器已设置")
+        logging.info("  FTS5监听器已设置")
     except Exception as e:
-        print(f"  FTS5监听器设置失败: {e}")
+        logging.info(f"  FTS5监听器设置失败: {e}")
     
     # ==================== 初始化LLM管理器 ====================
-    print("正在初始化LLM管理器...")
+    logging.info("正在初始化LLM管理器...")
     llm_manager = LLMManager()
     
     # 从数据库加载LLM配置
@@ -107,13 +107,13 @@ def create_app():
                 timeout=config.timeout,
                 is_default=bool(config.is_default)
             )
-            print(f"  加载配置: {config.name} ({config.provider}) - {'[默认]' if config.is_default else ''}")
+            logging.info(f"  加载配置: {config.name} ({config.provider}) - {'[默认]' if config.is_default else ''}")
         
         # 输出当前默认配置
         default_info = llm_manager.get_config_info()
-        print(f"已加载 {len(configs)} 个LLM配置，当前默认: {default_info.get('name', '无')}")
+        logging.info(f"已加载 {len(configs)} 个LLM配置，当前默认: {default_info.get('name', '无')}")
     except Exception as e:
-        print(f"加载LLM配置失败: {e}")
+        logging.info(f"加载LLM配置失败: {e}")
     
     # 初始化默认Prompt模板
     try:
@@ -122,24 +122,24 @@ def create_app():
         
         prompt_count = db_session.query(PromptTemplate).count()
         if prompt_count == 0:
-            print("正在初始化默认Prompt模板...")
+            logging.info("正在初始化默认Prompt模板...")
             GenerationService.init_default_prompts(db_session)
             db_session.commit()
-            print("已初始化默认Prompt模板")
+            logging.info("已初始化默认Prompt模板")
     except Exception as e:
-        print(f"初始化Prompt模板失败: {e}")
+        logging.info(f"初始化Prompt模板失败: {e}")
     
     # ==================== 初始化向量库 ====================
-    print("正在初始化向量库...")
+    logging.info("正在初始化向量库...")
     try:
         vector_store = ChromaVectorStore("data/chroma_db")
-        print("向量库初始化成功")
+        logging.info("向量库初始化成功")
     except Exception as e:
-        print(f"向量库初始化失败: {e}")
+        logging.info(f"向量库初始化失败: {e}")
         vector_store = None
     
     # ==================== 初始化生成服务 ====================
-    print("正在初始化生成服务...")
+    logging.info("正在初始化生成服务...")
     generation_service = GenerationService(
         db_session=db_session,
         llm_manager=llm_manager,
@@ -198,7 +198,7 @@ def create_app():
     app.vector_store = vector_store
     app.generation_service = generation_service
     
-    print("应用初始化完成！")
+    logging.info("应用初始化完成！")
     return app
 
 

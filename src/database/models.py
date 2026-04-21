@@ -38,6 +38,7 @@ class RequirementStatus(enum.Enum):
 class CaseStatus(enum.Enum):
     """测试用例状态"""
 
+    DRAFT = "draft"  # 草稿
     PENDING_REVIEW = "pending_review"  # 待评审
     APPROVED = "approved"  # 已通过
     REJECTED = "rejected"  # 已拒绝

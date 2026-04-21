@@ -139,10 +139,10 @@
             letter-spacing: 1px;
         }
         
-        .prompt-list { 
-            display: grid; 
-            grid-template-columns: repeat(2, 1fr); 
-            gap: 20px; 
+        .prompt-list {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
         }
         
         .prompt-item {
@@ -154,9 +154,8 @@
             display: flex;
             flex-direction: column;
             min-height: 280px;
-            max-height: 320px;
         }
-        .prompt-item:hover { 
+        .prompt-item:hover {
             border-color: var(--neon-cyan);
             box-shadow: 0 0 20px rgba(0, 245, 255, 0.1);
         }
@@ -203,10 +202,6 @@
             margin-bottom: 12px;
             white-space: pre-wrap;
             word-break: break-all;
-            text-overflow: ellipsis;
-            display: -webkit-box;
-            -webkit-line-clamp: 6;
-            -webkit-box-orient: vertical;
         }
         
         .prompt-actions { 
@@ -382,16 +377,7 @@
         .toast-box.error .toast-btn { border-color: #ff0055; color: #ff0055; }
         
         /* 响应式 */
-        @media (max-width: 1200px) {
-            .prompt-list {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
-        
         @media (max-width: 768px) {
-            .prompt-list {
-                grid-template-columns: 1fr;
-            }
             .modal-content {
                 width: 95%;
                 max-width: 100%;
@@ -434,11 +420,10 @@
         <main class="main-content">
             <div class="header">
                 <h1>Prompt管理</h1>
-                <button class="btn btn-primary" onclick="resetToDefaults()">恢复默认</button>
             </div>
 
             <div class="card">
-                <div class="card-title">系统内置Prompt模板</div>
+                <div class="card-title">Prompt模板列表</div>
                 <div class="prompt-list" id="promptList">
                     <div class="empty-state" style="text-align: center; padding: 60px 20px; color: var(--text-secondary);">
                         <p>加载中...</p>
@@ -510,19 +495,23 @@
                 return;
             }
 
-            container.innerHTML = items.map(item => `
+            container.innerHTML = items.map(item => {
+                const isSystemTemplate = item.is_default || ['analyze', 'generate', 'generate_optimized', 'generate_with_citation', 'review'].includes(item.template_type);
+                const lineCount = item.line_count || (item.template ? item.template.split('\n').length : 0);
+                return `
                 <div class="prompt-item">
                     <div class="prompt-header">
                         <span class="prompt-name">${item.name}</span>
                         <span class="prompt-type">${item.template_type || '未分类'}</span>
                     </div>
                     <div class="prompt-description">${item.description || '暂无描述'}</div>
-                    <div class="prompt-preview">${item.template.substring(0, 200)}...</div>
+                    <div class="prompt-preview" style="color: var(--text-secondary); font-size: 12px;">共 ${lineCount} 行</div>
                     <div class="prompt-actions">
                         <button class="btn btn-secondary" onclick="editPrompt('${item.id}')">编辑</button>
+                        ${isSystemTemplate ? '' : `<button class="btn btn-secondary" style="color: #ff0055; border-color: #ff0055;" onclick="deletePrompt('${item.id}', '${item.name}')">删除</button>`}
                     </div>
                 </div>
-            `).join('');
+            `}).join('');
         }
 
         async function editPrompt(id) {
@@ -581,26 +570,26 @@
             }
         }
 
-        async function resetToDefaults() {
-            if (!confirm('确定要恢复所有Prompt为默认模板吗？这将覆盖所有自定义修改。')) {
+        async function deletePrompt(id, name) {
+            if (!confirm(`确定要删除 Prompt 模板「${name}」吗？此操作不可恢复。`)) {
                 return;
             }
 
             try {
-                const response = await fetch('/api/prompts/reset-defaults', {
-                    method: 'POST'
+                const response = await fetch(`/api/prompts/${id}`, {
+                    method: 'DELETE'
                 });
 
                 if (response.ok) {
                     loadPrompts();
-                    showToast('已恢复默认模板', 'success');
+                    showToast('删除成功', 'success');
                 } else {
                     const data = await response.json();
-                    showToast(`恢复失败：${data.error || '未知错误'}`, 'error');
+                    showToast(`删除失败：${data.error || '未知错误'}`, 'error');
                 }
             } catch (error) {
-                console.error('恢复默认失败:', error);
-                showToast('恢复失败', 'error');
+                console.error('删除失败:', error);
+                showToast('删除失败', 'error');
             }
         }
 
