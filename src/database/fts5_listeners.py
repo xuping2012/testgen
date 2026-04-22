@@ -110,9 +110,26 @@ def _update_fts5_for_table(engine, table_name, operations):
         conn.commit()
 
 
+def _ensure_fts5_table_exists(conn, table_name, fts_config):
+    """检查FTS5表是否存在，不存在则创建"""
+    fts_table = fts_config["fts_table"]
+    try:
+        result = conn.execute(
+            f"SELECT name FROM sqlite_master WHERE type='table' AND name='{fts_table}'"
+        )
+        if not result.fetchone():
+            columns_sql = ", ".join([f"{col} TEXT" for col in fts_config["columns"]])
+            conn.execute(f"CREATE VIRTUAL TABLE {fts_table} USING fts5({columns_sql})")
+            logger.info(f"创建FTS5虚拟表: {fts_table}")
+    except Exception as e:
+        logger.warning(f"检查/创建FTS5表失败: {e}")
+
+
 def _insert_fts5_row(conn, fts_table, fts_config, obj):
     """向FTS5表插入一行"""
     try:
+        _ensure_fts5_table_exists(conn, fts_table, fts_config)
+
         row_id = obj.id
         values = {}
         for col in fts_config["columns"]:
@@ -163,4 +180,29 @@ def rebuild_fts5_index(engine, table_name=None):
             except Exception as e:
                 logger.warning(f"FTS5索引重建失败 ({fts_table}): {e}")
 
+        conn.commit()
+
+
+def init_fts5_indexes(engine):
+    """
+    初始化FTS5索引（应用启动时调用）
+    确保所有FTS5虚拟表存在
+    """
+    with engine.connect() as conn:
+        for tbl, fts_config in FTS5_TABLES.items():
+            fts_table = fts_config["fts_table"]
+            try:
+                result = conn.execute(
+                    f"SELECT name FROM sqlite_master WHERE type='table' AND name='{fts_table}'"
+                )
+                if not result.fetchone():
+                    columns_sql = ", ".join(
+                        [f"{col} TEXT" for col in fts_config["columns"]]
+                    )
+                    conn.execute(
+                        f"CREATE VIRTUAL TABLE {fts_table} USING fts5({columns_sql})"
+                    )
+                    logger.info(f"初始化FTS5虚拟表: {fts_table}")
+            except Exception as e:
+                logger.warning(f"初始化FTS5表失败 ({fts_table}): {e}")
         conn.commit()

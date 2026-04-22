@@ -29,10 +29,15 @@ Base = declarative_base()
 class RequirementStatus(enum.Enum):
     """需求状态"""
 
-    PENDING = "pending"  # 待处理
-    PROCESSING = "processing"  # 处理中
+    PENDING_ANALYSIS = "pending_analysis"  # 待分析
+    ANALYZING = "analyzing"  # 分析中
+    PENDING_REVIEW = "pending_review"  # 待确认
+    PENDING_GENERATION = "pending_generation"  # 待生成
+    GENERATING = "generating"  # 生成中
     COMPLETED = "completed"  # 已完成
     FAILED = "failed"  # 失败
+    PENDING = "pending"  # 待处理（兼容旧数据）
+    PROCESSING = "processing"  # 处理中（兼容旧数据）
 
 
 class CaseStatus(enum.Enum):
@@ -65,8 +70,9 @@ class Requirement(Base):
     source_file = Column(String(500))  # 原始文件路径
     status = Column(
         Enum(RequirementStatus, values_callable=lambda e: [x.value for x in e]),
-        default=RequirementStatus.PENDING,
+        default=RequirementStatus.PENDING_ANALYSIS,
     )
+    analysis_data = Column(JSON, default=None)  # 分析结果数据：modules, test_points等
     version = Column(String(50), default="1.0")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -243,7 +249,10 @@ class PromptTemplate(Base):
     template = Column(Text, nullable=False)
     template_type = Column(String(50))  # generate/review/rag等
     is_default = Column(Integer, default=0)
+    version = Column(Integer, default=1)
+    change_log = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 # 数据库初始化函数

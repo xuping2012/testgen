@@ -73,7 +73,20 @@ class QueryOptimizer:
 
     def _llm_extract_keywords(self, requirement_content: str) -> List[str]:
         """使用LLM提取关键词"""
-        prompt = f"""请从以下需求文档中提取关键检索词，用于RAG检索优化。
+        # 使用 PromptTemplateService 渲染模板
+        try:
+            from src.services.prompt_template_service import PromptTemplateService
+
+            prompt_service = PromptTemplateService(
+                None
+            )  # 不需要db_session，使用fallback
+            render_result = prompt_service.render_template(
+                "rag_query", original_query=requirement_content[:2000]
+            )
+            prompt = render_result["prompt"]
+        except Exception:
+            # fallback到硬编码
+            prompt = f"""请从以下需求文档中提取关键检索词，用于RAG检索优化。
 
 要求：
 1. 提取业务术语（如"用户登录"、"订单管理"）

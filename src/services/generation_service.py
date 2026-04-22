@@ -773,10 +773,10 @@ class GenerationService:
         task = self.get_task(task_id)
         if task:
             # 确保 progress 始终是有效的数值
-            current_progress = getattr(task, 'progress', 0.0)
+            current_progress = getattr(task, "progress", 0.0)
             if current_progress is None:
                 current_progress = 0.0
-                
+
             if progress is not None:
                 try:
                     # 使用显式比较代替 min 以增强鲁棒性
@@ -789,7 +789,7 @@ class GenerationService:
             else:
                 # 如果传入None，保持当前进度
                 task.progress = current_progress
-                
+
             task.message = message
             # 同步到数据库
             self._sync_task_to_db(task)
@@ -984,12 +984,12 @@ class GenerationService:
     ) -> Dict[str, Any]:
         """
         准备生成上下文（Phase 2开始时执行一次）
-        
+
         Args:
             requirement: 需求对象
             test_plan_data: 测试计划数据
             generation_strategy: 生成策略配置（可选）
-            
+
         Returns:
             全局上下文字典，包含：
             - plan_summary: 测试计划摘要
@@ -1004,9 +1004,7 @@ class GenerationService:
             "total_modules": len(items),
             "total_points": sum(len(item.get("points", [])) for item in items),
             "core_modules": [
-                item.get("title", "")
-                for item in items
-                if item.get("priority") == "P0"
+                item.get("title", "") for item in items if item.get("priority") == "P0"
             ],
         }
 
@@ -1031,10 +1029,10 @@ class GenerationService:
     def format_plan_summary(self, summary: Dict[str, Any]) -> str:
         """
         格式化测试计划摘要用于Prompt
-        
+
         Args:
             summary: 测试计划摘要字典
-            
+
         Returns:
             格式化后的字符串
         """
@@ -1054,10 +1052,10 @@ class GenerationService:
     def format_business_rules(self, rules: List[Any]) -> str:
         """
         格式化业务规则用于Prompt
-        
+
         Args:
             rules: 业务规则列表
-            
+
         Returns:
             格式化后的字符串
         """
@@ -1081,10 +1079,10 @@ class GenerationService:
     def format_item_points(self, points: List[Any]) -> str:
         """
         格式化ITEM的测试点用于Prompt
-        
+
         Args:
             points: 测试点列表
-            
+
         Returns:
             格式化后的字符串
         """
@@ -1112,10 +1110,10 @@ class GenerationService:
     def format_recent_cases(self, cases: List[Dict[str, Any]]) -> str:
         """
         格式化最近生成的用例用于Prompt（保持风格连贯）
-        
+
         Args:
             cases: 最近生成的用例列表（通常5条）
-            
+
         Returns:
             格式化后的字符串
         """
@@ -1187,7 +1185,9 @@ class GenerationService:
             # [调试] 打印item信息
             print(f"[调试][generate_item_cases] 开始生成 - title: {item_title}")
             print(f"[调试][generate_item_cases]   - item keys: {list(item.keys())}")
-            print(f"[调试][generate_item_cases]   - points: {len(item_points) if item_points else 0}")
+            print(
+                f"[调试][generate_item_cases]   - points: {len(item_points) if item_points else 0}"
+            )
             print(f"[调试][generate_item_cases]   - priority: {item_priority}")
 
             # 格式化各部分
@@ -1200,160 +1200,37 @@ class GenerationService:
             item_points_str = self.format_item_points(item_points)
             recent_cases_str = self.format_recent_cases(recent_cases or [])
 
-            # 构建Prompt - 尝试从数据库加载模板
-            # 注意：分批生成需要专用的模板，包含 {item_title}, {item_points} 等变量
-            db_template = self._load_prompt_template("generate_optimized")
-
-            # [调试] 打印模板加载情况
-            print(f"[调试][generate_item_cases] db_template: {'loaded' if db_template else 'NOT FOUND, using fallback'}")
-
             # 构建RAG上下文部分（优先使用传入的rag_context，其次从global_context获取）
             rag_context_str = rag_context or global_context.get("rag_context", "")
 
-            if db_template:
-                # 使用数据库模板
-                # 注意：默认模板可能不支持分批生成的变量，需要fallback
-                try:
-                    prompt = db_template.format(
-                        requirement_content=global_context.get('requirement_content', ''),
-                        item_title=item_title,
-                        item_points=item_points_str,
-                        plan_summary=plan_summary_str,
-                        business_rules=business_rules_str,
-                        recent_cases=recent_cases_str,
-                        item_priority=item_priority,
-                        rag_context=rag_context_str,  # 使用RAG上下文
-                        test_plan="",   # 分批生成不使用完整测试计划
-                    )
-                except KeyError:
-                    # 模板变量不匹配，fallback到硬编码
-                    db_template = None
+            # 使用 PromptTemplateService 渲染模板
+            from src.services.prompt_template_service import PromptTemplateService
 
-            if not db_template:
-                # 使用硬编码默认模板（fallback）
-                prompt = f"""# 角色定义
+            prompt_service = PromptTemplateService(self.db_session)
+            render_result = prompt_service.render_template(
+                "case_generation",
+                requirement_content=global_context.get("requirement_content", ""),
+                item_title=item_title,
+                item_points=item_points_str,
+                plan_summary=plan_summary_str,
+                business_rules=business_rules_str,
+                recent_cases=recent_cases_str,
+                item_priority=item_priority,
+                rag_context=rag_context_str
+                if rag_context_str
+                else "（无历史参考数据）",
+                test_plan="",
+            )
 
-你是资深的测试用例设计专家，擅长将测试点转化为详细、可执行的测试用例。
+            prompt = render_result["prompt"]
 
-## 需求文档
-{global_context.get('requirement_content', '')}
+            if render_result["used_fallback"]:
+                print("[generate_item_cases] 使用fallback默认模板")
 
-{plan_summary_str}
-
-{business_rules_str}
-
-## RAG召回的历史参考信息
-{rag_context_str if rag_context_str else '（无历史参考数据）'}
-
-## 当前模块信息
-- 模块名称: {item_title}
-- 模块优先级: {item_priority}
-
-### 测试点列表
-{item_points_str}
-
-{recent_cases_str}
-
-# 用例生成规则
-
-## 1. 正向场景（优先）
-- 生成核心功能的正向场景用例
-- **优先级：P0或P1**
-- 必须覆盖每个业务流程步骤
-- 每个测试点至少1个正向用例
-
-## 2. 边界值
-- 生成最小值、最大值、边界外用例
-- **优先级：P2**
-- 格式：min-1/min/max+1
-- 有边界值的测试点至少1-2个边界用例
-
-## 3. 异常场景
-- 生成需求明确提及的异常分支用例
-- **优先级：P2**
-- 包括：驳回、报错、状态拦截
-- 有异常处理的测试点至少1-2个异常用例
-
-## 4. 反向场景
-- 生成需求明确提及的反向流程用例
-- **优先级：P2或P3**
-- 包括：取消、重试、返回
-- 有反向流程的测试点至少1个反向用例
-
-## 5. 优先级判定规则（必须严格遵守）
-
-| 级别 | 占比 | 包含内容 | 判定方法 |
-|------|------|----------|----------|
-| **P0** | 10-15% | 核心功能正向流程 | 该功能失效是否导致核心业务中断？是→P0 |
-| **P1** | 20-30% | 基本功能 + 常见异常 | 功能可用但非核心流程？是→P1 |
-| **P2** | 35-45% | 边界值 + 异常流 + 权限限制 | 是否验证约束条件的边界或违反情况？是→P2 |
-| **P3** | 10-15% | UI展示 + 极端场景 + 体验优化 | 是否仅为UI展示、极端边界或体验优化？是→P3 |
-
-**重要约束：P0+P1合计≤40%，P2应占最大比例**
-
-## 6. 用例格式规范（必须遵守）
-
-### 标题规范
-- **长度：15-30字**（禁止10字以下的短标题）
-- **结构**：
-  - 正向场景：`[角色] + 操作动作 + 成功结果`
-  - 反向场景：`[反向] + 错误条件 + 失败结果`
-  - 边界场景：`操作对象 + 边界值描述 + 验证点`
-
-### 数据要求
-- **测试数据必须具体**：使用具体值（如 `13800138000`、`北京市朝阳区XX街道`）
-- **禁止使用占位符**：如 `{{username}}`、`{{xxx}}`、`{{password}}`
-- **预期结果必须可验证**：包含具体的UI变化或数据变化
-
-# 输出格式
-
-输出JSON数组，每个用例包含以下字段：
-```json
-{{
-  "case_id": "用例编号，如TC_000001",
-  "module": "{item_title}",
-  "test_point": "测试点描述，说明测什么（禁止与模块名相同）",
-  "name": "用例标题，15-30字，清晰描述测试目的",
-  "preconditions": "前置条件，包括环境、数据、权限等准备",
-  "test_steps": ["步骤1：具体操作", "步骤2：具体操作", "步骤3：具体操作"],
-  "expected_results": ["结果1：具体可验证的结果", "结果2：具体可验证的结果"],
-  "priority": "P0/P1/P2/P3",
-  "requirement_clause": "对应需求条款编号",
-  "case_type": "功能/边界/异常/性能/安全/兼容"
-}}
-```
-
-# 重要提示
-1. 必须覆盖当前模块的所有测试点
-2. 边界值和异常场景不能遗漏
-3. 测试步骤要详细到可执行程度，使用具体数据
-4. 预期结果要明确可验证，禁止模糊描述
-5. **P0+P1合计≤40%，P2应占最大比例**
-6. **禁止使用任何占位符，必须使用具体测试数据**
-7. 直接输出JSON数组，不要包含其他说明文字"""
-
-            if not db_template and self.db_session:
-                try:
-                    from src.database.models import PromptTemplate
-                    existing = (
-                        self.db_session.query(PromptTemplate)
-                        .filter(PromptTemplate.template_type == "generate_optimized")
-                        .first()
-                    )
-                    if not existing:
-                        fallback_template = PromptTemplate(
-                            name="default_generate_optimized",
-                            description="优化版用例生成模板（支持分批生成）- 由系统自动兜底创建",
-                            template_type="generate_optimized",
-                            template=prompt,
-                            is_default=1,
-                        )
-                        self.db_session.add(fallback_template)
-                        self.db_session.commit()
-                        print("[调试] fallback模板已自动保存到数据库")
-                except Exception as save_err:
-                    self.db_session.rollback()
-                    print(f"[调试] fallback模板保存失败: {save_err}")
+            if render_result["missing_variables"]:
+                print(
+                    f"[generate_item_cases] 模板缺少变量: {render_result['missing_variables']}"
+                )
 
             # 2. 调用LLM生成
             adapter = self.llm_manager.get_adapter()
@@ -1362,9 +1239,13 @@ class GenerationService:
                 self.update_progress(task_id, None, f"🤖 正在生成模块: {item_title}")
 
             # [调试] 打印LLM调用信息
-            print(f"[调试][generate_item_cases] 调用LLM - adapter: {type(adapter).__name__}")
+            print(
+                f"[调试][generate_item_cases] 调用LLM - adapter: {type(adapter).__name__}"
+            )
             print(f"[调试][generate_item_cases]   - prompt长度: {len(prompt)} 字符")
-            print(f"[调试][generate_item_cases]   - temperature: 0.7, max_tokens: 4096, timeout: 120")
+            print(
+                f"[调试][generate_item_cases]   - temperature: 0.7, max_tokens: 4096, timeout: 120"
+            )
 
             response = adapter.generate(
                 prompt,
@@ -1378,7 +1259,9 @@ class GenerationService:
             # [调试] 打印LLM响应
             print(f"[调试][generate_item_cases] LLM响应 - success: {response.success}")
             if response.success:
-                print(f"[调试][generate_item_cases]   - 响应长度: {len(response.content) if response.content else 0} 字符")
+                print(
+                    f"[调试][generate_item_cases]   - 响应长度: {len(response.content) if response.content else 0} 字符"
+                )
             else:
                 print(f"[调试][generate_item_cases]   - 错误: {response.error_message}")
 
@@ -1399,6 +1282,7 @@ class GenerationService:
 
         except Exception as e:
             import traceback
+
             print(f"[分批生成] 模块 '{item.get('title', '未知')}' 生成失败: {e}")
             print(f"[分批生成] 异常类型: {type(e).__name__}")
             print(f"[分批生成] 堆栈跟踪:")
@@ -1595,9 +1479,7 @@ class GenerationService:
                 "error": str(e),
             }
 
-    def calculate_quality_score(
-        self, cases: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+    def calculate_quality_score(self, cases: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         质量评分（100分制）
 
@@ -1624,7 +1506,16 @@ class GenerationService:
             }
 
         case_scores = []
-        boundary_keywords = ["异常", "边界", "超时", "失败", "错误", "拒绝", "无效", "限制"]
+        boundary_keywords = [
+            "异常",
+            "边界",
+            "超时",
+            "失败",
+            "错误",
+            "拒绝",
+            "无效",
+            "限制",
+        ]
         valid_priorities = ["P0", "P1", "P2", "P3"]
 
         for case in cases:
@@ -1640,9 +1531,7 @@ class GenerationService:
             test_steps = case.get("test_steps", [])
             if test_steps:
                 steps_list = (
-                    test_steps
-                    if isinstance(test_steps, list)
-                    else [test_steps]
+                    test_steps if isinstance(test_steps, list) else [test_steps]
                 )
                 if len(steps_list) > 0:
                     score += 10
@@ -1712,7 +1601,7 @@ class GenerationService:
                 "low_quality_count": 0,
                 "case_scores": [],
             }
-            
+
         average_score = sum(scores) / len(scores)
         min_score = min(scores)
         max_score = max(scores)
@@ -1770,9 +1659,7 @@ class GenerationService:
         # 1. 重复检测
         print("[质检] Step 1: 重复检测...")
         duplicates = self.detect_duplicates(cases, threshold=0.85)
-        duplicate_rate = (
-            len(duplicates) / len(cases) if len(cases) > 0 else 0.0
-        )
+        duplicate_rate = len(duplicates) / len(cases) if len(cases) > 0 else 0.0
 
         # 2. 覆盖度检查
         print("[质检] Step 2: 覆盖度检查...")
@@ -1818,7 +1705,11 @@ class GenerationService:
             priority_counts[priority] = priority_counts.get(priority, 0) + 1
 
         total = len(cases)
-        p0_p1_ratio = (priority_counts.get("P0", 0) + priority_counts.get("P1", 0)) / total if total > 0 else 0
+        p0_p1_ratio = (
+            (priority_counts.get("P0", 0) + priority_counts.get("P1", 0)) / total
+            if total > 0
+            else 0
+        )
         if p0_p1_ratio > 0.5:
             recommendations.append(
                 f"P0+P1占比过高 ({p0_p1_ratio:.2%})，建议调整为P0:10-15%, P1:20-30%, P2:35-45%"
@@ -1964,24 +1855,35 @@ class GenerationService:
     ):
         """
         阶段2：分批生成测试用例（异步执行）
-        
+
         按ITEM（功能模块）分批生成，共享全局上下文，每个ITEM独立调用LLM
-        
+
         Args:
             task_id: 任务ID
             reviewed_plan: 用户评审后可能编辑过的测试规划
             generation_strategy: 生成策略配置（可选）
         """
-        logging.info("[调试][execute_phase2_generation] 方法被调用 - task_id: %s", task_id)
-        logging.info("[调试][execute_phase2_generation] reviewed_plan: %s", 'provided' if reviewed_plan else 'None')
+        logging.info(
+            "[调试][execute_phase2_generation] 方法被调用 - task_id: %s", task_id
+        )
+        logging.info(
+            "[调试][execute_phase2_generation] reviewed_plan: %s",
+            "provided" if reviewed_plan else "None",
+        )
 
         def run_phase2_batch():
             logging.info("[调试][run_phase2_batch] ===== 后台线程开始执行 =====")
             logging.info("[调试][run_phase2_batch] task_id: %s", task_id)
-            logging.info("[调试][run_phase2_batch] reviewed_plan: %s", 'provided' if reviewed_plan else 'None')
+            logging.info(
+                "[调试][run_phase2_batch] reviewed_plan: %s",
+                "provided" if reviewed_plan else "None",
+            )
             try:
                 task_obj = self.get_task(task_id)
-                logging.info("[调试][run_phase2_batch] task_obj: %s", 'found' if task_obj else 'NOT FOUND')
+                logging.info(
+                    "[调试][run_phase2_batch] task_obj: %s",
+                    "found" if task_obj else "NOT FOUND",
+                )
                 if not task_obj:
                     logging.info("[调试][run_phase2_batch] 任务不存在，退出")
                     return
@@ -2045,12 +1947,14 @@ class GenerationService:
                             task_id, 32.0, "🔎 正在召回相似历史用例..."
                         )
 
-                        rag_context, rag_stats, rag_context_data = self._perform_rag_recall(
-                            global_context.get("requirement_content", ""),
-                            {},
-                            top_k_cases=5,
-                            top_k_defects=3,
-                            top_k_requirements=3,
+                        rag_context, rag_stats, rag_context_data = (
+                            self._perform_rag_recall(
+                                global_context.get("requirement_content", ""),
+                                {},
+                                top_k_cases=5,
+                                top_k_defects=3,
+                                top_k_requirements=3,
+                            )
                         )
 
                         recall_summary = f"✅ RAG召回完成 - "
@@ -2103,7 +2007,9 @@ class GenerationService:
                         )
 
                         # [调试] 打印生成结果
-                        print(f"[调试] generate_item_cases 返回 {len(item_cases) if item_cases else 0} 条用例")
+                        print(
+                            f"[调试] generate_item_cases 返回 {len(item_cases) if item_cases else 0} 条用例"
+                        )
 
                         if item_cases:
                             all_generated_cases.extend(item_cases)
@@ -2142,13 +2048,15 @@ class GenerationService:
                 coverage_threshold = strategy.get("quality_threshold", 0.9)
                 if coverage_threshold is None:
                     coverage_threshold = 0.9
-                    
+
                 supplement_cases = []
                 # 确保 coverage_rate 不为 None
-                current_coverage = quality_report.get("coverage", {}).get("coverage_rate", 0)
+                current_coverage = quality_report.get("coverage", {}).get(
+                    "coverage_rate", 0
+                )
                 if current_coverage is None:
                     current_coverage = 0.0
-                    
+
                 if current_coverage < coverage_threshold:
                     self.update_progress(
                         task_id,
@@ -2165,9 +2073,7 @@ class GenerationService:
                     # 保存补充生成的用例
                     if supplement_cases:
                         all_generated_cases.extend(supplement_cases)
-                        print(
-                            f"[分批生成] 补充生成 {len(supplement_cases)} 条用例"
-                        )
+                        print(f"[分批生成] 补充生成 {len(supplement_cases)} 条用例")
 
                 # 重新计算质检报告（包含补充用例）
                 if supplement_cases:
@@ -2208,7 +2114,9 @@ class GenerationService:
                 # 如果有失败模块，添加警告信息
                 if failed_items:
                     failed_titles = [f["title"] for f in failed_items]
-                    result_data["warning"] = f"以下模块生成失败: {', '.join(failed_titles)}"
+                    result_data["warning"] = (
+                        f"以下模块生成失败: {', '.join(failed_titles)}"
+                    )
 
                 # 完成任务
                 if total_cases > 0:
@@ -2246,7 +2154,10 @@ class GenerationService:
                 logging.info("[调试][run_phase2_batch] 异常类型: %s", type(e).__name__)
                 logging.info("[调试][run_phase2_batch] 异常信息: %s", str(e))
                 import traceback
-                logging.info("[调试][run_phase2_batch] 堆栈跟踪:\n%s", traceback.format_exc())
+
+                logging.info(
+                    "[调试][run_phase2_batch] 堆栈跟踪:\n%s", traceback.format_exc()
+                )
                 self.fail_task(task_id, str(e))
                 logging.info("[调试][run_phase2_batch] 任务已标记为失败")
 
@@ -2255,14 +2166,15 @@ class GenerationService:
         thread = threading.Thread(target=run_phase2_batch)
         thread.daemon = True
         thread.start()
-        logging.info("[调试][execute_phase2_generation] 后台线程已启动 - thread name: %s", thread.name)
+        logging.info(
+            "[调试][execute_phase2_generation] 后台线程已启动 - thread name: %s",
+            thread.name,
+        )
 
-    def execute_phase2_legacy(
-        self, task_id: str, reviewed_plan: Optional[Dict] = None
-    ):
+    def execute_phase2_legacy(self, task_id: str, reviewed_plan: Optional[Dict] = None):
         """
         [已废弃] 阶段2：RAG检索 + LLM生成（异步执行）- 旧版一次性生成方法
-        
+
         注意：此方法已保留用于向后兼容，建议使用新的 execute_phase2_generation 分批生成方法
         """
 
@@ -2307,12 +2219,14 @@ class GenerationService:
                         )
 
                         # 使用增强RAG检索器
-                        rag_context, rag_stats, rag_context_data = self._perform_rag_recall(
-                            requirement_content,
-                            {},  # 不需要requirement_analysis，已有reviewed_plan
-                            top_k_cases=5,
-                            top_k_defects=3,
-                            top_k_requirements=3,
+                        rag_context, rag_stats, rag_context_data = (
+                            self._perform_rag_recall(
+                                requirement_content,
+                                {},  # 不需要requirement_analysis，已有reviewed_plan
+                                top_k_cases=5,
+                                top_k_defects=3,
+                                top_k_requirements=3,
+                            )
                         )
 
                         recall_summary = f"✅ RAG召回完成 - "
@@ -2328,9 +2242,7 @@ class GenerationService:
                         print(f"RAG召回失败: {e}")
                         self.update_progress(task_id, 40.0, "⚠️ RAG召回失败，继续生成")
                 else:
-                    self.update_progress(
-                        task_id, 40.0, "⚠️ 向量库未初始化，跳过RAG召回"
-                    )
+                    self.update_progress(task_id, 40.0, "⚠️ 向量库未初始化，跳过RAG召回")
 
                 # 阶段2: LLM生成测试用例 (50%-80%)
                 self.update_progress(task_id, 50.0, "🤖 开始生成测试用例...")
@@ -2615,12 +2527,14 @@ class GenerationService:
                             progress_callback(25.0, "🔎 正在RAG检索...")
 
                         # 使用增强RAG检索器
-                        rag_context, rag_stats, rag_context_data = self._perform_rag_recall(
-                            requirement_content,
-                            requirement_analysis,
-                            top_k_cases=5,
-                            top_k_defects=3,
-                            top_k_requirements=3,
+                        rag_context, rag_stats, rag_context_data = (
+                            self._perform_rag_recall(
+                                requirement_content,
+                                requirement_analysis,
+                                top_k_cases=5,
+                                top_k_defects=3,
+                                top_k_requirements=3,
+                            )
                         )
 
                         recall_summary = f"✅ RAG召回完成 - "
@@ -2647,9 +2561,7 @@ class GenerationService:
                         if progress_callback:
                             progress_callback(30.0, "⚠️ RAG召回失败，继续生成")
                 else:
-                    self.update_progress(
-                        task_id, 30.0, "⚠️ 向量库未初始化，跳过RAG召回"
-                    )
+                    self.update_progress(task_id, 30.0, "⚠️ 向量库未初始化，跳过RAG召回")
                     if progress_callback:
                         progress_callback(30.0, "⚠️ 向量库未初始化，跳过RAG召回")
 
@@ -3096,14 +3008,14 @@ class GenerationService:
 
                 # 为测试步骤添加序号（从1开始）
                 test_steps = [
-                    f"{i+1}. {str(step).strip()}"
+                    f"{i + 1}. {str(step).strip()}"
                     for i, step in enumerate(test_steps)
                     if str(step).strip()
                 ]
 
                 # 为预期结果添加序号（从1开始）
                 expected_results = [
-                    f"{i+1}. {str(result).strip()}"
+                    f"{i + 1}. {str(result).strip()}"
                     for i, result in enumerate(expected_results)
                     if str(result).strip()
                 ]
@@ -3205,100 +3117,21 @@ class GenerationService:
 
         基于testcase-generator标准的需求分析方法
         """
-        # 尝试从数据库加载分析模板
-        db_template = self._load_prompt_template("analyze")
+        # 使用 PromptTemplateService 渲染模板
+        from src.services.prompt_template_service import PromptTemplateService
 
-        if db_template:
-            # 使用数据库模板
-            analysis_prompt = db_template.format(
-                requirement_content=requirement_content
-            )
-        else:
-            # 使用硬编码默认模板
-            analysis_prompt = f"""你是一位资深测试专家，擅长从需求文档中识别业务功能流程。
+        prompt_service = PromptTemplateService(self.db_session)
+        render_result = prompt_service.render_template(
+            "requirement_analysis", requirement_content=requirement_content
+        )
 
-## 需求文档
-{requirement_content}
+        analysis_prompt = render_result["prompt"]
 
-## 分析要求
+        if render_result["used_fallback"]:
+            print("[需求分析] 使用fallback默认模板")
 
-### 1. 业务流程识别（CoT思考链）
-请先识别业务功能流程：
-1. 寻找流程关键词（动词、顺序词、状态词）
-2. 识别流程参与者（Web端、app端、小程序端等）
-3. 识别流程闭环（正常流程、异常流程、状态变化）
-
-输出格式：
-```
-业务流程识别结果：
-步骤1: [操作描述] → [状态变化]
-步骤2: [操作描述] → [状态变化]
-...
-```
-
-### 2. 功能模块划分
-- 按业务域划分，每个模块有独立的业务边界
-- 命名使用业务域名称
-- 模块数量依据需求文档客观分析
-
-### 3. 测试点划分
-- 按需求中的实际子功能/操作划分
-- **禁止测试点名称与功能模块名称相同**
-- 测试点应描述具体操作，禁止使用"功能"、"测试"等泛化词
-
-### 4. 业务规则和数据约束
-- 提取所有"必须"、"禁止"、"限制"等业务规则
-- 提取所有"长度"、"范围"、"最大"、"最小"等数据约束
-
-### 5. 风险评估
-- 识别需求中的模糊点
-- 识别缺失的关键信息
-
-## 输出格式
-请输出JSON格式的分析结果：
-```json
-{{
-  "business_flows": [
-    "步骤1: 用户输入SN码 → 系统校验格式",
-    "步骤2: 用户选择绑定位置 → 系统记录位置信息"
-  ],
-  "modules": [
-    {{
-      "name": "设备绑定管理",
-      "description": "设备绑定、解绑、预绑定等功能",
-      "sub_features": ["在线绑定", "离线预绑定", "设备解绑"]
-    }}
-  ],
-  "business_rules": [
-    {{"content": "SN码必须是23位数字字母组合", "type": "业务规则"}}
-  ],
-  "data_constraints": [
-    {{"content": "SN码长度：23位", "type": "数据约束"}}
-  ],
-  "state_changes": [
-    "待激活 → 在线 → 离线"
-  ],
-  "test_points": [
-    {{
-      "name": "SN码格式校验",
-      "module": "设备绑定管理",
-      "risk_level": "High",
-      "focus_points": ["格式验证", "边界值测试"]
-    }}
-  ],
-  "risks": [
-    {{"content": "需求未明确设备绑定超时时间", "severity": "Medium"}}
-  ],
-  "key_features": ["设备绑定", "权限管理"]
-}}
-```
-
-## 重要提示
-1. 测试点名称必须是具体的操作描述，不能与模块名重复
-2. 测试点数量根据实际子功能客观分析，不要机械化生成
-3. 业务流程步骤必须包含状态变化
-4. 直接输出JSON，不要包含其他说明文字
-"""
+        if render_result["missing_variables"]:
+            print(f"[需求分析] 模板缺少变量: {render_result['missing_variables']}")
 
         # 调用LLM
         adapter = self.llm_manager.get_adapter()
@@ -3931,9 +3764,7 @@ class GenerationService:
             "retrieval_mode": self._hybrid_retriever.mode
             if self._hybrid_retriever
             else "vector_only",
-            "rrf_k": self._hybrid_retriever.rrf_k
-            if self._hybrid_retriever
-            else None,
+            "rrf_k": self._hybrid_retriever.rrf_k if self._hybrid_retriever else None,
             "adjustments": [],
         }
 
@@ -4133,80 +3964,27 @@ class GenerationService:
         Returns:
             评审结果JSON字典
         """
-        # 尝试从数据库加载评审模板
-        db_template = self._load_prompt_template("review")
+        import json
 
-        if db_template:
-            # 将分析结果转为字符串
-            import json
+        analysis_str = json.dumps(requirement_analysis, ensure_ascii=False, indent=2)
 
-            analysis_str = json.dumps(
-                requirement_analysis, ensure_ascii=False, indent=2
-            )
-            review_prompt = db_template.format(
-                requirement_content=requirement_content, analysis_result=analysis_str
-            )
-        else:
-            # 使用硬编码默认模板
-            import json
+        # 使用 PromptTemplateService 渲染模板
+        from src.services.prompt_template_service import PromptTemplateService
 
-            analysis_str = json.dumps(
-                requirement_analysis, ensure_ascii=False, indent=2
-            )
-            review_prompt = f"""你是一位资深测试评审专家，负责对需求分析的模块拆分和测试点进行评审。
+        prompt_service = PromptTemplateService(self.db_session)
+        render_result = prompt_service.render_template(
+            "test_plan",
+            requirement_content=requirement_content,
+            analysis_result=analysis_str,
+        )
 
-## 需求文档
-{requirement_content}
+        review_prompt = render_result["prompt"]
 
-## 需求分析结果
-{analysis_str}
+        if render_result["used_fallback"]:
+            print("[模块评审] 使用fallback默认模板")
 
-## 评审要求
-
-### 1. 模块拆分评审
-- **完整性**：是否覆盖了需求中的所有功能点
-- **合理性**：模块边界是否清晰，是否有重叠或遗漏
-- **一致性**：模块命名是否统一，是否符合业务域命名规范
-
-### 2. 测试点评审
-- **完整性**：测试点是否覆盖了每个模块的所有子功能
-- **可测性**：测试点是否可测试，是否有明确的验证标准
-- **遗漏点**：指出遗漏的测试点
-
-## 输出格式
-
-输出JSON格式的评审结果：
-```json
-{{
-  "module_review": {{
-    "completeness": {{
-      "score": 90,
-      "issues": ["问题1"],
-      "suggestions": ["建议1"]
-    }},
-    "rationality": {{
-      "score": 85,
-      "issues": [],
-      "suggestions": []
-    }}
-  }},
-  "test_point_review": {{
-    "completeness": {{
-      "score": 88,
-      "issues": [],
-      "suggestions": []
-    }},
-    "testability": {{
-      "score": 92,
-      "issues": [],
-      "suggestions": []
-    }},
-    "missing_points": ["遗漏的测试点1"]
-  }},
-  "overall_score": 90,
-  "conclusion": "评审结论"
-}}
-```"""
+        if render_result["missing_variables"]:
+            print(f"[模块评审] 模板缺少变量: {render_result['missing_variables']}")
 
         # 调用LLM进行评审
         adapter = self.llm_manager.get_adapter()
@@ -4526,14 +4304,14 @@ class GenerationService:
         result = {"items": [], "points": [], "risk_assessment": {}}
 
         # 按行解析，保持item和point的关联关系
-        lines = test_plan.split('\n')
+        lines = test_plan.split("\n")
         current_item = None
 
         for line in lines:
             line = line.strip()
 
             # 检查是否是测试项
-            item_match = re.match(r'### 测试项[：:]\s*(.+)', line)
+            item_match = re.match(r"### 测试项[：:]\s*(.+)", line)
             if item_match:
                 item_name = item_match.group(1).strip()
                 if item_name:
@@ -4553,14 +4331,16 @@ class GenerationService:
                         "title": item_name,
                         "name": item_name,
                         "risk_level": risk_level,
-                        "priority": "P0" if risk_level == "Critical" else ("P1" if risk_level == "High" else "P2"),
-                        "points": []
+                        "priority": "P0"
+                        if risk_level == "Critical"
+                        else ("P1" if risk_level == "High" else "P2"),
+                        "points": [],
                     }
                     result["items"].append(current_item)
                 continue
 
             # 检查是否是测试点
-            point_match = re.match(r'- 测试点[：:]\s*(.+)', line)
+            point_match = re.match(r"- 测试点[：:]\s*(.+)", line)
             if point_match and current_item:
                 point_name = point_match.group(1).strip()
                 if point_name:
@@ -4652,7 +4432,7 @@ class GenerationService:
         return {
             "valid": valid,
             "missing": missing,
-            "message": "模板验证通过" if valid else f'缺少占位符: {", ".join(missing)}',
+            "message": "模板验证通过" if valid else f"缺少占位符: {', '.join(missing)}",
         }
 
     def _build_optimized_generation_prompt(
@@ -4719,7 +4499,8 @@ class GenerationService:
         """
         构建带来源ID标注的RAG上下文（用于引用标注模板）
 
-        在每个召回项目旁边注明来源ID，供LLM在生成时引用。
+        优先使用 PromptTemplateService 加载 rag_citation 模板，
+        如果未找到则使用硬编码默认格式。
 
         Args:
             rag_items: _perform_rag_recall_with_ids() 返回的原始召回项
@@ -4727,6 +4508,56 @@ class GenerationService:
         Returns:
             包含来源ID标注的RAG上下文字符串
         """
+        # 尝试使用 PromptTemplateService 渲染模板
+        try:
+            from src.services.prompt_template_service import PromptTemplateService
+
+            prompt_service = PromptTemplateService(self.db_session)
+            template_obj = prompt_service.get_template("rag_citation")
+
+            if template_obj and template_obj.template:
+                # 使用模板构建内容
+                sections = []
+                cases = rag_items.get("cases", [])
+                defects = rag_items.get("defects", [])
+                requirements = rag_items.get("requirements", [])
+
+                for i, case in enumerate(cases, 1):
+                    source_id = case.get("id", f"CASE-{i:03d}")
+                    if not source_id.startswith("#"):
+                        source_id = f"#{source_id}"
+                    sections.append(
+                        f"### 历史用例 {i} (来源ID: `{source_id}`)\n"
+                        f"{case.get('content', '')}"
+                    )
+
+                for i, defect in enumerate(defects, 1):
+                    source_id = defect.get("id", f"DEFECT-{i:03d}")
+                    if not source_id.startswith("#"):
+                        source_id = f"#{source_id}"
+                    sections.append(
+                        f"### 历史缺陷 {i} (来源ID: `{source_id}`)\n"
+                        f"{defect.get('content', '')}"
+                    )
+
+                for i, req in enumerate(requirements, 1):
+                    source_id = req.get("id", f"REQ-{i:03d}")
+                    if not source_id.startswith("#"):
+                        source_id = f"#{source_id}"
+                    sections.append(
+                        f"### 相关需求 {i} (来源ID: `{source_id}`)\n"
+                        f"{req.get('content', '')}"
+                    )
+
+                content = "\n\n".join(sections)
+                render_result = prompt_service.render_template(
+                    "rag_citation", content=content
+                )
+                return render_result["prompt"]
+        except Exception as e:
+            print(f"[RAG引用] 模板渲染失败，使用fallback: {e}")
+
+        # 硬编码fallback
         rag_context = ""
 
         cases = rag_items.get("cases", [])
@@ -5015,7 +4846,7 @@ class GenerationService:
 
                 # 构建用例字典
                 case = {
-                    "case_id": f"TC_{idx+1:06d}",
+                    "case_id": f"TC_{idx + 1:06d}",
                     "module": "",  # 需要从上下文提取
                     "test_point": "",  # 需要从标题推断
                     "name": title,
@@ -5028,10 +4859,10 @@ class GenerationService:
                 }
 
                 cases.append(case)
-                print(f"  成功解析用例 {idx+1}: {title[:50]}")
+                print(f"  成功解析用例 {idx + 1}: {title[:50]}")
 
             except Exception as e:
-                print(f"  解析用例 {idx+1} 失败: {e}")
+                print(f"  解析用例 {idx + 1} 失败: {e}")
                 continue
 
         print(f"Markdown解析成功，返回 {len(cases)} 条用例")
@@ -5076,12 +4907,12 @@ class GenerationService:
         if "。" in text:
             items = [item.strip() for item in text.split("。") if item.strip()]
             # 添加序号
-            return [f"{i+1}. {item}" for i, item in enumerate(items)]
+            return [f"{i + 1}. {item}" for i, item in enumerate(items)]
 
         # 按换行分割
         if "\n" in text:
             items = [item.strip() for item in text.split("\n") if item.strip()]
-            return [f"{i+1}. {item}" for i, item in enumerate(items)]
+            return [f"{i + 1}. {item}" for i, item in enumerate(items)]
 
         # 只有单条内容
         if text:
@@ -5099,7 +4930,9 @@ class GenerationService:
         try:
             import os
 
-            log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs")
+            log_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs"
+            )
             os.makedirs(log_dir, exist_ok=True)
             log_path = os.path.join(log_dir, "llm_response.log")
             with open(log_path, "w", encoding="utf-8") as f:
@@ -5136,7 +4969,7 @@ class GenerationService:
             if matches:
                 print(f"找到 {len(matches)} 个JSON代码块")
                 for idx, match in enumerate(matches):
-                    print(f"尝试解析第 {idx+1} 个JSON代码块 (长度: {len(match)}字符)")
+                    print(f"尝试解析第 {idx + 1} 个JSON代码块 (长度: {len(match)}字符)")
                     try:
                         cases = json.loads(match)
                         if isinstance(cases, list):
@@ -5150,7 +4983,7 @@ class GenerationService:
                                     )
                                     return cases[key]
                     except json.JSONDecodeError as e:
-                        print(f"第 {idx+1} 个JSON代码块解析失败: {e}")
+                        print(f"第 {idx + 1} 个JSON代码块解析失败: {e}")
                         # 如果是最后一个且特别长，尝试修复JSON
                         if len(match) > 10000:
                             print("JSON过长，尝试智能修复...")
@@ -5307,7 +5140,9 @@ class GenerationService:
         import os
         from datetime import datetime
 
-        log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs")
+        log_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs"
+        )
         os.makedirs(log_dir, exist_ok=True)
         log_file = os.path.join(log_dir, "llm_response.log")
 
@@ -5357,100 +5192,37 @@ class GenerationService:
         """
         print("[质量评审] 开始执行质量评审...")
 
-        # 构建评审prompt
-        review_prompt = f"""你是一位资深质量评审专家，请对以下测试用例进行质量评审。
+        # 使用 PromptTemplateService 渲染 case_review 模板
+        from src.services.prompt_template_service import PromptTemplateService
 
-## 需求文档
-{requirement_content[:3000]}...
+        prompt_service = PromptTemplateService(self.db_session)
 
-## 需求分析结果
-- 功能模块: {len(requirement_analysis.get('modules', []))}个
-- 业务规则: {len(requirement_analysis.get('business_rules', []))}条
-- 测试点: {len(requirement_analysis.get('test_points', []))}个
-
-## 生成的测试用例（共{len(test_cases)}条）
-
-"""
-        # 添加用例摘要（避免prompt过长）
-        for idx, case in enumerate(test_cases[:20], 1):  # 只显示前20条
-            review_prompt += (
+        # 构建用例摘要
+        case_summary = ""
+        for idx, case in enumerate(test_cases[:20], 1):
+            case_summary += (
                 f"{idx}. [{case.get('priority', 'N/A')}] {case.get('name', 'N/A')}\n"
             )
-            if len(test_cases) > 20:
-                review_prompt += f"... (还有{len(test_cases)-20}条用例)\n"
+        if len(test_cases) > 20:
+            case_summary += f"... (还有{len(test_cases) - 20}条用例)\n"
 
-        review_prompt += """
-## 评审要求
+        render_result = prompt_service.render_template(
+            "case_review",
+            requirement_content=requirement_content[:3000],
+            module_count=len(requirement_analysis.get("modules", [])),
+            rule_count=len(requirement_analysis.get("business_rules", [])),
+            point_count=len(requirement_analysis.get("test_points", [])),
+            case_count=len(test_cases),
+            case_summary=case_summary,
+        )
 
-### 1. 引导错误过滤检查（一票否决制）
-检查以下项，任何一项不合格则判定为"不合格"：
-- 数据占位符：搜索 `{`、`}`、包含`xxx`的占位符
-- 预期模糊：搜索"功能正常"、"显示正确"、"正常工作"
-- 步骤不对应：测试步骤序号与预期结果序号是否对应
-- P0+P1>50%：统计P0+P1占比是否超过50%
+        review_prompt = render_result["prompt"]
 
-### 2. 六大维度评估
-- PRD覆盖度：是否覆盖所有功能点和场景
-- 用例冗余性：是否存在重复或价值低的用例
-- 步骤清晰度：步骤是否具体可执行
-- 预期明确性：预期结果是否具备明确的可验证物
-- 场景完整性：是否包含边界值、异常流等
-- 优先级合理性：P0/P1/P2/P3划分是否合理
+        if render_result["used_fallback"]:
+            print("[质量评审] 使用fallback默认模板")
 
-### 3. 覆盖率量化
-- 功能需求覆盖率（目标≥95%）
-- 边界值覆盖率（目标100%）
-- 异常场景覆盖率（目标≥80%）
-
-### 4. 重复检测
-- 检测相似度≥90%的重复用例
-- 检测相似度70%-89%的语义相似用例
-
-### 5. 优先级分布检查
-- P0占比是否在10-15%范围内
-- P1占比是否在20-30%范围内
-- P2占比是否在35-45%范围内
-- P3占比是否在10-15%范围内
-- P0+P1是否≤40%
-
-## 输出格式
-请输出JSON格式的评审报告：
-```json
-{{
-  "pass": true/false,
-  "guideline_errors": [
-    {{"type": "占位符", "case_ids": ["TC_000001"], "description": "发现占位符"}}
-  ],
-  "six_dimension_scores": {{
-    "prd_coverage": 95,
-    "redundancy": 90,
-    "step_clarity": 85,
-    "expectation_clarity": 90,
-    "scenario_completeness": 88,
-    "priority_reasonableness": 92
-  }},
-  "coverage_metrics": {{
-    "functional_coverage": 95,
-    "boundary_coverage": 100,
-    "exception_coverage": 85
-  }},
-  "priority_distribution": {{
-    "P0": {{"count": 2, "percentage": 10}},
-    "P1": {{"count": 5, "percentage": 25}},
-    "P2": {{"count": 9, "percentage": 45}},
-    "P3": {{"count": 4, "percentage": 20}}
-  }},
-  "duplicates": [
-    {{"case1": "TC_000001", "case2": "TC_000005", "similarity": 95}}
-  ],
-  "improvement_suggestions": [
-    "建议增加XX场景的测试用例"
-  ],
-  "overall_score": 90,
-  "conclusion": "合格/不合格 + 具体说明"
-}}
-```
-"""
+        if render_result["missing_variables"]:
+            print(f"[质量评审] 模板缺少变量: {render_result['missing_variables']}")
 
         # 调用LLM进行评审
         try:

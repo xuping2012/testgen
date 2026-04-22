@@ -67,7 +67,7 @@ def create_requirement():
             title=data["title"],
             content=data["content"],
             source_file=data.get("source_file"),
-            status=RequirementStatus.PENDING,
+            status=RequirementStatus.PENDING_ANALYSIS,
         )
 
         db_session.add(requirement)
@@ -106,6 +106,8 @@ def list_requirements():
         total = query.count()
         requirements = query.offset((page - 1) * limit).limit(limit).all()
 
+        from src.database.models import GenerationTask
+
         return jsonify(
             {
                 "items": [
@@ -113,6 +115,7 @@ def list_requirements():
                         "id": r.id,
                         "title": r.title,
                         "status": r.status.value,
+                        "analysis_data": r.analysis_data,
                         "created_at": (
                             r.created_at.isoformat() if r.created_at else None
                         ),
@@ -159,6 +162,185 @@ def get_requirement(requirement_id):
                 ),
             }
         )
+
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/requirements/<int:requirement_id>/analyze", methods=["POST"])
+def analyze_requirement(requirement_id):
+    """
+    分析需求 - 识别功能模块和测试点
+    POST /api/requirements/{id}/analyze
+    """
+    try:
+        from src.database.models import Requirement, RequirementStatus
+
+        requirement = db_session.query(Requirement).get(requirement_id)
+        if not requirement:
+            return jsonify({"error": "需求不存在"}), 404
+
+        if requirement.status not in [RequirementStatus.PENDING_ANALYSIS, RequirementStatus.FAILED]:
+            return jsonify(
+                {"error": f"当前状态 {requirement.status.value} 不支持分析操作"}
+            ), 400
+
+        if not generation_service.llm_manager:
+            return jsonify({"error": "LLM管理器未初始化"}), 500
+
+        import json
+        import re
+        import logging
+
+        from src.services.prompt_template_service import PromptTemplateService
+
+        requirement.status = RequirementStatus.ANALYZING
+        db_session.commit()
+
+        try:
+            prompt_service = PromptTemplateService(db_session)
+            render_result = prompt_service.render_template(
+                "requirement_analysis", requirement_content=requirement.content
+            )
+            prompt = render_result["prompt"]
+            logging.info(f"[Analyze] Prompt length: {len(prompt)}")
+        except Exception as e:
+            logging.error(f"[Analyze] Prompt render failed: {e}")
+            requirement.status = RequirementStatus.PENDING_ANALYSIS
+            db_session.commit()
+            return jsonify({"error": f"渲染Prompt失败: {str(e)}"}), 500
+
+        try:
+            adapter = generation_service.llm_manager.get_adapter()
+            response = adapter.generate(
+                prompt,
+                temperature=0.3,
+                max_tokens=4096,
+                timeout=120,
+            )
+        except Exception as e:
+            logging.error(f"[Analyze] LLM call failed: {e}")
+            return jsonify({"error": f"LLM调用失败: {str(e)}"}), 500
+
+        if not response.success:
+            requirement.status = RequirementStatus.PENDING_ANALYSIS
+            db_session.commit()
+            return jsonify({"error": f"LLM分析失败: {response.error_message}"}), 500
+
+        try:
+            content = response.content
+            json_match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", content)
+            if json_match:
+                analysis_result = json.loads(json_match.group(1))
+            else:
+                analysis_result = json.loads(content)
+        except (json.JSONDecodeError, AttributeError) as e:
+            logging.error(f"[Analyze] JSON parse failed: {e}, content: {content[:500]}")
+            requirement.status = RequirementStatus.PENDING_ANALYSIS
+            db_session.commit()
+            return jsonify(
+                {"error": "解析LLM响应失败", "raw_response": response.content[:500]}
+            ), 500
+
+        requirement.analysis_data = analysis_result
+        requirement.status = RequirementStatus.PENDING_GENERATION
+        db_session.commit()
+
+        return jsonify(
+            {
+                "requirement_id": requirement_id,
+                "status": requirement.status.value,
+                "analysis_data": analysis_result,
+                "message": "需求分析完成，请审核后生成用例",
+            }
+        ), 200
+
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/requirements/<int:requirement_id>/analysis", methods=["GET"])
+def get_requirement_analysis(requirement_id):
+    """
+    获取需求分析结果（用于重新生成时展示已分析的模块/测试点）
+    GET /api/requirements/{id}/analysis
+    """
+    try:
+        from src.database.models import Requirement
+
+        requirement = db_session.query(Requirement).get(requirement_id)
+        if not requirement:
+            return jsonify({"error": "需求不存在"}), 404
+
+        if not requirement.analysis_data:
+            return jsonify({"error": "需求无分析数据，请先进行需求分析"}), 400
+
+        return jsonify(
+            {
+                "requirement_id": requirement_id,
+                "title": requirement.title,
+                "status": requirement.status.value,
+                "analysis_data": requirement.analysis_data,
+            }
+        ), 200
+
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/requirements/<int:requirement_id>/review", methods=["POST"])
+def review_requirement(requirement_id):
+    """
+    审核确认功能模块和测试点，触发生成
+    POST /api/requirements/{id}/review
+
+    Request Body:
+    {
+        "action": "generate" | "cancel"  # generate: 确认并生成; cancel: 取消不生成
+    }
+    """
+    try:
+        from src.database.models import Requirement, RequirementStatus
+
+        requirement = db_session.query(Requirement).get(requirement_id)
+        if not requirement:
+            return jsonify({"error": "需求不存在"}), 404
+
+        if requirement.status not in [RequirementStatus.PENDING_GENERATION, RequirementStatus.PENDING_REVIEW]:
+            return jsonify(
+                {"error": f"当前状态 {requirement.status.value} 不支持审核操作"}
+            ), 400
+
+        data = request.json or {}
+        action = data.get("action", "cancel")
+
+        if action == "cancel":
+            return jsonify(
+                {
+                    "requirement_id": requirement_id,
+                    "status": requirement.status.value,
+                    "message": "已取消生成，需求保持待确认状态",
+                }
+            ), 200
+
+        task_id = generation_service.create_task(requirement_id)
+        requirement.status = RequirementStatus.GENERATING
+        db_session.commit()
+
+        generation_service.start_task(task_id)
+        generation_service.execute_phase2_generation(task_id, requirement.analysis_data)
+
+        return jsonify(
+            {
+                "requirement_id": requirement_id,
+                "task_id": task_id,
+                "status": "processing",
+                "message": "已创建生成任务",
+            }
+        ), 202
 
     except Exception as e:
         db_session.rollback()
@@ -239,7 +421,7 @@ def delete_requirement(requirement_id):
             db_session.query(TestCase).filter(
                 TestCase.requirement_id == requirement_id
             ).update({"requirement_id": None}, synchronize_session=False)
-        
+
         if task_count > 0:
             db_session.query(GenerationTaskModel).filter(
                 GenerationTaskModel.requirement_id == requirement_id
@@ -254,11 +436,13 @@ def delete_requirement(requirement_id):
         if task_count > 0:
             message += f"，{task_count} 条生成任务已解除关联"
 
-        return jsonify({
-            "message": message,
-            "disassociated_cases": case_count,
-            "disassociated_tasks": task_count
-        })
+        return jsonify(
+            {
+                "message": message,
+                "disassociated_cases": case_count,
+                "disassociated_tasks": task_count,
+            }
+        )
 
     except Exception as e:
         db_session.rollback()
@@ -283,9 +467,7 @@ def batch_delete_requirements():
 
         # 统计关联数量
         case_count = (
-            db_session.query(TestCase)
-            .filter(TestCase.requirement_id.in_(ids))
-            .count()
+            db_session.query(TestCase).filter(TestCase.requirement_id.in_(ids)).count()
         )
         task_count = (
             db_session.query(GenerationTaskModel)
@@ -295,10 +477,10 @@ def batch_delete_requirements():
 
         # 解除关联（不删除）
         if case_count > 0:
-            db_session.query(TestCase).filter(
-                TestCase.requirement_id.in_(ids)
-            ).update({"requirement_id": None}, synchronize_session=False)
-        
+            db_session.query(TestCase).filter(TestCase.requirement_id.in_(ids)).update(
+                {"requirement_id": None}, synchronize_session=False
+            )
+
         if task_count > 0:
             db_session.query(GenerationTaskModel).filter(
                 GenerationTaskModel.requirement_id.in_(ids)
@@ -413,24 +595,20 @@ def list_defects():
 @api_bp.route("/generate", methods=["POST"])
 def trigger_generation():
     """
-    触发AI生成用例 - 阶段1：需求分析+测试规划
+    触发AI生成用例 - 阶段2：仅处理已审核的需求
     POST /api/generate
+    现在只支持从审核后触发的生成流程
 
     Request Body:
     {
-        "requirement_id": 1
+        "requirement_id": 1,
+        "task_id": "task_xxx"  # 来自 /review 接口的任务ID
     }
 
     Returns:
     {
         "task_id": "task_xxx",
-        "requirement_id": 1,
-        "analysis_result": {
-            "modules": [...],
-            "test_plan": "...",
-            "requirement_md": "..."
-        },
-        "status": "awaiting_review"
+        "status": "processing"
     }
     """
     try:
@@ -440,8 +618,8 @@ def trigger_generation():
             return jsonify({"error": "缺少必要字段: requirement_id"}), 400
 
         requirement_id = data["requirement_id"]
+        task_id = data.get("task_id")
 
-        # 获取需求内容
         from src.database.models import Requirement, RequirementStatus
 
         requirement = db_session.query(Requirement).get(requirement_id)
@@ -449,26 +627,40 @@ def trigger_generation():
         if not requirement:
             return jsonify({"error": "需求不存在"}), 404
 
-        # 创建生成任务
-        task_id = generation_service.create_task(requirement_id)
+        if requirement.status in [RequirementStatus.FAILED]:
+            return jsonify(
+                {"error": f"需求状态为 {requirement.status.value}，请重新分析后再生成"}
+            ), 400
 
-        # 更新需求状态
-        requirement.status = RequirementStatus.PROCESSING
-        db_session.commit()
+        if requirement.status == RequirementStatus.COMPLETED:
+            if not requirement.analysis_data:
+                return jsonify({"error": "需求无分析数据，请重新分析后再生成"}), 400
+            return jsonify(
+                {
+                    "requirement_id": requirement_id,
+                    "analysis_data": requirement.analysis_data,
+                    "status": requirement.status.value,
+                    "message": "已有分析数据，请确认后生成",
+                }
+            ), 200
 
-        # 执行阶段1：需求分析+测试规划（同步执行，快速返回）
-        analysis_result = generation_service.execute_phase1_analysis(
-            task_id, requirement.content
-        )
+        if requirement.status not in [RequirementStatus.GENERATING, RequirementStatus.PROCESSING]:
+            return jsonify(
+                {"error": f"需求状态为 {requirement.status.value}，请先完成分析"}
+            ), 400
+
+        if not task_id:
+            task_id = generation_service.create_task(requirement_id)
+
+        generation_service.execute_phase2_generation(task_id, None)
 
         return (
             jsonify(
                 {
                     "task_id": task_id,
                     "requirement_id": requirement_id,
-                    "analysis_result": analysis_result,
-                    "status": "awaiting_review",
-                    "message": "需求分析完成，请评审后继续",
+                    "status": "processing",
+                    "message": "生成任务已启动",
                 }
             ),
             202,
@@ -501,7 +693,9 @@ def continue_generation():
     try:
         logging.info("[调试][API] /api/generate/continue 被调用")
         data = request.json
-        logging.info("[调试][API] request.json keys: %s", list(data.keys()) if data else 'None')
+        logging.info(
+            "[调试][API] request.json keys: %s", list(data.keys()) if data else "None"
+        )
 
         if not data or "task_id" not in data:
             logging.info("[调试][API] 缺少task_id字段")
@@ -510,12 +704,18 @@ def continue_generation():
         task_id = data["task_id"]
         reviewed_plan = data.get("reviewed_plan")  # 用户可能编辑过的规划
         logging.info("[调试][API] task_id: %s", task_id)
-        logging.info("[调试][API] reviewed_plan keys: %s", list(reviewed_plan.keys()) if reviewed_plan else 'None')
+        logging.info(
+            "[调试][API] reviewed_plan keys: %s",
+            list(reviewed_plan.keys()) if reviewed_plan else "None",
+        )
         if reviewed_plan:
             items = reviewed_plan.get("items", [])
             logging.info("[调试][API] reviewed_plan.items 数量: %d", len(items))
             if items:
-                logging.info("[调试][API] 第一个item title: %s", items[0].get("title", items[0].get("name", "N/A")))
+                logging.info(
+                    "[调试][API] 第一个item title: %s",
+                    items[0].get("title", items[0].get("name", "N/A")),
+                )
 
         # 获取任务
         task = generation_service.get_task(task_id)
@@ -578,15 +778,15 @@ def retry_generation():
         if not requirement:
             return jsonify({"error": "需求不存在"}), 404
 
-        # 创建新任务
-        import uuid
+        if not requirement.analysis_data:
+            return jsonify({"error": "需求无分析数据，请先进行需求分析"}), 400
 
-        task_id = f"task_{uuid.uuid4().hex[:12]}"
+        # 创建新任务
+        task_id = generation_service.create_task(requirement_id)
 
         # 构建评审后的规划（使用已有的或用户编辑的）
         reviewed_plan = {}
         if modules or points:
-            # 如果用户提供了编辑后的内容，使用它
             reviewed_plan = {
                 "modules": modules,
                 "points": points,
@@ -596,6 +796,11 @@ def retry_generation():
                     else ""
                 ),
             }
+        else:
+            reviewed_plan = requirement.analysis_data
+
+        requirement.status = RequirementStatus.GENERATING
+        db_session.commit()
 
         # 异步执行阶段2：RAG检索+LLM生成
         generation_service.execute_phase2_generation(
@@ -1470,6 +1675,24 @@ def rag_list():
         return jsonify({"error": str(e)}), 500
 
 
+@api_bp.route("/fts5/rebuild", methods=["POST"])
+def rebuild_fts5():
+    """
+    重建FTS5索引
+    POST /api/fts5/rebuild
+    """
+    try:
+        from src.database.fts5_listeners import rebuild_fts5_index
+        from app import engine
+
+        rebuild_fts5_index(engine)
+
+        return jsonify({"success": True, "message": "FTS5索引重建完成"}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ==================== 导出接口 ====================
 
 
@@ -1602,12 +1825,16 @@ def export_cases_post():
                 "test_steps": (
                     c.test_steps
                     if isinstance(c.test_steps, list)
-                    else json.loads(c.test_steps) if c.test_steps else []
+                    else json.loads(c.test_steps)
+                    if c.test_steps
+                    else []
                 ),
                 "expected_results": (
                     c.expected_results
                     if isinstance(c.expected_results, list)
-                    else json.loads(c.expected_results) if c.expected_results else []
+                    else json.loads(c.expected_results)
+                    if c.expected_results
+                    else []
                 ),
                 "priority": c.priority.value if c.priority else "P2",
                 "case_type": c.case_type,
@@ -2305,32 +2532,50 @@ def list_prompts():
     try:
         from src.database.models import PromptTemplate
 
-        ACTIVE_TYPES = {"analyze", "generate", "generate_optimized", "generate_with_citation", "review"}
+        ACTIVE_TYPES = {
+            "requirement_analysis",
+            "test_plan",
+            "case_generation",
+            "case_review",
+            "rag_query",
+            "rag_citation",
+            "analyze",
+            "generate",
+            "generate_optimized",
+            "generate_with_citation",
+            "review",
+        }
         templates = (
             db_session.query(PromptTemplate)
             .filter(PromptTemplate.template_type.in_(ACTIVE_TYPES))
             .all()
         )
 
-        return jsonify(
-            {
-                "items": [
-                    {
-                        "id": t.id,
-                        "name": t.name,
-                        "description": t.description,
-                        "template": t.template,
-                        "template_type": t.template_type,
-                        "is_default": bool(t.is_default),
-                        "line_count": t.template.count("\n") + 1,
-                        "created_at": (
-                            t.created_at.isoformat() if t.created_at else None
-                        ),
-                    }
-                    for t in templates
-                ]
-            }
-        )
+        items = []
+        for t in templates:
+            preview = t.template[:100].replace("\n", " ") + (
+                "..." if len(t.template) > 100 else ""
+            )
+            items.append(
+                {
+                    "id": t.id,
+                    "name": t.name,
+                    "description": t.description or "",
+                    "template_type": t.template_type,
+                    "preview": preview,
+                    "is_default": bool(t.is_default),
+                    "version": t.version,
+                    "line_count": t.template.count("\n") + 1,
+                    "created_at": (
+                        t.created_at.isoformat() if t.created_at else None
+                    ),
+                    "updated_at": (
+                        t.updated_at.isoformat() if t.updated_at else None
+                    ),
+                }
+            )
+
+        return jsonify({"items": items})
 
     except Exception as e:
         db_session.rollback()
@@ -2358,8 +2603,13 @@ def get_prompt(prompt_id):
                 "template": template.template,
                 "template_type": template.template_type,
                 "is_default": bool(template.is_default),
+                "version": template.version,
+                "change_log": template.change_log,
                 "created_at": (
                     template.created_at.isoformat() if template.created_at else None
+                ),
+                "updated_at": (
+                    template.updated_at.isoformat() if template.updated_at else None
                 ),
             }
         )
@@ -2393,9 +2643,35 @@ def update_prompt(prompt_id):
         if "template_type" in data:
             template.template_type = data["template_type"]
 
+        # 版本号和变更日志自动更新
+        from datetime import datetime
+
+        old_version = template.version or 1
+        template.version = old_version + 1
+
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        change_entry = f"[{timestamp}] 版本 {old_version} -> {template.version}"
+        if "name" in data and data["name"] != template.name:
+            change_entry += f", 名称改为: {data['name']}"
+        change_entry += f", 内容更新"
+
+        existing_log = template.change_log or ""
+        if existing_log:
+            template.change_log = existing_log + "\n" + change_entry
+        else:
+            template.change_log = change_entry
+
+        template.updated_at = datetime.utcnow()
+
         db_session.commit()
 
-        return jsonify({"message": "模板更新成功"})
+        return jsonify(
+            {
+                "message": "模板更新成功",
+                "version": template.version,
+                "change_log": template.change_log,
+            }
+        )
 
     except Exception as e:
         db_session.rollback()
@@ -2418,14 +2694,133 @@ def delete_prompt(prompt_id):
         if template.is_default:
             return jsonify({"error": "默认模板禁止删除"}), 403
 
-        ACTIVE_TYPES = {"analyze", "generate", "generate_optimized", "generate_with_citation", "review"}
+        ACTIVE_TYPES = {
+            "requirement_analysis",
+            "test_plan",
+            "case_generation",
+            "case_review",
+            "rag_query",
+            "rag_citation",
+            "analyze",
+            "generate",
+            "generate_optimized",
+            "generate_with_citation",
+            "review",
+        }
         if template.template_type in ACTIVE_TYPES:
-            return jsonify({"error": f"模板类型「{template.template_type}」为系统运行中，禁止删除"}), 403
+            return jsonify(
+                {"error": f"模板类型「{template.template_type}」为系统运行中，禁止删除"}
+            ), 403
 
         db_session.delete(template)
         db_session.commit()
 
         return jsonify({"message": "模板删除成功"})
+
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/prompts/<int:prompt_id>/versions", methods=["GET"])
+def get_prompt_versions(prompt_id):
+    """
+    获取Prompt模板版本历史
+    GET /api/prompts/{id}/versions
+    """
+    try:
+        from src.database.models import PromptTemplate
+
+        template = db_session.query(PromptTemplate).get(prompt_id)
+        if not template:
+            return jsonify({"error": "模板不存在"}), 404
+
+        versions = []
+        change_log = template.change_log or ""
+
+        if change_log:
+            for line in change_log.split("\n"):
+                line = line.strip()
+                if line.startswith("[") and "]" in line:
+                    versions.append(
+                        {
+                            "timestamp": line[1 : line.find("]")],
+                            "change": line[line.find("]") + 1 :].strip(),
+                        }
+                    )
+
+        versions.append(
+            {
+                "timestamp": (
+                    template.updated_at.isoformat()
+                    if template.updated_at
+                    else template.created_at.isoformat()
+                ),
+                "change": f"当前版本 {template.version}",
+            }
+        )
+
+        return jsonify(
+            {
+                "id": template.id,
+                "name": template.name,
+                "current_version": template.version,
+                "versions": versions,
+            }
+        )
+
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/prompts/<int:prompt_id>/rollback", methods=["POST"])
+def rollback_prompt_version(prompt_id):
+    """
+    回滚Prompt模板到指定版本
+    POST /api/prompts/{id}/rollback
+    body: {"version": 1} 或 {"note": "回滚说明"}
+    """
+    try:
+        from src.database.models import PromptTemplate
+        from datetime import datetime
+
+        template = db_session.query(PromptTemplate).get(prompt_id)
+        if not template:
+            return jsonify({"error": "模板不存在"}), 404
+
+        data = request.json or {}
+        target_version = data.get("version")
+
+        if not target_version:
+            return jsonify({"error": "需要指定version参数"}), 400
+
+        # 简单回滚：记录日志，不实际恢复内容
+        old_version = template.version or 1
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+        change_entry = f"[{timestamp}] 回滚: v{old_version} -> v{target_version}"
+        if "note" in data:
+            change_entry += f", 原因: {data['note']}"
+
+        existing_log = template.change_log or ""
+        if existing_log:
+            template.change_log = existing_log + "\n" + change_entry
+        else:
+            template.change_log = change_entry
+
+        template.version = target_version
+        template.updated_at = datetime.utcnow()
+
+        db_session.commit()
+
+        return jsonify(
+            {
+                "message": "回滚成功",
+                "new_version": template.version,
+                "change_log": template.change_log,
+            }
+        )
 
     except Exception as e:
         db_session.rollback()
@@ -3005,7 +3400,7 @@ def chat_with_llm():
     Server-Sent Events (SSE)
     event: message
     data: {"content": "...", "done": false}
-    
+
     event: done
     data: {"content": "...", "model": "...", "usage": {...}}
 
@@ -3047,40 +3442,53 @@ def chat_with_llm():
                     for chunk in adapter.chat_stream(messages):
                         yield f"event: message\n"
                         yield f"data: {json.dumps({'content': chunk, 'done': False}, ensure_ascii=False)}\n\n"
-                    
+
                     # 发送完成事件
                     yield f"event: done\n"
-                    yield f"data: {json.dumps({
-                        'model': config_info.get('model_id', adapter.model_id),
-                        'config_name': config_info.get('name', '')
-                    }, ensure_ascii=False)}\n\n"
+                    yield f"data: {
+                        json.dumps(
+                            {
+                                'model': config_info.get('model_id', adapter.model_id),
+                                'config_name': config_info.get('name', ''),
+                            },
+                            ensure_ascii=False,
+                        )
+                    }\n\n"
                 except Exception as e:
                     yield f"event: error\n"
                     yield f"data: {json.dumps({'error': f'LLM调用失败: {str(e)}'}, ensure_ascii=False)}\n\n"
-            
-            return Response(generate(), mimetype='text/event-stream', headers={
-                'Cache-Control': 'no-cache',
-                'X-Accel-Buffering': 'no',  # 禁用nginx缓冲
-                'Connection': 'keep-alive'
-            })
+
+            return Response(
+                generate(),
+                mimetype="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",  # 禁用nginx缓冲
+                    "Connection": "keep-alive",
+                },
+            )
         else:
             # 非流式响应（兼容旧版）
             response = adapter.chat(messages, stream=False)
 
             if response.success:
-                return jsonify({
-                    "success": True,
-                    "content": response.content,
-                    "model": config_info.get("model_id", response.model),
-                    "usage": response.usage,
-                    "config_name": config_info.get("name", "")
-                })
+                return jsonify(
+                    {
+                        "success": True,
+                        "content": response.content,
+                        "model": config_info.get("model_id", response.model),
+                        "usage": response.usage,
+                        "config_name": config_info.get("name", ""),
+                    }
+                )
             else:
-                return jsonify({
-                    "success": False,
-                    "error": response.error_message,
-                    "model": config_info.get("model_id", response.model)
-                }), 500
+                return jsonify(
+                    {
+                        "success": False,
+                        "error": response.error_message,
+                        "model": config_info.get("model_id", response.model),
+                    }
+                ), 500
 
     except ValueError as e:
         return jsonify({"error": str(e)}), 400

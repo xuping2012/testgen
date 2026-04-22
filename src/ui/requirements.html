@@ -283,7 +283,39 @@
             border-color: rgba(255, 193, 7, 0.3);
         }
         
+        .status-pending_analysis {
+            background: rgba(255, 193, 7, 0.1);
+            color: #ffc107;
+            border-color: rgba(255, 193, 7, 0.3);
+        }
+        
+        .status-analyzing {
+            background: rgba(0, 245, 255, 0.1);
+            color: var(--neon-cyan);
+            border-color: rgba(0, 245, 255, 0.3);
+            animation: pulse 2s infinite;
+        }
+        
         .status-processing {
+            background: rgba(0, 245, 255, 0.1);
+            color: var(--neon-cyan);
+            border-color: rgba(0, 245, 255, 0.3);
+            animation: pulse 2s infinite;
+        }
+        
+        .status-pending_review {
+            background: rgba(184, 41, 221, 0.1);
+            color: var(--neon-purple);
+            border-color: rgba(184, 41, 221, 0.3);
+        }
+        
+        .status-pending_generation {
+            background: rgba(184, 41, 221, 0.1);
+            color: var(--neon-purple);
+            border-color: rgba(184, 41, 221, 0.3);
+        }
+        
+        .status-generating {
             background: rgba(0, 245, 255, 0.1);
             color: var(--neon-cyan);
             border-color: rgba(0, 245, 255, 0.3);
@@ -1802,6 +1834,7 @@
         let progressInterval = null;
         let selectedIds = new Set();
         let confirmCallback = null;
+        let reviewedPlan = null;
 
         // 自定义确认弹窗
         function showConfirm(message, onConfirm) {
@@ -1926,8 +1959,23 @@
 
                 tbody.innerHTML = data.items.map(req => {
                     const hasProcessingTask = processingReqIds.has(req.id);
-                    const generateBtnDisabled = hasProcessingTask ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : '';
-                    const generateBtnText = hasProcessingTask ? '生成中...' : '生成';
+                    
+                    let actionBtn = '';
+                    if (hasProcessingTask) {
+                        actionBtn = `<button class="action-btn" onclick="viewProgress(${req.id})" title="查看进度" aria-label="查看进度">📊</button>`;
+                    } else if (req.status === 'pending_analysis') {
+                        actionBtn = `<button class="action-btn" onclick="analyzeRequirement(${req.id})" title="分析需求" aria-label="分析需求">🔍</button>`;
+                    } else if (req.status === 'pending_review') {
+                        actionBtn = `<button class="action-btn" onclick="reviewRequirement(${req.id})" title="审核需求" aria-label="审核需求">📝</button>`;
+                    } else if (req.status === 'processing') {
+                        actionBtn = `<button class="action-btn" onclick="viewProgress(${req.id})" title="查看进度" aria-label="查看进度">📊</button>`;
+                    } else if (req.status === 'completed') {
+                        actionBtn = `<button class="action-btn" onclick="reviewExistingRequirement(${req.id})" title="查看/重新生成" aria-label="查看/重新生成">📝</button>`;
+                    } else if (req.status === 'failed') {
+                        actionBtn = `<button class="action-btn" disabled style="opacity:0.5;cursor:not-allowed;" title="已失败" aria-label="已失败">❌</button>`;
+                    } else {
+                        actionBtn = `<button class="action-btn generate" onclick="generateCases(${req.id})" title="生成用例" aria-label="生成用例">▶️</button>`;
+                    }
                     
                     return `
                     <tr>
@@ -1939,7 +1987,7 @@
                         <td>
                             <div class="action-btns">
                                 <button class="action-btn" onclick="viewRequirement(${req.id})" title="查看" aria-label="查看">👁️</button>
-                                <button class="action-btn generate" onclick="generateCases(${req.id})" ${generateBtnDisabled} title="${generateBtnText}" aria-label="${generateBtnText}">▶️</button>
+                                ${actionBtn}
                                 <button class="action-btn" onclick="deleteRequirement(${req.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="删除需求" aria-label="删除需求">🗑️</button>
                             </div>
                         </td>
@@ -1971,6 +2019,11 @@
 
         function getStatusText(status) {
             const map = {
+                'pending_analysis': '待分析',
+                'analyzing': '分析中',
+                'pending_review': '待确认',
+                'pending_generation': '待生成',
+                'generating': '生成中',
                 'pending': '待处理',
                 'processing': '处理中',
                 'completed': '已完成',
@@ -2298,6 +2351,97 @@
             }
         }
 
+        async function analyzeRequirement(requirementId) {
+            try {
+                showToast('正在分析需求...', 'info');
+                
+                const response = await fetch(`/api/requirements/${requirementId}/analyze`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                const data = await response.json();
+                if (data.analysis_data) {
+                    showReviewModal(data.analysis_data);
+                    showToast('需求分析完成，请审核后生成用例', 'success');
+                } else {
+                    showToast(`分析失败：${data.error || '未知错误'}`, 'error');
+                }
+            } catch (error) {
+                console.error('分析需求失败:', error);
+                showToast('分析失败', 'error');
+            }
+        }
+        
+        async function reviewRequirement(requirementId) {
+            try {
+                const response = await fetch(`/api/requirements/${requirementId}`);
+                const reqData = await response.json();
+                
+                if (reqData.analysis_data) {
+                    showReviewModal(reqData.analysis_data);
+                } else {
+                    showToast('需求暂无分析数据，请先执行分析', 'warning');
+                }
+            } catch (error) {
+                console.error('获取需求详情失败:', error);
+                showToast('获取详情失败', 'error');
+            }
+        }
+        
+        async function reviewExistingRequirement(requirementId) {
+            try {
+                const response = await fetch(`/api/requirements/${requirementId}`);
+                const reqData = await response.json();
+                
+                if (reqData.analysis_data) {
+                    currentRequirementId = requirementId;
+                    showReviewModal(reqData.analysis_data);
+                    showToast('已有分析数据，确认后即可生成', 'info');
+                } else {
+                    showToast('需求暂无分析数据，请重新分析', 'warning');
+                }
+            } catch (error) {
+                console.error('获取需求详情失败:', error);
+                showToast('获取详情失败', 'error');
+            }
+        }
+        
+        async function confirmAndGenerate(requirementId) {
+            try {
+                showToast('正在触发生成...', 'info');
+                
+                const response = await fetch(`/api/requirements/${requirementId}/review`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'generate' })
+                });
+                
+                const data = await response.json();
+                if (data.task_id) {
+                    currentTaskId = data.task_id;
+                    showToast('生成任务已启动', 'success');
+                    closeReviewModal();
+                    showGenerationProgress(data.task_id);
+                } else {
+                    showToast(`生成失败：${data.error || '未知错误'}`, 'error');
+                }
+            } catch (error) {
+                console.error('触发生成失败:', error);
+                showToast('生成失败', 'error');
+            }
+        }
+        
+        async function viewProgress(requirementId) {
+            const processingTasks = await getProcessingTasks();
+            const task = processingTasks.find(t => t.requirement_id === requirementId);
+            if (task) {
+                showGenerationProgress(task.task_id);
+            } else {
+                showToast('未找到进行中的任务', 'warning');
+            }
+        }
+        
         async function generateCases(requirementId) {
             try {
                 // 检查是否已有进行中的任务
@@ -2403,7 +2547,7 @@
         
         function showReviewModal(analysisResult) {
             // 填充评审弹窗数据
-            document.getElementById('reviewTaskId').value = currentTaskId;
+            document.getElementById('reviewTaskId').value = currentTaskId || '';
             
             // 保存items数组（用于后续生成）
             const itemsInput = document.getElementById('reviewItems');
@@ -2488,40 +2632,41 @@
         
         async function confirmAndContinue() {
             try {
-                // 获取用户编辑后的功能模块和测试点
-                const reviewedPlan = {
+                reviewedPlan = {
                     modules: document.getElementById('reviewModules').value,
                     points: document.getElementById('reviewPoints').value,
                     items: JSON.parse(document.getElementById('reviewItems').value || '[]')
                 };
                 
-                // 关闭评审弹窗
                 closeReviewModal();
                 
-                // 直接调用Phase 2生成，使用默认策略配置
-                showToast('正在启动用例生成...', 'info');
-                
-                const response = await fetch('/api/generate/continue', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        task_id: currentTaskId,
-                        reviewed_plan: reviewedPlan,
-                        generation_strategy: {
-                            coverage_rule: 'standard',
-                            priority_allocation: 'core_p0',
-                            quality_threshold: 0.9
-                        }
-                    })
-                });
-                
-                const data = await response.json();
-                if (data.task_id) {
-                    currentTaskId = data.task_id;
-                    showToast('用例生成中，可在「生成进度」查看进度', 'info');
-                    loadRequirements(currentPage);
+                if (currentRequirementId) {
+                    await confirmAndGenerate(currentRequirementId);
                 } else {
-                    showToast(`生成失败：${data.error || '未知错误'}`, 'error');
+                    showToast('正在启动用例生成...', 'info');
+                    
+                    const response = await fetch('/api/generate/continue', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            task_id: currentTaskId,
+                            reviewed_plan: reviewedPlan,
+                            generation_strategy: {
+                                coverage_rule: 'standard',
+                                priority_allocation: 'core_p0',
+                                quality_threshold: 0.9
+                            }
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    if (data.task_id) {
+                        currentTaskId = data.task_id;
+                        showToast('用例生成中，可在「生成进度」查看进度', 'info');
+                        loadRequirements(currentPage);
+                    } else {
+                        showToast(`生成失败：${data.error || '��知错误'}`, 'error');
+                    }
                 }
             } catch (error) {
                 console.error('继续生成失败:', error);
