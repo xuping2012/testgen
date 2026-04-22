@@ -8,6 +8,7 @@ __pycache__/
 /data/
 /testcase-generator/
 /docs/
+!/docs/superpowers/specs/
 /openspec/
 
 # IDE
