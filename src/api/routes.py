@@ -289,6 +289,35 @@ def analyze_requirement(requirement_id):
         return jsonify({"error": str(e)}), 500
 
 
+@api_bp.route("/requirements/<int:requirement_id>/reset-analysis", methods=["POST"])
+def reset_analysis(requirement_id):
+    """
+    重置需求分析状态，允许重新分析
+    POST /api/requirements/{id}/reset-analysis
+    """
+    try:
+        from src.database.models import Requirement, RequirementStatus
+
+        requirement = db_session.query(Requirement).get(requirement_id)
+        if not requirement:
+            return jsonify({"error": "需求不存在"}), 404
+
+        requirement.status = RequirementStatus.PENDING_ANALYSIS
+        requirement.analysis_data = None
+        requirement.analyzed_content = None
+        db_session.commit()
+
+        return jsonify({
+            "requirement_id": requirement_id,
+            "status": int(requirement.status),
+            "message": "需求分析状态已重置"
+        }), 200
+
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
 @api_bp.route("/requirements/<int:requirement_id>/analysis", methods=["GET"])
 def get_requirement_analysis(requirement_id):
     """
@@ -3719,7 +3748,6 @@ def confirm_analysis(requirement_id):
         from src.services.requirement_review_service import RequirementReviewService
         from src.database.models import Requirement, RequirementStatus
 
-        # 检查需求状态
         req = db_session.query(Requirement).get(requirement_id)
         if not req:
             return jsonify({"error": "需求不存在"}), 404
@@ -3730,8 +3758,12 @@ def confirm_analysis(requirement_id):
         service = RequirementReviewService(db_session)
         result = service.confirm_analysis(requirement_id)
 
-        # 触发Phase 2生成
         task_id = generation_service.create_task(requirement_id)
+        req.status = RequirementStatus.GENERATING
+        db_session.commit()
+
+        generation_service.start_task(task_id)
+        generation_service.execute_phase2_generation(task_id, req.analysis_data)
 
         return jsonify({
             "status": "confirmed",

@@ -2389,10 +2389,6 @@
             try {
                 showToast('正在启动需求分析...', 'info');
 
-                // 立即刷新列表显示分析中状态
-                loadRequirements(currentPage);
-
-                // 发送分析请求（不等待完成）
                 const response = await fetch(`/api/requirements/${requirementId}/analyze`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
@@ -2401,13 +2397,12 @@
                 const data = await response.json();
 
                 if (response.ok) {
-                    // 分析同步完成（立即返回结果）
                     if (data.analysis_data) {
+                        loadRequirements(currentPage);
                         showReviewModal(data.analysis_data, data.analyzed_content);
                         showToast('需求分析完成，请审核后生成用例', 'success');
-                        loadRequirements(currentPage);
                     } else {
-                        // 开始轮询状态
+                        loadRequirements(currentPage);
                         startAnalysisStatusPoll(requirementId);
                     }
                 } else {
@@ -2675,24 +2670,19 @@
             const points = analysisResult.points || analysisResult.test_points || [];
             if (points && points.length > 0) {
                 pointsDiv.value = points.map((point, i) => {
+                    const itemLabel = point.item || point.module || '通用';
                     const focusPoints = point.focus_points && point.focus_points.length > 0
                         ? `  [关注点: ${point.focus_points.join(', ')}]`
                         : '';
-                    return `${i + 1}. [${point.item}] ${point.name}${focusPoints}`;
+                    return `${i + 1}. [${itemLabel}] ${point.name}${focusPoints}`;
                 }).join('\n');
             } else {
                 pointsDiv.value = '未识别到测试点';
             }
             
-            // 新增：填充AI分析报告（Markdown格式）
+            // 隐藏AI分析报告区域
             const analyzedContentDiv = document.getElementById('reviewAnalyzedContent');
-            const mdContainer = document.getElementById('mdContentContainer');
-            if (analyzedContent) {
-                mdContainer.innerHTML = renderMarkdownLike(analyzedContent);
-                analyzedContentDiv.style.display = 'block';
-            } else {
-                analyzedContentDiv.style.display = 'none';
-            }
+            analyzedContentDiv.style.display = 'none';
             
             // 显示弹窗
             document.getElementById('reviewModal').classList.add('active');
@@ -2720,16 +2710,24 @@
         }
         
         async function reAnalyze() {
-            // 关闭评审弹窗
             closeReviewModal();
 
-            // 显示加载状态
             showToast('正在重新分析需求...', 'info');
 
-            // 重新触发分析 - 使用正确的分析端点
             if (currentRequirementId) {
                 try {
-                    // 立即刷新列表显示分析中状态
+                    const resetResponse = await fetch(`/api/requirements/${currentRequirementId}/reset-analysis`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+
+                    if (!resetResponse.ok) {
+                        const errorData = await resetResponse.json();
+                        showToast(`重置状态失败：${errorData.error || '未知错误'}`, 'error');
+                        loadRequirements(currentPage);
+                        return;
+                    }
+
                     loadRequirements(currentPage);
 
                     const response = await fetch(`/api/requirements/${currentRequirementId}/analyze`, {
@@ -2743,7 +2741,6 @@
                         showToast('需求分析完成，请审核后生成用例', 'success');
                         loadRequirements(currentPage);
                     } else if (response.ok) {
-                        // 开始轮询状态
                         startAnalysisStatusPoll(currentRequirementId);
                     } else {
                         showToast(`分析失败：${data.error || '未知错误'}`, 'error');
