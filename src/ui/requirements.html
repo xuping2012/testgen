@@ -277,61 +277,54 @@
             border: 1px solid;
         }
         
-        .status-pending {
+        .status-1, .status-pending_analysis {
             background: rgba(255, 193, 7, 0.1);
             color: #ffc107;
             border-color: rgba(255, 193, 7, 0.3);
         }
         
-        .status-pending_analysis {
-            background: rgba(255, 193, 7, 0.1);
-            color: #ffc107;
-            border-color: rgba(255, 193, 7, 0.3);
-        }
-        
-        .status-analyzing {
+        .status-2, .status-analyzing {
             background: rgba(0, 245, 255, 0.1);
             color: var(--neon-cyan);
             border-color: rgba(0, 245, 255, 0.3);
             animation: pulse 2s infinite;
         }
         
-        .status-processing {
-            background: rgba(0, 245, 255, 0.1);
-            color: var(--neon-cyan);
-            border-color: rgba(0, 245, 255, 0.3);
-            animation: pulse 2s infinite;
-        }
-        
-        .status-pending_review {
+        .status-3 {
             background: rgba(184, 41, 221, 0.1);
             color: var(--neon-purple);
             border-color: rgba(184, 41, 221, 0.3);
         }
         
-        .status-pending_generation {
-            background: rgba(184, 41, 221, 0.1);
-            color: var(--neon-purple);
-            border-color: rgba(184, 41, 221, 0.3);
-        }
-        
-        .status-generating {
+        .status-4, .status-generating {
             background: rgba(0, 245, 255, 0.1);
             color: var(--neon-cyan);
             border-color: rgba(0, 245, 255, 0.3);
             animation: pulse 2s infinite;
         }
         
-        .status-completed {
+        .status-5, .status-completed {
             background: rgba(0, 255, 136, 0.1);
             color: var(--neon-green);
             border-color: rgba(0, 255, 136, 0.3);
         }
         
-        .status-failed {
+        .status-6 {
+            background: rgba(110, 118, 129, 0.1);
+            color: #8b949e;
+            border-color: rgba(110, 118, 129, 0.3);
+        }
+        
+        .status-7, .status-failed {
             background: rgba(255, 0, 85, 0.1);
             color: #ff0055;
             border-color: rgba(255, 0, 85, 0.3);
+        }
+        
+        .status-pending_review {
+            background: rgba(210, 153, 34, 0.1);
+            color: #d29922;
+            border-color: rgba(210, 153, 34, 0.3);
         }
         
         @keyframes pulse {
@@ -1307,12 +1300,6 @@
             border-color: var(--neon-cyan);
         }
 
-        .status-completed_pending_review {
-            background: rgba(210, 153, 34, 0.1);
-            color: #d29922;
-            border-color: rgba(210, 153, 34, 0.3);
-        }
-
         .status-cancelled {
             background: rgba(110, 118, 129, 0.1);
             color: #8b949e;
@@ -1346,6 +1333,39 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+        }
+        
+        /* AI分析报告样式 */
+        .md-content-container {
+            border: 1px solid rgba(0, 242, 254, 0.2);
+            border-radius: 8px;
+            padding: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            background: rgba(13, 17, 23, 0.6);
+        }
+        
+        .md-rendered {
+            white-space: pre-wrap;
+            word-break: break-all;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #c9d1d9;
+        }
+        
+        .code-block {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(0, 242, 254, 0.15);
+            border-radius: 4px;
+            padding: 8px;
+            margin: 8px 0;
+            overflow-x: auto;
+        }
+        
+        .code-block code {
+            color: #7ee787;
+            font-family: 'Consolas', 'Monaco', monospace;
         }
     </style>
 </head>
@@ -1406,9 +1426,7 @@
                     <div class="batch-bar" id="batchBar" style="display: none;">
                         <div>
                             已选择 <span class="selected-count" id="selectedCount">0</span> 项
-                        </div>
-                        <div class="batch-actions">
-                            <button class="btn btn-danger btn-sm" onclick="batchDelete()" title="批量删除" aria-label="批量删除">🗑️</button>
+                             <button class="btn btn-danger btn-sm" onclick="batchDelete()" title="批量删除" aria-label="批量删除">🗑️</button>
                         </div>
                     </div>
                     
@@ -1548,6 +1566,12 @@
             <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
                 <input type="hidden" id="reviewTaskId">
                 <input type="hidden" id="reviewItems">
+                
+                <!-- AI分析报告 (Markdown格式) -->
+                <div class="form-group" id="reviewAnalyzedContent" style="display:none;">
+                    <label>AI分析报告</label>
+                    <div id="mdContentContainer" class="md-content-container"></div>
+                </div>
                 
                 <!-- 需求分析结果 -->
                 <div class="form-group">
@@ -1963,15 +1987,19 @@
                     let actionBtn = '';
                     if (hasProcessingTask) {
                         actionBtn = `<button class="action-btn" onclick="viewProgress(${req.id})" title="查看进度" aria-label="查看进度">📊</button>`;
-                    } else if (req.status === 'pending_analysis') {
+                    } else if (req.status === 1) {
                         actionBtn = `<button class="action-btn" onclick="analyzeRequirement(${req.id})" title="分析需求" aria-label="分析需求">🔍</button>`;
-                    } else if (req.status === 'pending_review') {
-                        actionBtn = `<button class="action-btn" onclick="reviewRequirement(${req.id})" title="审核需求" aria-label="审核需求">📝</button>`;
-                    } else if (req.status === 'processing') {
+                    } else if (req.status === 2) {
+                        actionBtn = `<button class="action-btn" disabled style="opacity:0.5;cursor:not-allowed;" title="分析中" aria-label="分析中">⏳</button>`;
+                    } else if (req.status === 3) {
+                        actionBtn = `<button class="action-btn" onclick="reviewRequirement(${req.id})" title="查看需求分析" aria-label="查看需求分析">📋</button>`;
+                    } else if (req.status === 4) {
                         actionBtn = `<button class="action-btn" onclick="viewProgress(${req.id})" title="查看进度" aria-label="查看进度">📊</button>`;
-                    } else if (req.status === 'completed') {
-                        actionBtn = `<button class="action-btn" onclick="reviewExistingRequirement(${req.id})" title="查看/重新生成" aria-label="查看/重新生成">📝</button>`;
-                    } else if (req.status === 'failed') {
+                    } else if (req.status === 5) {
+                        actionBtn = `<button class="action-btn" onclick="reviewExistingRequirement(${req.id})" title="查看/重新生成" aria-label="查看/重新生成">🔄</button>`;
+                    } else if (req.status === 6) {
+                        actionBtn = `<button class="action-btn" disabled style="opacity:0.5;cursor:not-allowed;" title="已取消" aria-label="已取消">⛔</button>`;
+                    } else if (req.status === 7) {
                         actionBtn = `<button class="action-btn" disabled style="opacity:0.5;cursor:not-allowed;" title="已失败" aria-label="已失败">❌</button>`;
                     } else {
                         actionBtn = `<button class="action-btn generate" onclick="generateCases(${req.id})" title="生成用例" aria-label="生成用例">▶️</button>`;
@@ -1988,7 +2016,10 @@
                             <div class="action-btns">
                                 <button class="action-btn" onclick="viewRequirement(${req.id})" title="查看" aria-label="查看">👁️</button>
                                 ${actionBtn}
-                                <button class="action-btn" onclick="deleteRequirement(${req.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="删除需求" aria-label="删除需求">🗑️</button>
+                                ${[2, 4].includes(req.status) ?
+                                    `<button class="action-btn" disabled style="opacity:0.5;cursor:not-allowed;color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="进行中，不可删除" aria-label="进行中，不可删除">🗑️</button>` :
+                                    `<button class="action-btn" onclick="deleteRequirement(${req.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="删除需求" aria-label="删除需求">🗑️</button>`
+                                }
                             </div>
                         </td>
                     </tr>
@@ -2008,7 +2039,7 @@
 
         async function getProcessingTasks() {
             try {
-                const response = await fetch('/api/tasks?status=processing');
+                const response = await fetch('/api/tasks?status=1');
                 const data = await response.json();
                 return data.tasks || [];
             } catch (error) {
@@ -2019,17 +2050,15 @@
 
         function getStatusText(status) {
             const map = {
-                'pending_analysis': '待分析',
-                'analyzing': '分析中',
-                'pending_review': '待确认',
-                'pending_generation': '待生成',
-                'generating': '生成中',
-                'pending': '待处理',
-                'processing': '处理中',
-                'completed': '已完成',
-                'failed': '失败'
+                1: '待分析',
+                2: '分析中',
+                3: '已分析',
+                4: '生成中',
+                5: '已完成',
+                6: '已取消',
+                7: '失败'
             };
-            return map[status] || status;
+            return map[status] || '未知';
         }
 
         function renderPagination(total, page, limit) {
@@ -2195,13 +2224,15 @@
                         body: JSON.stringify({ ids: Array.from(selectedIds) })
                     });
 
+                    const data = await response.json();
                     if (response.ok) {
                         selectedIds.clear();
                         document.getElementById('selectAll').checked = false;
                         updateBatchBar();
                         loadRequirements(currentPage);
+                        showToast(data.message || '批量删除成功', 'success');
                     } else {
-                        showToast('批量删除失败', 'error');
+                        showToast(data.error || '批量删除失败', 'error');
                     }
                 } catch (error) {
                     console.error('批量删除失败:', error);
@@ -2362,14 +2393,17 @@
                 
                 const data = await response.json();
                 if (data.analysis_data) {
-                    showReviewModal(data.analysis_data);
+                    showReviewModal(data.analysis_data, data.analyzed_content);
                     showToast('需求分析完成，请审核后生成用例', 'success');
+                    loadRequirements(currentPage);
                 } else {
                     showToast(`分析失败：${data.error || '未知错误'}`, 'error');
+                    loadRequirements(currentPage);
                 }
             } catch (error) {
                 console.error('分析需求失败:', error);
                 showToast('分析失败', 'error');
+                loadRequirements(currentPage);
             }
         }
         
@@ -2526,12 +2560,12 @@
                         showToast(`分析进度: ${progress}% - ${message}`, 'info');
                         
                         // 检查是否完成
-                        if (task.status === 'awaiting_review' && task.result) {
+                        if (task.status === 2 && task.result) {
                             clearInterval(phase1ProgressInterval);
                             phase1ProgressInterval = null;
                             showReviewModal(task.result);
                             showToast('需求分析完成，请评审', 'success');
-                        } else if (task.status === 'failed') {
+                        } else if (task.status === 3) {
                             clearInterval(phase1ProgressInterval);
                             phase1ProgressInterval = null;
                             showToast(`分析失败：${task.error_message || '未知错误'}`, 'error');
@@ -2545,7 +2579,7 @@
             }, 1000);
         }
         
-        function showReviewModal(analysisResult) {
+        function showReviewModal(analysisResult, analyzedContent) {
             // 填充评审弹窗数据
             document.getElementById('reviewTaskId').value = currentTaskId || '';
             
@@ -2583,12 +2617,39 @@
                 pointsDiv.value = '未识别到测试点';
             }
             
+            // 新增：填充AI分析报告（Markdown格式）
+            const analyzedContentDiv = document.getElementById('reviewAnalyzedContent');
+            const mdContainer = document.getElementById('mdContentContainer');
+            if (analyzedContent) {
+                mdContainer.innerHTML = renderMarkdownLike(analyzedContent);
+                analyzedContentDiv.style.display = 'block';
+            } else {
+                analyzedContentDiv.style.display = 'none';
+            }
+            
             // 显示弹窗
             document.getElementById('reviewModal').classList.add('active');
         }
         
         function closeReviewModal() {
             document.getElementById('reviewModal').classList.remove('active');
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function renderMarkdownLike(content) {
+            // 简单Markdown渲染：HTML转义后显示，保留代码块格式
+            let escaped = escapeHtml(content);
+            // 将代码块用pre/code标签包裹
+            escaped = escaped.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+                return `<pre class="code-block"><code>${code}</code></pre>`;
+            });
+            // 其他内容直接显示，保留换行
+            return `<div class="md-rendered">${escaped}</div>`;
         }
         
         async function reAnalyze() {
@@ -3206,7 +3267,7 @@
                 const duration = formatDuration(task.duration);
                 const progress = Math.round(task.progress || 0);
                 // 只有正在执行的任务（running/processing）不能删除
-                const canDelete = (task.status !== 'running' && task.status !== 'processing');
+                const canDelete = (task.status !== 1);
                 const isChecked = selectedTaskIds.has(task.task_id) ? 'checked' : '';
                 
                 return `
@@ -3229,8 +3290,8 @@
                         <td>
                             <div class="action-btns">
                                 <button class="action-btn" onclick="showDetail('${task.task_id}')" title="查看详情" aria-label="查看详情">👁️</button>
-                                ${(task.status === 'processing' || task.status === 'running') ? `<button class="action-btn" onclick="cancelTask('${task.task_id}')" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="终止任务" aria-label="终止任务">⏹️</button>` : ''}
-                                ${(task.status === 'failed' || task.status === 'cancelled') ? `<button class="action-btn" onclick="regenerateTask('${task.task_id}')" title="重新生成" aria-label="重新生成">🔄</button>` : ''}
+                                ${(task.status === 1) ? `<button class="action-btn" onclick="cancelTask('${task.task_id}')" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="终止任务" aria-label="终止任务">⏹</button>` : ''}
+                                ${(task.status === 3 || task.status === 4) ? `<button class="action-btn" onclick="regenerateTask('${task.task_id}')" title="重新生成" aria-label="重新生成">🔄</button>` : ''}
                                 ${canDelete ? `<button class="action-btn" onclick="deleteTask('${task.task_id}')" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="删除任务" aria-label="删除任务">🗑️</button>` : ''}
                             </div>
                         </td>
@@ -3246,16 +3307,12 @@
 
         function getTaskStatusText(status) {
             const map = {
-                'pending': '等待中',
-                'processing': '进行中',
-                'awaiting_review': '待评审',
-                'completed_pending_review': '待入库',
-                'completed': '已完成',
-                'failed': '已终止',
-                'cancelled': '已终止',
-                'discarded': '已丢弃'
+                1: '生成中',
+                2: '已完成',
+                3: '失败',
+                4: '已取消'
             };
-            return map[status] || status;
+            return map[status] || '未知';
         }
 
         function formatDuration(seconds) {
@@ -3405,7 +3462,7 @@
                     let status = 'waiting';
                     if (progress >= stage.range[1]) status = 'completed';
                     else if (progress >= stage.range[0]) status = 'active';
-                    else if (task.status === 'failed' && progress < stage.range[1]) status = 'failed';
+                    else if (task.status === 3 && progress < stage.range[1]) status = 'failed';
                     
                     const bgColor = status === 'completed' ? 'rgba(0, 255, 136, 0.1)' : 
                                    status === 'active' ? 'rgba(0, 245, 255, 0.1)' : 

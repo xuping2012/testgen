@@ -11,16 +11,8 @@ import threading
 from typing import Dict, Any, Optional, Callable, List
 from datetime import datetime
 from dataclasses import dataclass, asdict
-from enum import Enum
 
-
-class TaskStatus(Enum):
-    """任务状态"""
-
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
+from src.database.models import TaskStatus, RequirementStatus
 
 
 @dataclass
@@ -66,6 +58,15 @@ class GenerationService:
         self._confidence_calculator = None
         self._citation_parser = None
         self._retrieval_evaluator = None
+
+        # Agent评审服务
+        self.case_review_agent = None
+        if llm_manager:
+            try:
+                from src.services.case_review_agent import CaseReviewAgent
+                self.case_review_agent = CaseReviewAgent(llm_manager=llm_manager)
+            except Exception as e:
+                logging.warning(f"[GenerationService] CaseReviewAgent 初始化失败: {e}")
 
         # 检索模式配置
         self.retrieval_mode = "hybrid"  # vector_only / keyword_only / hybrid
@@ -166,11 +167,7 @@ class GenerationService:
             # 查询未完成的任务
             pending_tasks = (
                 self.db_session.query(GenerationTaskModel)
-                .filter(
-                    GenerationTaskModel.status.in_(
-                        ["pending", "processing", "awaiting_review"]
-                    )
-                )
+                .filter(GenerationTaskModel.status.in_([TaskStatus.RUNNING]))
                 .all()
             )
 
@@ -738,7 +735,7 @@ class GenerationService:
             task_id=task_id,
             requirement_id=requirement_id,
             requirement_title=requirement_title,
-            status=TaskStatus.PENDING.value,
+            status=int(TaskStatus.RUNNING),
             progress=1.0,  # 初始进度为1%，避免显示0%
             message="🚀 任务已创建，即将开始生成...",
             created_at=datetime.utcnow().isoformat(),
@@ -761,7 +758,7 @@ class GenerationService:
         """标记任务开始执行"""
         task = self.get_task(task_id)
         if task:
-            task.status = TaskStatus.RUNNING.value
+            task.status = int(TaskStatus.RUNNING)
             task.started_at = datetime.utcnow().isoformat()
             task.progress = 1.0  # 立即设置初始进度为1%，避免显示0%
             task.message = "🚀 正在启动生成任务..."
@@ -800,7 +797,7 @@ class GenerationService:
         if task:
             # 支持自定义状态（如 completed_pending_review）
             custom_status = result.pop("status", None)
-            task.status = custom_status or TaskStatus.COMPLETED.value
+            task.status = int(custom_status or TaskStatus.COMPLETED)
             task.progress = 100.0
             task.result = result
             # 提取用例数到task对象（用于前端显示）
@@ -872,12 +869,157 @@ class GenerationService:
         """标记任务失败"""
         task = self.get_task(task_id)
         if task:
-            task.status = TaskStatus.FAILED.value
+            task.status = int(TaskStatus.FAILED)
             task.error_message = error_message
             task.message = f"生成失败: {error_message}"
             task.completed_at = datetime.utcnow().isoformat()
             # 同步到数据库
             self._sync_task_to_db(task)
+
+    def cancel_task(self, task_id: str) -> Dict[str, Any]:
+        """取消生成任务
+
+        Args:
+            task_id: 任务ID
+
+        Returns:
+            取消结果字典
+        """
+        task = self.get_task(task_id)
+        if not task:
+            return {"cancelled": False, "message": "任务不存在"}
+
+        with self._lock:
+            # 更新任务状态
+            task.status = int(TaskStatus.CANCELLED)
+            task.message = "任务已取消"
+            task.completed_at = datetime.utcnow().isoformat()
+
+            # 同步到数据库
+            self._sync_task_to_db(task)
+
+            # 更新需求状态为 CANCELLED_GENERATION
+            if self.db_session and task.requirement_id:
+                try:
+                    from src.database.models import Requirement
+                    req = self.db_session.query(Requirement).get(task.requirement_id)
+                    if req:
+                        req.status = RequirementStatus.CANCELLED_GENERATION
+                        self.db_session.commit()
+                except Exception as e:
+                    logging.error(f"[cancel_task] 更新需求状态失败: {e}")
+
+        logging.info(f"[GenerationService] 任务已取消: {task_id}")
+        return {"cancelled": True, "task_id": task_id}
+
+    def aggregate_batch_reviews(
+        self, task_id: str, batch_reviews: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """汇总多批次评审结果
+
+        Args:
+            task_id: 任务ID
+            batch_reviews: 批次评审结果列表
+
+        Returns:
+            汇总后的评审结果
+        """
+        if not self.case_review_agent:
+            # 如果没有 CaseReviewAgent，使用简单汇总逻辑
+            if not batch_reviews:
+                return {
+                    "overall_score": 0,
+                    "decision": "REJECT",
+                    "total_cases": 0,
+                    "total_batches": 0,
+                }
+
+            total_cases = sum(b.get("case_count", 0) for b in batch_reviews)
+            if total_cases == 0:
+                return {
+                    "overall_score": 0,
+                    "decision": "REJECT",
+                    "total_cases": 0,
+                    "total_batches": len(batch_reviews),
+                }
+
+            # 处理两种数据结构：直接包含 overall_score 或嵌套在 review_result 中
+            def get_overall_score(b):
+                if "overall_score" in b:
+                    return b["overall_score"]
+                review_result = b.get("review_result", {})
+                return review_result.get("overall_score", 0)
+
+            weighted_sum = sum(
+                get_overall_score(b) * b.get("case_count", 0)
+                for b in batch_reviews
+            )
+            overall_score = round(weighted_sum / total_cases, 1)
+
+            # 简单阈值判断
+            if overall_score >= 85:
+                decision = "AUTO_PASS"
+            elif overall_score >= 70:
+                decision = "NEEDS_REVIEW"
+            else:
+                decision = "REJECT"
+
+            return {
+                "overall_score": overall_score,
+                "decision": decision,
+                "total_cases": total_cases,
+                "total_batches": len(batch_reviews),
+            }
+
+        # 使用 CaseReviewAgent 进行汇总
+        return self.case_review_agent.aggregate_reviews(batch_reviews)
+
+    def save_review_records(
+        self, task_id: str, batch_reviews: List[Dict[str, Any]], aggregated: Dict[str, Any]
+    ) -> bool:
+        """保存评审记录到数据库
+
+        Args:
+            task_id: 任务ID
+            batch_reviews: 批次评审结果列表
+            aggregated: 汇总结果
+
+        Returns:
+            是否保存成功
+        """
+        if not self.db_session:
+            return False
+
+        try:
+            from src.database.models import CaseReviewRecord
+
+            # 保存每批次的评审记录
+            for batch in batch_reviews:
+                review_result = batch.get("review_result", {})
+                record = CaseReviewRecord(
+                    task_id=task_id,
+                    batch_index=batch.get("batch_index"),
+                    case_count=batch.get("case_count", 0),
+                    scores=review_result.get("scores"),
+                    overall_score=review_result.get("overall_score"),
+                    issues=review_result.get("issues", []),
+                    duplicate_cases=review_result.get("duplicate_cases", []),
+                    improvement_suggestions=review_result.get("improvement_suggestions", []),
+                    decision=review_result.get("decision"),
+                    conclusion=review_result.get("conclusion"),
+                )
+                self.db_session.add(record)
+
+            self.db_session.commit()
+            logging.info(f"[GenerationService] 评审记录已保存: {task_id}")
+            return True
+        except Exception as e:
+            logging.error(f"[GenerationService] 保存评审记录失败: {e}")
+            try:
+                self.db_session.rollback()
+            except:
+                pass
+            return False
 
     def execute_phase1_analysis(
         self, task_id: str, requirement_content: str
@@ -958,7 +1100,7 @@ class GenerationService:
         # 更新任务状态为等待评审
         task = self.get_task(task_id)
         if task:
-            task.status = "awaiting_review"
+            task.status = int(TaskStatus.RUNNING)
             task.progress = 25.0
             task.message = "✅ 分析完成，请评审后继续"
             task.result = result
@@ -1216,9 +1358,9 @@ class GenerationService:
                 business_rules=business_rules_str,
                 recent_cases=recent_cases_str,
                 item_priority=item_priority,
-                rag_context=rag_context_str
-                if rag_context_str
-                else "（无历史参考数据）",
+                rag_context=(
+                    rag_context_str if rag_context_str else "（无历史参考数据）"
+                ),
                 test_plan="",
             )
 
@@ -1890,7 +2032,7 @@ class GenerationService:
 
                 # 立即更新状态为running，避免显示为待评审
                 with self._lock:
-                    task_obj.status = "running"
+                    task_obj.status = int(TaskStatus.RUNNING)
                     task_obj.started_at = datetime.utcnow().isoformat()
                     task_obj.message = "🚀 正在启动分批生成任务..."
                     self._sync_task_to_db(task_obj)
@@ -1970,7 +2112,9 @@ class GenerationService:
                         print(f"RAG召回失败: {e}")
                         self.update_progress(task_id, 35.0, "⚠️ RAG召回失败，继续生成")
                 else:
-                    self.update_progress(task_id, 35.0, "⚠️ 向量库未初始化，跳过RAG召回")
+                    self.update_progress(
+                        task_id, 35.0, "⚠️ 向量库未初始化，跳过RAG召回"
+                    )
 
                 # ========== 步骤2: 按ITEM分批生成 ==========
                 for idx, item in enumerate(items, 1):
@@ -2145,7 +2289,7 @@ class GenerationService:
                                 else:
                                     requirement.status = RequirementStatus.FAILED
                                 self.db_session.commit()
-                                print(f"需求状态已更新为: {requirement.status.value}")
+                                print(f"需求状态已更新为: {int(requirement.status)}")
                     except Exception as e:
                         print(f"更新需求状态失败: {e}")
 
@@ -2186,7 +2330,7 @@ class GenerationService:
 
                 # 立即更新状态为running，避免显示为待评审
                 with self._lock:
-                    task_obj.status = "running"
+                    task_obj.status = int(TaskStatus.RUNNING)
                     task_obj.started_at = datetime.utcnow().isoformat()
                     task_obj.message = "🚀 正在启动生成任务..."
                     self._sync_task_to_db(task_obj)
@@ -2242,7 +2386,9 @@ class GenerationService:
                         print(f"RAG召回失败: {e}")
                         self.update_progress(task_id, 40.0, "⚠️ RAG召回失败，继续生成")
                 else:
-                    self.update_progress(task_id, 40.0, "⚠️ 向量库未初始化，跳过RAG召回")
+                    self.update_progress(
+                        task_id, 40.0, "⚠️ 向量库未初始化，跳过RAG召回"
+                    )
 
                 # 阶段2: LLM生成测试用例 (50%-80%)
                 self.update_progress(task_id, 50.0, "🤖 开始生成测试用例...")
@@ -2410,7 +2556,7 @@ class GenerationService:
                             if requirement:
                                 requirement.status = RequirementStatus.COMPLETED
                                 self.db_session.commit()
-                                print(f"需求状态已更新为: {requirement.status.value}")
+                                print(f"需求状态已更新为: {int(requirement.status)}")
                     except Exception as e:
                         print(f"更新需求状态失败: {e}")
 
@@ -2561,7 +2707,9 @@ class GenerationService:
                         if progress_callback:
                             progress_callback(30.0, "⚠️ RAG召回失败，继续生成")
                 else:
-                    self.update_progress(task_id, 30.0, "⚠️ 向量库未初始化，跳过RAG召回")
+                    self.update_progress(
+                        task_id, 30.0, "⚠️ 向量库未初始化，跳过RAG召回"
+                    )
                     if progress_callback:
                         progress_callback(30.0, "⚠️ 向量库未初始化，跳过RAG召回")
 
@@ -2756,7 +2904,7 @@ class GenerationService:
                             if requirement:
                                 requirement.status = RequirementStatus.COMPLETED
                                 self.db_session.commit()
-                                print(f"需求状态已更新为: {requirement.status.value}")
+                                print(f"需求状态已更新为: {int(requirement.status)}")
                     except Exception as e:
                         print(f"更新需求状态失败: {e}")
 
@@ -2802,7 +2950,7 @@ class GenerationService:
                                 self.db_session.commit()
                                 if deleted > 0:
                                     print(f"已清除 {deleted} 条部分保存的测试用例")
-                                print(f"需求状态已更新为: {requirement.status.value}")
+                                print(f"需求状态已更新为: {int(requirement.status)}")
                     except Exception as cleanup_error:
                         print(f"清理失败用例或更新状态失败: {cleanup_error}")
                         self.db_session.rollback()
@@ -3761,9 +3909,9 @@ class GenerationService:
         rag_context = ""
         rag_stats = {"cases": 0, "defects": 0, "requirements": 0}
         rag_context_data = {
-            "retrieval_mode": self._hybrid_retriever.mode
-            if self._hybrid_retriever
-            else "vector_only",
+            "retrieval_mode": (
+                self._hybrid_retriever.mode if self._hybrid_retriever else "vector_only"
+            ),
             "rrf_k": self._hybrid_retriever.rrf_k if self._hybrid_retriever else None,
             "adjustments": [],
         }
@@ -4331,9 +4479,11 @@ class GenerationService:
                         "title": item_name,
                         "name": item_name,
                         "risk_level": risk_level,
-                        "priority": "P0"
-                        if risk_level == "Critical"
-                        else ("P1" if risk_level == "High" else "P2"),
+                        "priority": (
+                            "P0"
+                            if risk_level == "Critical"
+                            else ("P1" if risk_level == "High" else "P2")
+                        ),
                         "points": [],
                     }
                     result["items"].append(current_item)
@@ -5340,3 +5490,4 @@ class IncrementalUpdateService:
         thread.start()
 
         return new_task_id
+

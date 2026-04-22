@@ -150,15 +150,19 @@ class TestGenerationAPI:
         })
         requirement = json.loads(req_response.data)
         
-        # 触发生成
-        response = client.post('/api/generate', json={
-            'requirement_id': requirement['id']
+        # 先进行分析
+        analyze_response = client.post(f'/api/requirements/{requirement["id"]}/analyze')
+        analysis = json.loads(analyze_response.data)
+        
+        # 确认分析结果并触发生成
+        response = client.post(f'/api/requirements/{requirement["id"]}/review', json={
+            'action': 'generate'
         })
         
         assert response.status_code == 202
         data = json.loads(response.data)
         assert 'task_id' in data
-        assert data['status'] == 'awaiting_review'
+        assert 'requirement_id' in data
     
     def test_trigger_generation_missing_requirement(self, client):
         """测试触发不存在的需求的生成"""
@@ -170,15 +174,19 @@ class TestGenerationAPI:
     
     def test_get_generation_status(self, client):
         """测试查询生成进度"""
-        # 创建需求和任务
+        # 创建需求
         req_response = client.post('/api/requirements', json={
             'title': '测试需求',
             'content': '测试内容'
         })
         requirement = json.loads(req_response.data)
         
-        gen_response = client.post('/api/generate', json={
-            'requirement_id': requirement['id']
+        # 进行分析
+        client.post(f'/api/requirements/{requirement["id"]}/analyze')
+        
+        # 确认分析结果并触发生成
+        gen_response = client.post(f'/api/requirements/{requirement["id"]}/review', json={
+            'action': 'generate'
         })
         task = json.loads(gen_response.data)
         
@@ -219,7 +227,7 @@ class TestCaseAPI:
         """测试批量更新用例状态"""
         response = client.post('/api/cases/batch-update-status', json={
             'case_ids': [1, 2, 3],
-            'status': 'approved'
+            'status': 3
         })
         
         assert response.status_code == 200

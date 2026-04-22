@@ -19,6 +19,15 @@ from datetime import datetime
 import json
 import tempfile
 
+from src.database.models import (
+    Requirement,
+    RequirementStatus,
+    TestCase,
+    CaseStatus,
+    Priority,
+)
+from src.database.models import GenerationTask as GenerationTaskModel, TaskStatus
+
 # 创建蓝图
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -78,7 +87,7 @@ def create_requirement():
                 {
                     "id": requirement.id,
                     "title": requirement.title,
-                    "status": requirement.status.value,
+                    "status": int(requirement.status),
                     "message": "需求创建成功",
                 }
             ),
@@ -114,8 +123,12 @@ def list_requirements():
                     {
                         "id": r.id,
                         "title": r.title,
-                        "status": r.status.value,
-                        "analysis_data": r.analysis_data,
+                        "status": int(r.status),
+                        "analysis_data": (
+                            json.loads(r.analysis_data)
+                            if r.analysis_data and isinstance(r.analysis_data, str) and r.analysis_data.startswith('{')
+                            else r.analysis_data
+                        ),
                         "created_at": (
                             r.created_at.isoformat() if r.created_at else None
                         ),
@@ -148,7 +161,7 @@ def get_requirement(requirement_id):
                 "id": requirement.id,
                 "title": requirement.title,
                 "content": requirement.content,
-                "status": requirement.status.value,
+                "status": int(requirement.status),
                 "source_file": requirement.source_file,
                 "created_at": (
                     requirement.created_at.isoformat()
@@ -181,10 +194,16 @@ def analyze_requirement(requirement_id):
         if not requirement:
             return jsonify({"error": "需求不存在"}), 404
 
-        if requirement.status not in [RequirementStatus.PENDING_ANALYSIS, RequirementStatus.FAILED]:
-            return jsonify(
-                {"error": f"当前状态 {requirement.status.value} 不支持分析操作"}
-            ), 400
+        if requirement.status not in [
+            RequirementStatus.PENDING_ANALYSIS,
+            RequirementStatus.FAILED,
+        ]:
+            return (
+                jsonify(
+                    {"error": f"当前状态 {int(requirement.status)} 不支持分析操作"}
+                ),
+                400,
+            )
 
         if not generation_service.llm_manager:
             return jsonify({"error": "LLM管理器未初始化"}), 500
@@ -239,22 +258,30 @@ def analyze_requirement(requirement_id):
             logging.error(f"[Analyze] JSON parse failed: {e}, content: {content[:500]}")
             requirement.status = RequirementStatus.PENDING_ANALYSIS
             db_session.commit()
-            return jsonify(
-                {"error": "解析LLM响应失败", "raw_response": response.content[:500]}
-            ), 500
+            return (
+                jsonify(
+                    {"error": "解析LLM响应失败", "raw_response": response.content[:500]}
+                ),
+                500,
+            )
 
         requirement.analysis_data = analysis_result
-        requirement.status = RequirementStatus.PENDING_GENERATION
+        requirement.analyzed_content = response.content  # 保存原始MD格式
+        requirement.status = RequirementStatus.ANALYZED
         db_session.commit()
 
-        return jsonify(
-            {
-                "requirement_id": requirement_id,
-                "status": requirement.status.value,
-                "analysis_data": analysis_result,
-                "message": "需求分析完成，请审核后生成用例",
-            }
-        ), 200
+        return (
+            jsonify(
+                {
+                    "requirement_id": requirement_id,
+                    "status": int(requirement.status),
+                    "analysis_data": analysis_result,
+                    "analyzed_content": response.content,
+                    "message": "需求分析完成，请确认后生成用例",
+                }
+            ),
+            200,
+        )
 
     except Exception as e:
         db_session.rollback()
@@ -277,14 +304,17 @@ def get_requirement_analysis(requirement_id):
         if not requirement.analysis_data:
             return jsonify({"error": "需求无分析数据，请先进行需求分析"}), 400
 
-        return jsonify(
-            {
-                "requirement_id": requirement_id,
-                "title": requirement.title,
-                "status": requirement.status.value,
-                "analysis_data": requirement.analysis_data,
-            }
-        ), 200
+        return (
+            jsonify(
+                {
+                    "requirement_id": requirement_id,
+                    "title": requirement.title,
+                    "status": int(requirement.status),
+                    "analysis_data": requirement.analysis_data,
+                }
+            ),
+            200,
+        )
 
     except Exception as e:
         db_session.rollback()
@@ -309,22 +339,28 @@ def review_requirement(requirement_id):
         if not requirement:
             return jsonify({"error": "需求不存在"}), 404
 
-        if requirement.status not in [RequirementStatus.PENDING_GENERATION, RequirementStatus.PENDING_REVIEW]:
-            return jsonify(
-                {"error": f"当前状态 {requirement.status.value} 不支持审核操作"}
-            ), 400
+        if requirement.status not in [RequirementStatus.ANALYZED]:
+            return (
+                jsonify(
+                    {"error": f"当前状态 {int(requirement.status)} 不支持确认操作"}
+                ),
+                400,
+            )
 
         data = request.json or {}
         action = data.get("action", "cancel")
 
         if action == "cancel":
-            return jsonify(
-                {
-                    "requirement_id": requirement_id,
-                    "status": requirement.status.value,
-                    "message": "已取消生成，需求保持待确认状态",
-                }
-            ), 200
+            return (
+                jsonify(
+                    {
+                        "requirement_id": requirement_id,
+                        "status": int(requirement.status),
+                        "message": "已取消生成，需求保持待生成状态",
+                    }
+                ),
+                200,
+            )
 
         task_id = generation_service.create_task(requirement_id)
         requirement.status = RequirementStatus.GENERATING
@@ -333,14 +369,17 @@ def review_requirement(requirement_id):
         generation_service.start_task(task_id)
         generation_service.execute_phase2_generation(task_id, requirement.analysis_data)
 
-        return jsonify(
-            {
-                "requirement_id": requirement_id,
-                "task_id": task_id,
-                "status": "processing",
-                "message": "已创建生成任务",
-            }
-        ), 202
+        return (
+            jsonify(
+                {
+                    "requirement_id": requirement_id,
+                    "task_id": task_id,
+                    "status": int(TaskStatus.RUNNING),
+                    "message": "已创建生成任务",
+                }
+            ),
+            202,
+        )
 
     except Exception as e:
         db_session.rollback()
@@ -532,7 +571,7 @@ def list_all_requirements():
                         "title": r.title,
                         "content": r.content,
                         "version": r.version,
-                        "status": r.status.value if r.status else None,
+                        "status": int(r.status) if r.status else None,
                         "source_file": r.source_file,
                     }
                     for r in requirements
@@ -628,26 +667,40 @@ def trigger_generation():
             return jsonify({"error": "需求不存在"}), 404
 
         if requirement.status in [RequirementStatus.FAILED]:
-            return jsonify(
-                {"error": f"需求状态为 {requirement.status.value}，请重新分析后再生成"}
-            ), 400
+            return (
+                jsonify(
+                    {
+                        "error": f"需求状态为 {requirement.status.value}，请重新分析后再生成"
+                    }
+                ),
+                400,
+            )
 
         if requirement.status == RequirementStatus.COMPLETED:
             if not requirement.analysis_data:
                 return jsonify({"error": "需求无分析数据，请重新分析后再生成"}), 400
-            return jsonify(
-                {
-                    "requirement_id": requirement_id,
-                    "analysis_data": requirement.analysis_data,
-                    "status": requirement.status.value,
-                    "message": "已有分析数据，请确认后生成",
-                }
-            ), 200
+            return (
+                jsonify(
+                    {
+                        "requirement_id": requirement_id,
+                        "analysis_data": requirement.analysis_data,
+                        "status": int(requirement.status),
+                        "message": "已有分析数据，请确认后生成",
+                    }
+                ),
+                200,
+            )
 
-        if requirement.status not in [RequirementStatus.GENERATING, RequirementStatus.PROCESSING]:
-            return jsonify(
-                {"error": f"需求状态为 {requirement.status.value}，请先完成分析"}
-            ), 400
+        if requirement.status not in [
+            RequirementStatus.GENERATING,
+            RequirementStatus.PROCESSING,
+        ]:
+            return (
+                jsonify(
+                    {"error": f"需求状态为 {requirement.status.value}，请先完成分析"}
+                ),
+                400,
+            )
 
         if not task_id:
             task_id = generation_service.create_task(requirement_id)
@@ -659,7 +712,7 @@ def trigger_generation():
                 {
                     "task_id": task_id,
                     "requirement_id": requirement_id,
-                    "status": "processing",
+                    "status": int(TaskStatus.RUNNING),
                     "message": "生成任务已启动",
                 }
             ),
@@ -729,7 +782,7 @@ def continue_generation():
             jsonify(
                 {
                     "task_id": task_id,
-                    "status": "processing",
+                    "status": int(TaskStatus.RUNNING),
                     "message": "生成任务已继续执行",
                 }
             ),
@@ -811,7 +864,7 @@ def retry_generation():
             jsonify(
                 {
                     "task_id": task_id,
-                    "status": "processing",
+                    "status": int(TaskStatus.RUNNING),
                     "message": "重新生成任务已启动",
                 }
             ),
@@ -957,7 +1010,7 @@ def list_cases():
                         "module": c.module,
                         "name": c.name,
                         "priority": c.priority.value if c.priority else None,
-                        "status": c.status.value if c.status else None,
+                        "status": int(c.status) if c.status else None,
                         "requirement_clause": c.requirement_clause,
                         "requirement_title": (
                             c.requirement.title if c.requirement else None
@@ -1000,12 +1053,27 @@ def get_case_stats():
             .all()
         )
 
-        result = {"total": 0, "pending_review": 0, "approved": 0, "rejected": 0}
+        result = {
+            "total": 0,
+            "draft": 0,
+            "pending_review": 0,
+            "approved": 0,
+            "rejected": 0
+        }
+
+        # 状态映射：整数 -> 字符串
+        status_map = {
+            1: "draft",
+            2: "pending_review",
+            3: "approved",
+            4: "rejected"
+        }
 
         for status, count in stats:
-            status_value = status.value if status else "pending_review"
-            result[status_value] = count
-            result["total"] += count
+            status_value = int(status) if status else 2
+            status_key = status_map.get(status_value, "pending_review")
+            result[status_key] = int(count)
+            result["total"] += int(count)
 
         return jsonify(result)
 
@@ -1045,7 +1113,7 @@ def get_case(case_id):
                 "test_data": case.test_data,
                 "priority": case.priority.value if case.priority else None,
                 "case_type": case.case_type,
-                "status": case.status.value if case.status else None,
+                "status": int(case.status) if case.status else None,
                 "requirement_clause": case.requirement_clause,
                 "requirement_id": case.requirement_id,
                 "requirement_title": (
@@ -1243,11 +1311,12 @@ def batch_update_case_status():
         case_ids = data["case_ids"]
         status_str = data["status"]
 
-        # 转换状态字符串为枚举
+        # 转换状态整数为枚举
         status_map = {
-            "pending_review": CaseStatus.PENDING_REVIEW,
-            "approved": CaseStatus.APPROVED,
-            "rejected": CaseStatus.REJECTED,
+            1: CaseStatus.DRAFT,
+            2: CaseStatus.PENDING_REVIEW,
+            3: CaseStatus.APPROVED,
+            4: CaseStatus.REJECTED,
         }
         status = status_map.get(status_str)
         if not status:
@@ -1477,7 +1546,7 @@ def rag_import_from_db():
                     "module": case.module,
                     "test_point": case.test_point or "",
                     "priority": case.priority.value if case.priority else "P2",
-                    "status": case.status.value if case.status else "pending_review",
+                    "status": int(case.status) if case.status else 2,
                     "case_type": case.case_type or "功能",
                     "requirement_id": case.requirement_id,
                 }
@@ -1515,7 +1584,7 @@ def rag_import_from_db():
                 # 构建元数据
                 metadata = {
                     "title": req.title,
-                    "status": req.status.value if req.status else "pending",
+                    "status": int(req.status) if req.status else 1,
                     "source_file": req.source_file or "",
                 }
 
@@ -1825,16 +1894,12 @@ def export_cases_post():
                 "test_steps": (
                     c.test_steps
                     if isinstance(c.test_steps, list)
-                    else json.loads(c.test_steps)
-                    if c.test_steps
-                    else []
+                    else json.loads(c.test_steps) if c.test_steps else []
                 ),
                 "expected_results": (
                     c.expected_results
                     if isinstance(c.expected_results, list)
-                    else json.loads(c.expected_results)
-                    if c.expected_results
-                    else []
+                    else json.loads(c.expected_results) if c.expected_results else []
                 ),
                 "priority": c.priority.value if c.priority else "P2",
                 "case_type": c.case_type,
@@ -2137,7 +2202,7 @@ def import_requirements():
                     title=title,
                     content=content_text,
                     source_file=filepath,
-                    status=RequirementStatus.PENDING,
+                    status=RequirementStatus.PENDING_ANALYSIS,
                 )
                 db_session.add(req)
                 imported_count += 1
@@ -2532,18 +2597,14 @@ def list_prompts():
     try:
         from src.database.models import PromptTemplate
 
+        # 系统实际使用的模板类型
         ACTIVE_TYPES = {
-            "requirement_analysis",
-            "test_plan",
-            "case_generation",
-            "case_review",
-            "rag_query",
-            "rag_citation",
-            "analyze",
-            "generate",
-            "generate_optimized",
-            "generate_with_citation",
-            "review",
+            "requirement_analysis",  # 需求分析：识别功能模块、提取测试点
+            "test_plan",  # 模块评审/测试规划
+            "case_generation",  # 生成用例：携带RAG信息
+            "case_review",  # 用例评审
+            "rag_query",  # RAG检索查询优化
+            "rag_citation",  # RAG引用标注
         }
         templates = (
             db_session.query(PromptTemplate)
@@ -2566,12 +2627,8 @@ def list_prompts():
                     "is_default": bool(t.is_default),
                     "version": t.version,
                     "line_count": t.template.count("\n") + 1,
-                    "created_at": (
-                        t.created_at.isoformat() if t.created_at else None
-                    ),
-                    "updated_at": (
-                        t.updated_at.isoformat() if t.updated_at else None
-                    ),
+                    "created_at": (t.created_at.isoformat() if t.created_at else None),
+                    "updated_at": (t.updated_at.isoformat() if t.updated_at else None),
                 }
             )
 
@@ -2701,16 +2758,16 @@ def delete_prompt(prompt_id):
             "case_review",
             "rag_query",
             "rag_citation",
-            "analyze",
-            "generate",
-            "generate_optimized",
-            "generate_with_citation",
-            "review",
         }
         if template.template_type in ACTIVE_TYPES:
-            return jsonify(
-                {"error": f"模板类型「{template.template_type}」为系统运行中，禁止删除"}
-            ), 403
+            return (
+                jsonify(
+                    {
+                        "error": f"模板类型「{template.template_type}」为系统运行中，禁止删除"
+                    }
+                ),
+                403,
+            )
 
         db_session.delete(template)
         db_session.commit()
@@ -2851,8 +2908,8 @@ def list_tasks():
         query = db_session.query(GenerationTaskModel).outerjoin(Requirement)
 
         if status:
-            # 支持多值状态筛选（如 cancelled,failed）
-            status_list = [s.strip() for s in status.split(",")]
+            # 支持多值状态筛选（如 1,3 表示生成中和失败）
+            status_list = [int(s.strip()) for s in status.split(",")]
             if len(status_list) > 1:
                 query = query.filter(GenerationTaskModel.status.in_(status_list))
             else:
@@ -2909,13 +2966,17 @@ def cancel_task(task_id):
         if not task:
             return jsonify({"error": "任务不存在"}), 404
 
-        if task.status in ["completed", "failed", "cancelled", "discarded"]:
+        if task.status in [
+            TaskStatus.COMPLETED,
+            TaskStatus.FAILED,
+            TaskStatus.CANCELLED,
+        ]:
             return jsonify({"error": "任务已结束，无法终止"}), 400
 
         # 设置取消状态
         generation_service.update_progress(task_id, task.progress, "用户已终止生成")
         with generation_service._lock:
-            task.status = "cancelled"
+            task.status = int(TaskStatus.CANCELLED)
 
         # 同步到数据库
         if generation_service.db_session:
@@ -2925,7 +2986,7 @@ def cancel_task(task_id):
                 db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
             )
             if task_model:
-                task_model.status = "cancelled"
+                task_model.status = int(TaskStatus.CANCELLED)
                 task_model.message = "用户已终止生成"
                 task_model.completed_at = datetime.utcnow()
                 db_session.commit()
@@ -2989,7 +3050,7 @@ def regenerate_task(task_id):
             return jsonify({"error": "任务不存在"}), 404
 
         # 只有失败或终止的任务才能重新生成
-        if task.status not in ["failed", "cancelled"]:
+        if task.status not in [TaskStatus.FAILED, TaskStatus.CANCELLED]:
             return (
                 jsonify(
                     {
@@ -3001,7 +3062,7 @@ def regenerate_task(task_id):
 
         # 重置任务状态
         with generation_service._lock:
-            task.status = "processing"
+            task.status = int(TaskStatus.RUNNING)
             task.progress = 25.0
             task.message = "正在重新生成..."
             task.error_message = None
@@ -3015,7 +3076,7 @@ def regenerate_task(task_id):
                 db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
             )
             if task_model:
-                task_model.status = "processing"
+                task_model.status = int(TaskStatus.RUNNING)
                 task_model.progress = 25.0
                 task_model.message = "正在重新生成..."
                 task_model.error_message = None
@@ -3030,7 +3091,7 @@ def regenerate_task(task_id):
         return jsonify(
             {
                 "task_id": task_id,
-                "status": "processing",
+                "status": TaskStatus.RUNNING,
                 "message": "重新生成任务已启动",
             }
         )
@@ -3088,9 +3149,9 @@ def delete_task(task_id):
             )
 
         # 如果任务还在进行中，先终止
-        if task.status in ["pending", "processing", "awaiting_review"]:
+        if task.status in [TaskStatus.RUNNING]:
             with generation_service._lock:
-                task.status = "cancelled"
+                task.status = int(TaskStatus.CANCELLED)
 
         # 从内存中删除（如果存在）
         with generation_service._lock:
@@ -3138,9 +3199,9 @@ def batch_delete_tasks():
                 task = generation_service.get_task(task_id)
                 if task:
                     # 如果任务还在进行中，先终止
-                    if task.status in ["pending", "processing", "awaiting_review"]:
+                    if task.status in [TaskStatus.RUNNING]:
                         with generation_service._lock:
-                            task.status = "cancelled"
+                            task.status = int(TaskStatus.CANCELLED)
 
                     with generation_service._lock:
                         if task_id in generation_service._tasks:
@@ -3215,7 +3276,9 @@ def get_case_traceability(case_id):
 
             task = (
                 db_session.query(GenerationTask)
-                .filter_by(requirement_id=case.requirement_id, status="completed")
+                .filter_by(
+                    requirement_id=case.requirement_id, status=TaskStatus.COMPLETED
+                )
                 .order_by(GenerationTask.completed_at.desc())
                 .first()
             )
@@ -3319,7 +3382,7 @@ def get_rag_evaluation_summary():
         tasks = (
             db_session.query(GenerationTask)
             .filter(
-                GenerationTask.status == "completed",
+                GenerationTask.status == TaskStatus.COMPLETED,
                 GenerationTask.completed_at >= since,
                 GenerationTask.result.isnot(None),
             )
@@ -3482,15 +3545,262 @@ def chat_with_llm():
                     }
                 )
             else:
-                return jsonify(
-                    {
-                        "success": False,
-                        "error": response.error_message,
-                        "model": config_info.get("model_id", response.model),
-                    }
-                ), 500
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": response.error_message,
+                            "model": config_info.get("model_id", response.model),
+                        }
+                    ),
+                    500,
+                )
 
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": f"LLM调用失败: {str(e)}"}), 500
+
+
+# ==================== RAG增强工作流 - 缺陷管理接口 ====================
+
+
+@api_bp.route("/rag/entries", methods=["POST"])
+def create_defect_entry():
+    """
+    创建缺陷条目（手动录入）
+    POST /api/rag/entries
+
+    Request Body:
+    {
+        "data_type": "defect",
+        "title": "缺陷标题",
+        "description": "缺陷描述",
+        "severity": "P0/P1/P2/P3",
+        "category": "类别",
+        "module": "模块名"
+    }
+    """
+    try:
+        data = request.json
+        if not data or data.get("data_type") != "defect":
+            return jsonify({"error": "缺少必要字段: data_type=defect"}), 400
+
+        from src.services.defect_knowledge_base import DefectKnowledgeBase
+        from src.database.models import DefectSourceType
+
+        kb = DefectKnowledgeBase(db_session)
+        result = kb.create_defect({
+            "title": data.get("title", ""),
+            "description": data.get("description", ""),
+            "severity": data.get("severity", "P2"),
+            "category": data.get("category"),
+            "module": data.get("module"),
+            "source_type": DefectSourceType.MANUAL_ENTRY,
+            "created_by": data.get("created_by"),
+        })
+        return jsonify(result), 201
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/rag/entries", methods=["GET"])
+def list_defect_entries():
+    """
+    查询缺陷条目列表
+    GET /api/rag/entries?data_type=defect&severity=P0&page=1&limit=20
+    """
+    try:
+        data_type = request.args.get("data_type")
+        if data_type != "defect":
+            return jsonify({"error": "data_type 必须为 defect"}), 400
+
+        from src.services.defect_knowledge_base import DefectKnowledgeBase
+
+        page = request.args.get("page", 1, type=int)
+        limit = request.args.get("limit", 20, type=int)
+        severity = request.args.get("severity")
+        category = request.args.get("category")
+        keyword = request.args.get("keyword")
+
+        kb = DefectKnowledgeBase(db_session)
+        result = kb.list_defects(
+            page=page,
+            limit=limit,
+            severity=severity,
+            category=category,
+            keyword=keyword,
+        )
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/rag/import", methods=["POST"])
+def import_defects():
+    """
+    批量导入缺陷条目
+    POST /api/rag/import
+
+    Request Body:
+    {
+        "data_type": "defect",
+        "items": [
+            {"title": "缺陷1", "severity": "P0"},
+            {"title": "缺陷2", "severity": "P1"}
+        ]
+    }
+    """
+    try:
+        data = request.json
+        if not data or data.get("data_type") != "defect":
+            return jsonify({"error": "缺少必要字段: data_type=defect"}), 400
+
+        items = data.get("items", [])
+        if not items:
+            return jsonify({"error": "items 不能为空"}), 400
+
+        from src.services.defect_knowledge_base import DefectKnowledgeBase
+        from src.database.models import DefectSourceType
+
+        kb = DefectKnowledgeBase(db_session)
+        result = kb.import_defects(items, source_type=DefectSourceType.FILE_IMPORT)
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ==================== RAG增强工作流 - 分析审核接口 ====================
+
+
+@api_bp.route("/requirements/<int:requirement_id>/analysis-items", methods=["PUT"])
+def update_analysis_items(requirement_id):
+    """
+    更新需求分析项（审核编辑）
+    PUT /api/requirements/{id}/analysis-items
+
+    Request Body:
+    {
+        "items": [
+            {"id": 1, "name": "新名称", "priority": "P1"}
+        ]
+    }
+    """
+    try:
+        data = request.json
+        items = data.get("items", [])
+
+        from src.services.requirement_review_service import RequirementReviewService
+
+        service = RequirementReviewService(db_session)
+
+        updated = []
+        for item in items:
+            item_id = item.get("id")
+            if item_id:
+                result = service.update_analysis_item(item_id, item)
+                updated.append(result)
+
+        return jsonify({"updated": updated, "count": len(updated)}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/requirements/<int:requirement_id>/analyze/confirm", methods=["POST"])
+def confirm_analysis(requirement_id):
+    """
+    确认分析结果，触发Phase 2生成
+    POST /api/requirements/{id}/analyze/confirm
+    """
+    try:
+        from src.services.requirement_review_service import RequirementReviewService
+        from src.database.models import Requirement, RequirementStatus
+
+        # 检查需求状态
+        req = db_session.query(Requirement).get(requirement_id)
+        if not req:
+            return jsonify({"error": "需求不存在"}), 404
+
+        if req.status != RequirementStatus.ANALYZED:
+            return jsonify({"error": "需求未处于已分析状态", "current_status": int(req.status)}), 400
+
+        service = RequirementReviewService(db_session)
+        result = service.confirm_analysis(requirement_id)
+
+        # 触发Phase 2生成
+        task_id = generation_service.create_task(requirement_id)
+
+        return jsonify({
+            "status": "confirmed",
+            "task_id": task_id,
+            "message": "分析已确认，开始生成测试用例"
+        }), 202
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/requirements/<int:requirement_id>/regenerate", methods=["POST"])
+def regenerate_requirement(requirement_id):
+    """
+    从取消/失败状态重新生成
+    POST /api/requirements/{id}/regenerate
+    """
+    try:
+        from src.database.models import Requirement, RequirementStatus
+
+        req = db_session.query(Requirement).get(requirement_id)
+        if not req:
+            return jsonify({"error": "需求不存在"}), 404
+
+        # 只允许从 CANCELLED_GENERATION 或 FAILED 状态重新生成
+        if req.status not in [RequirementStatus.CANCELLED_GENERATION, RequirementStatus.FAILED]:
+            return jsonify({
+                "error": "当前状态不允许重新生成",
+                "current_status": int(req.status)
+            }), 400
+
+        # 重置状态为 ANALYZING，触发重新分析
+        req.status = RequirementStatus.ANALYZING
+        db_session.commit()
+
+        return jsonify({
+            "status": "regenerating",
+            "message": "需求已重置，请重新执行分析"
+        }), 202
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/tasks/<task_id>/review", methods=["GET"])
+def get_task_review_results(task_id):
+    """
+    获取任务评审结果
+    GET /api/tasks/{task_id}/review
+    """
+    try:
+        from src.database.models import CaseReviewRecord
+
+        records = db_session.query(CaseReviewRecord).filter_by(task_id=task_id).all()
+
+        items = []
+        for r in records:
+            items.append({
+                "batch_index": r.batch_index,
+                "case_count": r.case_count,
+                "scores": r.scores,
+                "overall_score": r.overall_score,
+                "decision": r.decision,
+                "conclusion": r.conclusion,
+                "reviewed_at": r.reviewed_at.isoformat() if r.reviewed_at else None,
+            })
+
+        return jsonify({
+            "task_id": task_id,
+            "items": items,
+            "total": len(items),
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

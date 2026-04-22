@@ -45,7 +45,7 @@ def test_case_loading_after_generation():
     requirement = Requirement(
         title="测试需求 - 用户登录",
         content=test_content,
-        status=RequirementStatus.PENDING
+        status=RequirementStatus.PENDING_ANALYSIS
     )
     db.add(requirement)
     db.commit()
@@ -125,7 +125,7 @@ def test_case_loading_after_generation():
         
         # 验证数据完整性
         for case in req_cases:
-            print(f"    - {case.case_id}: {case.name} (Priority: {case.priority.value}, Status: {case.status.value})")
+            print(f"    - {case.case_id}: {case.name} (Priority: {case.priority.value}, Status: {int(case.status)})")
             print(f"      Module: {case.module}, Type: {case.case_type}")
             print(f"      Test Steps: {len(case.test_steps) if isinstance(case.test_steps, list) else 'N/A'}")
             print(f"      Expected Results: {len(case.expected_results) if isinstance(case.expected_results, list) else 'N/A'}")
@@ -147,7 +147,7 @@ def test_case_loading_after_generation():
         
         print(f"  Cases by status:")
         for status, count in stats:
-            status_value = status.value if status else 'unknown'
+            status_value = int(status) if status else 'unknown'
             print(f"    - {status_value}: {count}")
         
         total = db.query(TestCase).count()

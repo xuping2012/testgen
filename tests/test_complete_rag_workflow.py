@@ -71,7 +71,7 @@ def test_complete_rag_workflow():
     requirement = Requirement(
         title="用户登录功能需求文档",
         content=test_requirement_content,
-        status=RequirementStatus.PENDING
+        status=RequirementStatus.PENDING_ANALYSIS
     )
     db.add(requirement)
     db.commit()

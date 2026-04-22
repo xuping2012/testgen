@@ -20,7 +20,20 @@
       "Bash(python -m pytest tests/test_api.py::TestGenerationAPI::test_trigger_generation tests/test_case_loading_after_generation.py::test_case_loading_after_generation -v --tb=long 2>&1)",
       "Bash(python -m pytest tests/test_api.py::TestGenerationAPI::test_trigger_generation tests/test_case_loading_after_generation.py::test_case_loading_after_generation -v --tb=short 2>&1)",
       "Bash(python -m pytest tests/ -v --tb=short 2>&1 | tail -30)",
-      "Bash(openspec new:*)"
+      "Bash(openspec new:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git worktree:*)",
+      "Bash(python -m pytest tests/test_models_extended.py -v 2>&1)",
+      "Bash(python -m pytest tests/test_models_extended.py -v)",
+      "Bash(python -m pytest tests/test_api.py -v --tb=short -x)",
+      "Bash(python -m pytest tests/test_requirement_review.py -v)",
+      "Bash(python -m pytest tests/test_case_review_agent.py -v)",
+      "Bash(python -m pytest tests/test_defect_kb.py -v)",
+      "Bash(python -m pytest tests/test_generation_service_enhanced.py -v)",
+      "Bash(python -m pytest tests/test_api_rag_enhanced.py -v)",
+      "Bash(python -m pytest tests/test_integration_two_phase.py -v)",
+      "Bash(python -m pytest tests/ -v --tb=short 2>&1 | head -200)"
     ]
   }
 }

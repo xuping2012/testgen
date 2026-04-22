@@ -1502,19 +1502,19 @@
                     <td>${c.requirement_title || '-'}</td>
                     <td>
                         <div class="action-btns">
-                            ${c.status === 'pending_review' ? `
+                            ${c.status === 2 ? `
                                 <button class="action-btn" onclick="viewCase(${c.id})" title="查看" aria-label="查看">👁️</button>
                                 <button class="action-btn" onclick="editCase(${c.id})" title="编辑" aria-label="编辑">✏️</button>
                                 <button class="action-btn approve" onclick="approveCase(${c.id})" title="通过" aria-label="通过">✓</button>
                                 <button class="action-btn reject" onclick="rejectCase(${c.id})" title="拒绝" aria-label="拒绝">✗</button>
                                 <button class="action-btn" onclick="deleteCase(${c.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="删除" aria-label="删除">🗑️</button>
                             ` : ''}
-                            ${c.status === 'approved' ? `
+                            ${c.status === 3 ? `
                                 <button class="action-btn" onclick="viewCase(${c.id})" title="查看" aria-label="查看">👁️</button>
                                 <button class="action-btn" onclick="activateCase(${c.id})" title="激活" aria-label="激活">↻</button>
                                 <button class="action-btn" onclick="deleteCase(${c.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="删除" aria-label="删除">🗑️</button>
                             ` : ''}
-                            ${c.status === 'rejected' ? `
+                            ${c.status === 4 ? `
                                 <button class="action-btn" onclick="viewCase(${c.id})" title="查看" aria-label="查看">👁️</button>
                                 <button class="action-btn" onclick="activateCase(${c.id})" title="激活" aria-label="激活">↻</button>
                                 <button class="action-btn" onclick="deleteCase(${c.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="删除" aria-label="删除">🗑️</button>
@@ -1533,9 +1533,10 @@
 
         function getStatusText(status) {
             const map = {
-                'pending_review': '待评审',
-                'approved': '已评审',
-                'rejected': '已拒绝'
+                1: '草稿',
+                2: '待评审',
+                3: '已通过',
+                4: '已拒绝'
             };
             return map[status] || status;
         }
