@@ -26,27 +26,50 @@ import os
 Base = declarative_base()
 
 
-class RequirementStatus(enum.Enum):
+class RequirementStatus(enum.IntEnum):
     """需求状态"""
 
-    PENDING_ANALYSIS = "pending_analysis"  # 待分析
-    ANALYZING = "analyzing"  # 分析中
-    PENDING_REVIEW = "pending_review"  # 待确认
-    PENDING_GENERATION = "pending_generation"  # 待生成
-    GENERATING = "generating"  # 生成中
-    COMPLETED = "completed"  # 已完成
-    FAILED = "failed"  # 失败
-    PENDING = "pending"  # 待处理（兼容旧数据）
-    PROCESSING = "processing"  # 处理中（兼容旧数据）
+    PENDING_ANALYSIS = 1
+    ANALYZING = 2
+    ANALYZED = 3
+    GENERATING = 4
+    COMPLETED = 5
+    FAILED = 6
+    CANCELLED_GENERATION = 7
 
 
-class CaseStatus(enum.Enum):
+class CaseStatus(enum.IntEnum):
     """测试用例状态"""
 
-    DRAFT = "draft"  # 草稿
-    PENDING_REVIEW = "pending_review"  # 待评审
-    APPROVED = "approved"  # 已通过
-    REJECTED = "rejected"  # 已拒绝
+    DRAFT = 1  # 草稿
+    PENDING_REVIEW = 2  # 待评审
+    APPROVED = 3  # 已通过
+    REJECTED = 4  # 已拒绝
+
+
+class TaskStatus(enum.IntEnum):
+    """生成任务状态"""
+
+    RUNNING = 1  # 生成中
+    COMPLETED = 2  # 已完成
+    FAILED = 3  # 失败
+    CANCELLED = 4  # 已取消
+
+
+class AnalysisItemStatus(enum.IntEnum):
+    """分析项审核状态"""
+
+    PENDING_REVIEW = 1
+    APPROVED = 2
+    REJECTED = 3
+    MODIFIED = 4
+
+
+class DefectSourceType(enum.IntEnum):
+    """缺陷数据来源类型"""
+
+    MANUAL_ENTRY = 1
+    FILE_IMPORT = 2
 
 
 class Priority(enum.Enum):
@@ -69,7 +92,7 @@ class Requirement(Base):
     analyzed_content = Column(Text)  # 需求分析后的Markdown格式内容
     source_file = Column(String(500))  # 原始文件路径
     status = Column(
-        Enum(RequirementStatus, values_callable=lambda e: [x.value for x in e]),
+        Integer,
         default=RequirementStatus.PENDING_ANALYSIS,
     )
     analysis_data = Column(JSON, default=None)  # 分析结果数据：modules, test_points等
@@ -107,7 +130,7 @@ class TestCase(Base):
     )
     case_type = Column(String(50))  # 用例类型：功能/边界/异常等
     status = Column(
-        Enum(CaseStatus, values_callable=lambda e: [x.value for x in e]),
+        Integer,
         default=CaseStatus.PENDING_REVIEW,
     )
 
@@ -137,8 +160,9 @@ class GenerationTask(Base):
 
     # 任务状态
     status = Column(
-        String(50), default="pending"
-    )  # pending/processing/awaiting_review/completed_pending_review/completed/failed/cancelled/discarded
+        Integer,
+        default=TaskStatus.RUNNING,
+    )
     progress = Column(Float, default=0.0)  # 进度 0-100
     message = Column(Text)  # 状态消息
 
@@ -179,18 +203,44 @@ class HistoricalCase(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class RequirementAnalysisItem(Base):
+    """需求分析临时项 - 功能模块和测试点"""
+
+    __tablename__ = "requirement_analysis_items"
+
+    id = Column(Integer, primary_key=True)
+    requirement_id = Column(Integer, ForeignKey("requirements.id"), nullable=False)
+    item_type = Column(String(20), nullable=False)
+    name = Column(String(200), nullable=False)
+    description = Column(Text)
+    module_name = Column(String(200))
+    priority = Column(String(10))
+    risk_level = Column(String(20))
+    focus_points = Column(JSON)
+    status = Column(Integer, default=AnalysisItemStatus.PENDING_REVIEW)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    requirement = relationship("Requirement", backref="analysis_items")
+
+
 class Defect(Base):
     """缺陷表"""
 
     __tablename__ = "defects"
 
     id = Column(Integer, primary_key=True)
-    defect_id = Column(String(100), unique=True, nullable=False)
+    defect_id = Column(String(100), unique=True, nullable=True)
+    source_type = Column(Integer, default=DefectSourceType.MANUAL_ENTRY)
     title = Column(String(500), nullable=False)
     description = Column(Text)
     module = Column(String(200))
+    severity = Column(String(10))
+    category = Column(String(100))
     status = Column(String(50), default="open")
-    related_case_id = Column(String(100))  # 关联测试用例
+    related_case_id = Column(Integer, ForeignKey("test_cases.id"), nullable=True)
+    related_requirement_id = Column(Integer, ForeignKey("requirements.id"), nullable=True)
+    created_by = Column(String(100))
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -253,6 +303,25 @@ class PromptTemplate(Base):
     change_log = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CaseReviewRecord(Base):
+    """Agent评审记录"""
+
+    __tablename__ = "case_review_records"
+
+    id = Column(Integer, primary_key=True)
+    task_id = Column(String(100), nullable=False)
+    batch_index = Column(Integer, nullable=True)
+    case_id = Column(String(100), nullable=True)
+    scores = Column(JSON)
+    overall_score = Column(Integer)
+    issues = Column(JSON)
+    duplicate_cases = Column(JSON)
+    improvement_suggestions = Column(JSON)
+    decision = Column(String(50))
+    conclusion = Column(Text)
+    reviewed_at = Column(DateTime, default=datetime.utcnow)
 
 
 # 数据库初始化函数
