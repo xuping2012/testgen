@@ -163,6 +163,7 @@ def get_requirement(requirement_id):
                 "content": requirement.content,
                 "status": int(requirement.status),
                 "source_file": requirement.source_file,
+                "analysis_data": requirement.analysis_data,
                 "created_at": (
                     requirement.created_at.isoformat()
                     if requirement.created_at

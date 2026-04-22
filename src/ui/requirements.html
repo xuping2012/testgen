@@ -2382,20 +2382,34 @@
             }
         }
 
+        // 需求分析轮询状态
+        let analysisPollIntervals = {};
+
         async function analyzeRequirement(requirementId) {
             try {
-                showToast('正在分析需求...', 'info');
-                
+                showToast('正在启动需求分析...', 'info');
+
+                // 立即刷新列表显示分析中状态
+                loadRequirements(currentPage);
+
+                // 发送分析请求（不等待完成）
                 const response = await fetch(`/api/requirements/${requirementId}/analyze`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
                 });
-                
+
                 const data = await response.json();
-                if (data.analysis_data) {
-                    showReviewModal(data.analysis_data, data.analyzed_content);
-                    showToast('需求分析完成，请审核后生成用例', 'success');
-                    loadRequirements(currentPage);
+
+                if (response.ok) {
+                    // 分析同步完成（立即返回结果）
+                    if (data.analysis_data) {
+                        showReviewModal(data.analysis_data, data.analyzed_content);
+                        showToast('需求分析完成，请审核后生成用例', 'success');
+                        loadRequirements(currentPage);
+                    } else {
+                        // 开始轮询状态
+                        startAnalysisStatusPoll(requirementId);
+                    }
                 } else {
                     showToast(`分析失败：${data.error || '未知错误'}`, 'error');
                     loadRequirements(currentPage);
@@ -2405,6 +2419,58 @@
                 showToast('分析失败', 'error');
                 loadRequirements(currentPage);
             }
+        }
+
+        // 轮询需求分析状态
+        function startAnalysisStatusPoll(requirementId) {
+            // 清除之前的轮询
+            if (analysisPollIntervals[requirementId]) {
+                clearInterval(analysisPollIntervals[requirementId]);
+            }
+
+            let pollCount = 0;
+            const MAX_POLLS = 60; // 最多轮询60次（2分钟）
+
+            showToast('需求分析进行中...', 'info');
+
+            // 每2秒轮询一次
+            analysisPollIntervals[requirementId] = setInterval(async () => {
+                pollCount++;
+
+                // 超时检查
+                if (pollCount > MAX_POLLS) {
+                    clearInterval(analysisPollIntervals[requirementId]);
+                    delete analysisPollIntervals[requirementId];
+                    showToast('分析超时，请刷新页面重试', 'error');
+                    loadRequirements(currentPage);
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`/api/requirements/${requirementId}`);
+                    const reqData = await response.json();
+
+                    if (reqData.status === 3) { // ANALYZED = 3
+                        clearInterval(analysisPollIntervals[requirementId]);
+                        delete analysisPollIntervals[requirementId];
+
+                        if (reqData.analysis_data) {
+                            showReviewModal(reqData.analysis_data, reqData.analyzed_content);
+                            showToast('需求分析完成，请审核后生成用例', 'success');
+                        }
+                        loadRequirements(currentPage);
+                    } else if (reqData.status === 4) { // FAILED = 4
+                        clearInterval(analysisPollIntervals[requirementId]);
+                        delete analysisPollIntervals[requirementId];
+                        showToast('需求分析失败', 'error');
+                        loadRequirements(currentPage);
+                    }
+                    // 状态为 ANALYZING (2) 继续轮询
+                } catch (error) {
+                    console.error('轮询分析状态失败:', error);
+                    // 继续轮询，不中断
+                }
+            }, 2000);
         }
         
         async function reviewRequirement(requirementId) {
@@ -2582,7 +2648,7 @@
         function showReviewModal(analysisResult, analyzedContent) {
             // 填充评审弹窗数据
             document.getElementById('reviewTaskId').value = currentTaskId || '';
-            
+
             // 保存items数组（用于后续生成）
             const itemsInput = document.getElementById('reviewItems');
             if (analysisResult.items && analysisResult.items.length > 0) {
@@ -2590,7 +2656,7 @@
             } else {
                 itemsInput.value = '[]';
             }
-            
+
             // 功能模块（可编辑）
             const modulesDiv = document.getElementById('reviewModules');
             if (analysisResult.modules && analysisResult.modules.length > 0) {
@@ -2603,13 +2669,14 @@
             } else {
                 modulesDiv.value = '未识别到功能模块';
             }
-            
-            // 测试点（可编辑）
+
+            // 测试点（可编辑）- 支持 test_points 和 points 两种字段名
             const pointsDiv = document.getElementById('reviewPoints');
-            if (analysisResult.points && analysisResult.points.length > 0) {
-                pointsDiv.value = analysisResult.points.map((point, i) => {
-                    const focusPoints = point.focus_points && point.focus_points.length > 0 
-                        ? `  [关注点: ${point.focus_points.join(', ')}]` 
+            const points = analysisResult.points || analysisResult.test_points || [];
+            if (points && points.length > 0) {
+                pointsDiv.value = points.map((point, i) => {
+                    const focusPoints = point.focus_points && point.focus_points.length > 0
+                        ? `  [关注点: ${point.focus_points.join(', ')}]`
                         : '';
                     return `${i + 1}. [${point.item}] ${point.name}${focusPoints}`;
                 }).join('\n');
@@ -2655,38 +2722,37 @@
         async function reAnalyze() {
             // 关闭评审弹窗
             closeReviewModal();
-            
+
             // 显示加载状态
-            showToast('正在创建重新分析任务...', 'info');
-            
-            // 重新触发分析
+            showToast('正在重新分析需求...', 'info');
+
+            // 重新触发分析 - 使用正确的分析端点
             if (currentRequirementId) {
                 try {
-                    const response = await fetch('/api/generate', {
+                    // 立即刷新列表显示分析中状态
+                    loadRequirements(currentPage);
+
+                    const response = await fetch(`/api/requirements/${currentRequirementId}/analyze`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ requirement_id: currentRequirementId })
+                        headers: { 'Content-Type': 'application/json' }
                     });
 
                     const data = await response.json();
-                    if (data.task_id) {
-                        currentTaskId = data.task_id;
-                        
-                        // 如果已经有分析结果（同步返回），直接显示
-                        if (data.analysis_result) {
-                            showReviewModal(data.analysis_result);
-                            showToast('分析完成，请评审', 'success');
-                        } else {
-                            // 否则轮询任务进度
-                            showToast('正在重新分析需求，请稍候...', 'info');
-                            startPhase1ProgressCheck(currentTaskId);
-                        }
+                    if (response.ok && data.analysis_data) {
+                        showReviewModal(data.analysis_data, data.analyzed_content);
+                        showToast('需求分析完成，请审核后生成用例', 'success');
+                        loadRequirements(currentPage);
+                    } else if (response.ok) {
+                        // 开始轮询状态
+                        startAnalysisStatusPoll(currentRequirementId);
                     } else {
                         showToast(`分析失败：${data.error || '未知错误'}`, 'error');
+                        loadRequirements(currentPage);
                     }
                 } catch (error) {
                     console.error('重新分析失败:', error);
                     showToast('重新分析失败', 'error');
+                    loadRequirements(currentPage);
                 }
             }
         }
