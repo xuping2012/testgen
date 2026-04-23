@@ -2060,22 +2060,17 @@ class GenerationService:
 
                 requirement_id = task_obj.requirement_id
 
-                # 从数据库获取需求内容
-                if self.db_session:
+                # 从数据库获取需求内容（使用线程安全的session）
+                bg_session = self._get_db_session()
+                if bg_session:
                     from src.database.models import Requirement
-                    from src.database.models import engine as db_engine
-                    from sqlalchemy.orm import Session
 
-                    # 创建新session用于后台线程
-                    bg_session = Session(db_engine)
                     try:
                         requirement = bg_session.query(Requirement).get(requirement_id)
                         if not requirement:
-                            bg_session.close()
                             self.fail_task(task_id, "需求不存在")
                             return
                     except Exception:
-                        bg_session.close()
                         self.fail_task(task_id, "数据库查询失败")
                         return
                 else:
@@ -2303,14 +2298,15 @@ class GenerationService:
                         error_msg += f"，失败模块: {', '.join([f['title'] for f in failed_items])}"
                     self.fail_task(task_id, error_msg)
 
-                # 更新需求状态
-                if self.db_session:
+                # 更新需求状态（使用线程安全的session）
+                bg_session = self._get_db_session()
+                if bg_session:
                     try:
                         from src.database.models import Requirement, RequirementStatus
 
                         task_obj = self.get_task(task_id)
                         if task_obj:
-                            requirement = self.db_session.query(Requirement).get(
+                            requirement = bg_session.query(Requirement).get(
                                 task_obj.requirement_id
                             )
                             if requirement:
@@ -2319,7 +2315,7 @@ class GenerationService:
                                     requirement.status = RequirementStatus.COMPLETED
                                 else:
                                     requirement.status = RequirementStatus.FAILED
-                                self.db_session.commit()
+                                bg_session.commit()
                                 print(f"需求状态已更新为: {int(requirement.status)}")
                     except Exception as e:
                         print(f"更新需求状态失败: {e}")
@@ -2368,11 +2364,12 @@ class GenerationService:
 
                 requirement_id = task_obj.requirement_id
 
-                # 从数据库获取需求内容
-                if self.db_session:
+                # 从数据库获取需求内容（使用线程安全的session）
+                bg_session = self._get_db_session()
+                if bg_session:
                     from src.database.models import Requirement
 
-                    requirement = self.db_session.query(Requirement).get(requirement_id)
+                    requirement = bg_session.query(Requirement).get(requirement_id)
                     if not requirement:
                         self.fail_task(task_id, "需求不存在")
                         return
@@ -2574,19 +2571,20 @@ class GenerationService:
                     },
                 )
 
-                # 更新需求状态为"已完成"
-                if self.db_session:
+                # 更新需求状态为"已完成"（使用线程安全的session）
+                bg_session = self._get_db_session()
+                if bg_session:
                     try:
                         from src.database.models import Requirement, RequirementStatus
 
                         task_obj = self.get_task(task_id)
                         if task_obj:
-                            requirement = self.db_session.query(Requirement).get(
+                            requirement = bg_session.query(Requirement).get(
                                 task_obj.requirement_id
                             )
                             if requirement:
                                 requirement.status = RequirementStatus.COMPLETED
-                                self.db_session.commit()
+                                bg_session.commit()
                                 print(f"需求状态已更新为: {int(requirement.status)}")
                     except Exception as e:
                         print(f"更新需求状态失败: {e}")
@@ -2645,12 +2643,13 @@ class GenerationService:
                         requirement_content
                     )
 
-                    # 保存分析后的Markdown格式内容到需求表
-                    if self.db_session:
+                    # 保存分析后的Markdown格式内容到需求表（使用线程安全的session）
+                    bg_session = self._get_db_session()
+                    if bg_session:
                         try:
                             from src.database.models import Requirement
 
-                            requirement = self.db_session.query(Requirement).get(
+                            requirement = bg_session.query(Requirement).get(
                                 requirement_id
                             )
                             if requirement:
@@ -2659,7 +2658,7 @@ class GenerationService:
                                     requirement_analysis, requirement_content
                                 )
                                 requirement.analyzed_content = analyzed_md
-                                self.db_session.commit()
+                                bg_session.commit()
                                 print(
                                     f"已保存需求分析Markdown格式到需求ID: {requirement_id}"
                                 )
@@ -2922,19 +2921,20 @@ class GenerationService:
                 if progress_callback:
                     progress_callback(100.0, "✅ 生成完成")
 
-                # 更新需求状态为"已完成"
-                if self.db_session:
+                # 更新需求状态为"已完成"（使用线程安全的session）
+                bg_session = self._get_db_session()
+                if bg_session:
                     try:
                         from src.database.models import Requirement, RequirementStatus
 
                         task_obj = self.get_task(task_id)
                         if task_obj:
-                            requirement = self.db_session.query(Requirement).get(
+                            requirement = bg_session.query(Requirement).get(
                                 task_obj.requirement_id
                             )
                             if requirement:
                                 requirement.status = RequirementStatus.COMPLETED
-                                self.db_session.commit()
+                                bg_session.commit()
                                 print(f"需求状态已更新为: {int(requirement.status)}")
                     except Exception as e:
                         print(f"更新需求状态失败: {e}")
@@ -2952,8 +2952,9 @@ class GenerationService:
                         f"生成失败: {str(e)}",
                     )
 
-                # 生成失败时，清除该需求的所有测试用例（如果有部分保存成功的话）
-                if self.db_session:
+                # 生成失败时，清除该需求的所有测试用例（如果有部分保存成功的话）（使用线程安全的session）
+                bg_session = self._get_db_session()
+                if bg_session:
                     try:
                         from src.database.models import (
                             Requirement,
@@ -2965,7 +2966,7 @@ class GenerationService:
                         if task_obj:
                             # 删除该需求的所有测试用例
                             deleted = (
-                                self.db_session.query(TestCase)
+                                bg_session.query(TestCase)
                                 .filter(
                                     TestCase.requirement_id == task_obj.requirement_id
                                 )
@@ -2973,18 +2974,21 @@ class GenerationService:
                             )
 
                             # 更新需求状态为"失败"
-                            requirement = self.db_session.query(Requirement).get(
+                            requirement = bg_session.query(Requirement).get(
                                 task_obj.requirement_id
                             )
                             if requirement:
                                 requirement.status = RequirementStatus.FAILED
-                                self.db_session.commit()
+                                bg_session.commit()
                                 if deleted > 0:
                                     print(f"已清除 {deleted} 条部分保存的测试用例")
                                 print(f"需求状态已更新为: {int(requirement.status)}")
                     except Exception as cleanup_error:
                         print(f"清理失败用例或更新状态失败: {cleanup_error}")
-                        self.db_session.rollback()
+                        try:
+                            bg_session.rollback()
+                        except:
+                            pass
 
         # 在后台线程执行
         thread = threading.Thread(target=run_generation)
@@ -3099,6 +3103,10 @@ class GenerationService:
             print("警告: 没有需要保存的测试用例")
             return
 
+        session = self._get_db_session()
+        if not session:
+            raise Exception("数据库会话不可用")
+
         try:
             from src.database.models import TestCase, CaseStatus, Priority
             import time
@@ -3111,7 +3119,7 @@ class GenerationService:
 
             # 先删除该需求的所有旧用例
             deleted_count = (
-                self.db_session.query(TestCase)
+                session.query(TestCase)
                 .filter(TestCase.requirement_id == requirement_id)
                 .delete(synchronize_session=False)
             )
@@ -3119,14 +3127,14 @@ class GenerationService:
             if deleted_count > 0:
                 print(f"已删除 {deleted_count} 条旧用例")
 
-            self.db_session.commit()
+            session.commit()
 
             # 查询数据库中全局最大的case_id序号
             # 这样可以确保不会与其他需求的用例ID冲突
             from sqlalchemy import func
 
             max_case = (
-                self.db_session.query(TestCase).order_by(TestCase.id.desc()).first()
+                session.query(TestCase).order_by(TestCase.id.desc()).first()
             )
 
             if max_case and max_case.case_id.startswith("TC_"):
@@ -3226,10 +3234,10 @@ class GenerationService:
                     confidence_level=case_data.get("confidence_level"),
                     citations=case_data.get("citations"),
                 )
-                self.db_session.add(test_case)
+                session.add(test_case)
                 saved_count += 1
 
-            self.db_session.commit()
+            session.commit()
             print(f"成功保存 {saved_count} 条测试用例")
 
             # 注意：不再自动写入RAG，需要用户手动审批通过后，通过"从数据库导入"按钮导入
@@ -3238,7 +3246,10 @@ class GenerationService:
             #     ... (commented out auto-RAG-write)
 
         except Exception as e:
-            self.db_session.rollback()
+            try:
+                session.rollback()
+            except:
+                pass
             raise Exception(f"保存测试用例失败: {str(e)}")
 
     def _analyze_requirement(self, requirement_content: str) -> Dict[str, Any]:
