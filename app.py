@@ -53,9 +53,10 @@ root_logger.addHandler(console_handler)
 
 from flask import Flask, send_from_directory, make_response
 from flask_cors import CORS
+from flask_socketio import SocketIO, emit
 
 # 导入新模块
-from src.database.models import init_database, get_session
+from src.database.models import init_database, get_session, init_scoped_session
 from src.llm.adapter import LLMManager
 from src.vectorstore.chroma_store import ChromaVectorStore
 from src.services.generation_service import GenerationService
@@ -79,6 +80,7 @@ def create_app():
     logging.info("正在初始化数据库...")
     engine = init_database("data/testgen.db")
     db_session = get_session(engine)
+    init_scoped_session(engine)  # 初始化线程安全session
 
     # ==================== 初始化FTS5增量更新监听器 ====================
     logging.info("正在设置FTS5增量更新监听器...")
@@ -216,9 +218,26 @@ def create_app():
         db_session=db_session, llm_manager=llm_manager, vector_store=vector_store
     )
 
+    # ==================== 初始化SocketIO ====================
+    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+    
+    # 存储SocketIO实例
+    app.socketio = socketio
+    
     # ==================== 注册API蓝图 ====================
     init_services(db_session, llm_manager, vector_store, generation_service)
     app.register_blueprint(api_bp)
+    
+    # ==================== WebSocket事件处理 ====================
+    @socketio.on('connect', namespace='/progress')
+    def handle_connect():
+        emit('connected', {'status': 'OK'})
+    
+    @socketio.on('subscribe', namespace='/progress')
+    def handle_subscribe(data):
+        task_id = data.get('task_id')
+        if task_id:
+            emit('subscribed', {'task_id': task_id, 'status': 'subscribed'})
 
     # ==================== 前端路由 ====================
     @app.route("/")
@@ -270,11 +289,11 @@ def create_app():
     app.generation_service = generation_service
 
     logging.info("应用初始化完成！")
-    return app
+    return app, socketio
 
 
 # 创建应用实例
-app = create_app()
+app, socketio = create_app()
 
 if __name__ == "__main__":
     import logging
@@ -284,4 +303,4 @@ if __name__ == "__main__":
     logging.info("基于PRD需求规格说明书 v0.1")
     logging.info("=" * 60)
     # 禁用 reloader 避免日志重复输出
-    app.run(debug=True, host="0.0.0.0", port=5000, use_reloader=False)
+    socketio.run(app, debug=True, host="0.0.0.0", port=5000, use_reloader=False)

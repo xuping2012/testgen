@@ -359,7 +359,12 @@ def review_requirement(requirement_id):
 
     Request Body:
     {
-        "action": "generate" | "cancel"  # generate: 确认并生成; cancel: 取消不生成
+        "action": "generate" | "cancel",  # generate: 确认并生成; cancel: 取消不生成
+        "reviewed_plan": {                # 可选：用户评审后编辑的测试规划数据
+            "modules": [...],
+            "points": [...],
+            "items": [...]
+        }
     }
     """
     try:
@@ -396,8 +401,12 @@ def review_requirement(requirement_id):
         requirement.status = RequirementStatus.GENERATING
         db_session.commit()
 
+        # 使用用户评审后的数据，或回退到数据库中的原始数据
+        reviewed_plan = data.get("reviewed_plan")
+        generation_data = reviewed_plan if reviewed_plan else requirement.analysis_data
+
         generation_service.start_task(task_id)
-        generation_service.execute_phase2_generation(task_id, requirement.analysis_data)
+        generation_service.execute_phase2_generation(task_id, generation_data)
 
         return (
             jsonify(
@@ -785,6 +794,10 @@ def continue_generation():
             return jsonify({"error": "缺少必要字段: task_id"}), 400
 
         task_id = data["task_id"]
+        if not task_id:
+            logging.info("[调试][API] task_id为空值: %s", task_id)
+            return jsonify({"error": "task_id不能为空"}), 400
+
         reviewed_plan = data.get("reviewed_plan")  # 用户可能编辑过的规划
         logging.info("[调试][API] task_id: %s", task_id)
         logging.info(
@@ -900,6 +913,39 @@ def retry_generation():
             ),
             202,
         )
+
+    except Exception as e:
+        db_session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/generate/progress/<task_id>", methods=["GET"])
+def get_generation_progress(task_id):
+    """
+    获取详细的生成进度和阶段信息
+    GET /api/generate/progress/{task_id}
+    """
+    try:
+        from src.database.models import GenerationTask as GenerationTaskModel
+        from src.database.models import GenerationPhase
+
+        task = db_session.query(GenerationTaskModel).filter_by(task_id=task_id).first()
+        if not task:
+            return jsonify({"error": "任务不存在"}), 404
+
+        return jsonify({
+            "task_id": task.task_id,
+            "requirement_id": task.requirement_id,
+            "requirement_title": task.requirement_title,
+            "phase": int(task.phase) if task.phase else None,
+            "phase_name": GenerationPhase(task.phase).name if task.phase else None,
+            "phase_details": task.phase_details,
+            "progress": task.progress,
+            "status": task.status,
+            "message": task.message,
+            "started_at": task.started_at.isoformat() if task.started_at else None,
+            "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+        })
 
     except Exception as e:
         db_session.rollback()

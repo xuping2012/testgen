@@ -831,6 +831,182 @@
             border-radius: 8px;
             margin-bottom: 20px;
         }
+
+        /* 生成进度模态框 */
+        .generation-progress-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            z-index: 2000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+
+        .generation-progress-modal.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .generation-progress-content {
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 600px;
+            padding: 30px;
+            position: relative;
+        }
+
+        .generation-progress-content::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+        }
+
+        .generation-progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .generation-progress-header h3 {
+            color: var(--neon-cyan);
+            font-size: 20px;
+            letter-spacing: 2px;
+        }
+
+        .generation-progress-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: color 0.3s;
+        }
+
+        .generation-progress-close:hover {
+            color: var(--neon-pink);
+        }
+
+        .generation-progress-bar {
+            height: 8px;
+            background: var(--dark-bg);
+            border-radius: 4px;
+            overflow: hidden;
+            border: 1px solid var(--dark-border);
+            margin: 20px 0;
+        }
+
+        .generation-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+            transition: width 0.3s;
+            box-shadow: 0 0 20px rgba(0, 245, 255, 0.5);
+        }
+
+        .generation-progress-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-top: 20px;
+        }
+
+        .generation-progress-item {
+            padding: 12px;
+            background: var(--dark-bg);
+            border-radius: 8px;
+            border: 1px solid var(--dark-border);
+        }
+
+        .generation-progress-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .generation-progress-value {
+            font-size: 14px;
+            color: var(--neon-cyan);
+            margin-top: 4px;
+            font-family: monospace;
+        }
+
+        .generation-progress-steps {
+            margin-top: 20px;
+        }
+
+        .generation-progress-step {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            margin-bottom: 8px;
+            background: var(--dark-bg);
+            border-radius: 8px;
+            border: 1px solid var(--dark-border);
+        }
+
+        .generation-progress-step.active {
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 10px rgba(0, 245, 255, 0.3);
+        }
+
+        .generation-progress-step.completed {
+            border-color: var(--neon-green);
+        }
+
+        .generation-progress-step-icon {
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 12px;
+            font-size: 12px;
+            border-radius: 50%;
+            background: var(--dark-card);
+            border: 1px solid var(--dark-border);
+        }
+
+        .generation-progress-step.active .generation-progress-step-icon {
+            background: var(--neon-cyan);
+            color: var(--dark-bg);
+            border-color: var(--neon-cyan);
+        }
+
+        .generation-progress-step.completed .generation-progress-step-icon {
+            background: var(--neon-green);
+            color: var(--dark-bg);
+            border-color: var(--neon-green);
+        }
+
+        .generation-progress-step-text {
+            flex: 1;
+        }
+
+        .generation-progress-step-title {
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+
+        .generation-progress-step-desc {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
         
         .batch-actions {
             display: flex;
@@ -1731,6 +1907,45 @@
         </div>
     </div>
 
+    <!-- 生成进度模态框 -->
+    <div class="generation-progress-modal" id="generationProgressModal">
+        <div class="generation-progress-content">
+            <div class="generation-progress-header">
+                <h3>生成进度</h3>
+                <button class="generation-progress-close" id="closeProgressModal">×</button>
+            </div>
+            
+            <div class="progress-container">
+                <div class="generation-progress-bar">
+                    <div class="generation-progress-fill" id="generationProgressFill" style="width: 0%"></div>
+                </div>
+            </div>
+            
+            <div class="generation-progress-info">
+                <div class="generation-progress-item">
+                    <div class="generation-progress-label">状态</div>
+                    <div class="generation-progress-value" id="generationStatus">准备中</div>
+                </div>
+                <div class="generation-progress-item">
+                    <div class="generation-progress-label">进度</div>
+                    <div class="generation-progress-value" id="generationPercentage">0%</div>
+                </div>
+                <div class="generation-progress-item">
+                    <div class="generation-progress-label">已生成用例</div>
+                    <div class="generation-progress-value" id="generationCaseCount">0</div>
+                </div>
+                <div class="generation-progress-item">
+                    <div class="generation-progress-label">耗时</div>
+                    <div class="generation-progress-value" id="generationDuration">0s</div>
+                </div>
+            </div>
+            
+            <div class="generation-progress-steps" id="generationSteps">
+                <!-- 步骤将通过JS动态添加 -->
+            </div>
+        </div>
+    </div>
+
     <!-- 策略配置弹窗 -->
     <div class="modal" id="strategyConfigModal">
         <div class="modal-content">
@@ -2472,8 +2687,9 @@
             try {
                 const response = await fetch(`/api/requirements/${requirementId}`);
                 const reqData = await response.json();
-                
+
                 if (reqData.analysis_data) {
+                    currentRequirementId = requirementId;
                     showReviewModal(reqData.analysis_data);
                 } else {
                     showToast('需求暂无分析数据，请先执行分析', 'warning');
@@ -2505,13 +2721,28 @@
         async function confirmAndGenerate(requirementId) {
             try {
                 showToast('正在触发生成...', 'info');
-                
+
+                const requestBody = { action: 'generate' };
+
+                // 读取用户评审后编辑的数据
+                const modulesText = document.getElementById('reviewModules').value;
+                const pointsText = document.getElementById('reviewPoints').value;
+                const itemsStr = document.getElementById('reviewItems').value || '[]';
+
+                if (modulesText && pointsText) {
+                    requestBody.reviewed_plan = {
+                        modules: modulesText,
+                        points: pointsText,
+                        items: JSON.parse(itemsStr)
+                    };
+                }
+
                 const response = await fetch(`/api/requirements/${requirementId}/review`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'generate' })
+                    body: JSON.stringify(requestBody)
                 });
-                
+
                 const data = await response.json();
                 if (data.task_id) {
                     currentTaskId = data.task_id;
@@ -2535,6 +2766,34 @@
             } else {
                 showToast('未找到进行中的任务', 'warning');
             }
+        }
+
+        async function showGenerationProgress(taskId) {
+            currentTaskId = taskId;
+
+            // 重置工作流步骤
+            resetWorkflowSteps();
+
+            // 打开弹窗
+            openProgressModal();
+
+            // 初始加载进度
+            try {
+                const response = await fetch(`/api/generate/progress/${taskId}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('taskId').textContent = data.task_id || '-';
+                    document.getElementById('taskStatus').textContent = data.message || '处理中...';
+                    document.getElementById('taskProgress').textContent = Math.round(data.progress || 0) + '%';
+                    document.getElementById('progressFill').style.width = (data.progress || 0) + '%';
+                    document.getElementById('taskMessage').textContent = data.phase_details || data.message || '-';
+                }
+            } catch (error) {
+                console.error('初始加载进度失败:', error);
+            }
+
+            // 开始轮询
+            startProgressCheck();
         }
         
         async function generateCases(requirementId) {
@@ -2710,47 +2969,56 @@
         }
         
         async function reAnalyze() {
+            if (!currentRequirementId) {
+                showToast('错误：未找到当前需求ID', 'error');
+                return;
+            }
+
             closeReviewModal();
+            showToast('正在重新分析需求，请稍候...', 'info');
 
-            showToast('正在重新分析需求...', 'info');
+            try {
+                // 1. 重置分析状态
+                const resetResponse = await fetch(`/api/requirements/${currentRequirementId}/reset-analysis`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
 
-            if (currentRequirementId) {
-                try {
-                    const resetResponse = await fetch(`/api/requirements/${currentRequirementId}/reset-analysis`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' }
-                    });
-
-                    if (!resetResponse.ok) {
-                        const errorData = await resetResponse.json();
-                        showToast(`重置状态失败：${errorData.error || '未知错误'}`, 'error');
-                        loadRequirements(currentPage);
-                        return;
-                    }
-
-                    loadRequirements(currentPage);
-
-                    const response = await fetch(`/api/requirements/${currentRequirementId}/analyze`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' }
-                    });
-
-                    const data = await response.json();
-                    if (response.ok && data.analysis_data) {
-                        showReviewModal(data.analysis_data, data.analyzed_content);
-                        showToast('需求分析完成，请审核后生成用例', 'success');
-                        loadRequirements(currentPage);
-                    } else if (response.ok) {
-                        startAnalysisStatusPoll(currentRequirementId);
-                    } else {
-                        showToast(`分析失败：${data.error || '未知错误'}`, 'error');
-                        loadRequirements(currentPage);
-                    }
-                } catch (error) {
-                    console.error('重新分析失败:', error);
-                    showToast('重新分析失败', 'error');
-                    loadRequirements(currentPage);
+                if (!resetResponse.ok) {
+                    const errorData = await resetResponse.json();
+                    showToast(`重置状态失败：${errorData.error || '未知错误'}`, 'error');
+                    await loadRequirements(currentPage);
+                    return;
                 }
+
+                // 2. 立即刷新列表显示"分析中"状态
+                await loadRequirements(currentPage);
+
+                // 3. 触发重新分析
+                const response = await fetch(`/api/requirements/${currentRequirementId}/analyze`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.analysis_data) {
+                    // 同步返回结果，直接显示弹窗
+                    showReviewModal(data.analysis_data, data.analyzed_content);
+                    showToast('需求分析完成，请审核后生成用例', 'success');
+                    await loadRequirements(currentPage);
+                } else if (response.ok) {
+                    // 异步处理，开始轮询状态
+                    showToast('需求分析已开始，将在完成后提示', 'info');
+                    startAnalysisStatusPoll(currentRequirementId);
+                } else {
+                    showToast(`分析失败：${data.error || '未知错误'}`, 'error');
+                    await loadRequirements(currentPage);
+                }
+            } catch (error) {
+                console.error('重新分析失败:', error);
+                showToast('重新分析失败：' + error.message, 'error');
+                await loadRequirements(currentPage);
             }
         }
         
@@ -2761,18 +3029,18 @@
                     points: document.getElementById('reviewPoints').value,
                     items: JSON.parse(document.getElementById('reviewItems').value || '[]')
                 };
-                
+
                 closeReviewModal();
-                
+
                 if (currentRequirementId) {
                     await confirmAndGenerate(currentRequirementId);
-                } else {
+                } else if (currentTaskId) {
                     showToast('正在启动用例生成...', 'info');
-                    
+
                     const response = await fetch('/api/generate/continue', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
+                        body: JSON.stringify({
                             task_id: currentTaskId,
                             reviewed_plan: reviewedPlan,
                             generation_strategy: {
@@ -2782,15 +3050,18 @@
                             }
                         })
                     });
-                    
+
                     const data = await response.json();
                     if (data.task_id) {
                         currentTaskId = data.task_id;
                         showToast('用例生成中，可在「生成进度」查看进度', 'info');
                         loadRequirements(currentPage);
                     } else {
-                        showToast(`生成失败：${data.error || '��知错误'}`, 'error');
+                        showToast(`生成失败：${data.error || '未知错误'}`, 'error');
                     }
+                } else {
+                    showToast('错误：未找到需求ID或任务ID，请刷新页面重试', 'error');
+                    console.error('confirmAndContinue: currentRequirementId 和 currentTaskId 均为空');
                 }
             } catch (error) {
                 console.error('继续生成失败:', error);

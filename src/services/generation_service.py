@@ -51,6 +51,13 @@ class GenerationService:
         self._lock = threading.Lock()
         self.callbacks: Dict[str, Callable] = {}
 
+        # 获取线程安全的scoped session工厂
+        try:
+            from src.database.models import get_scoped_session
+            self._scoped_session_factory = get_scoped_session
+        except:
+            self._scoped_session_factory = None
+
         # RAG增强组件（延迟初始化）
         self._hybrid_retriever = None
         self._query_optimizer = None
@@ -85,6 +92,17 @@ class GenerationService:
 
         # 从数据库加载未完成的任务
         self._load_pending_tasks_from_db()
+
+    def _get_db_session(self):
+        """获取适合当前线程的数据库session"""
+        import threading
+        main_thread = threading.main_thread()
+        if threading.current_thread() is main_thread:
+            return self.db_session
+        # 后台线程使用scoped_session
+        if self._scoped_session_factory:
+            return self._scoped_session_factory()
+        return self.db_session
 
     def _init_rag_components(self):
         """延迟初始化RAG增强组件"""
@@ -809,14 +827,15 @@ class GenerationService:
 
     def _sync_task_to_db(self, task: GenerationTask):
         """将内存中的任务状态同步到数据库"""
-        if not self.db_session:
+        session = self._get_db_session()
+        if not session:
             return
 
         try:
             from src.database.models import GenerationTask as GenerationTaskModel
 
             task_model = (
-                self.db_session.query(GenerationTaskModel)
+                session.query(GenerationTaskModel)
                 .filter_by(task_id=task.task_id)
                 .first()
             )
@@ -825,7 +844,7 @@ class GenerationService:
                 task_model = GenerationTaskModel(
                     task_id=task.task_id, requirement_id=task.requirement_id
                 )
-                self.db_session.add(task_model)
+                session.add(task_model)
 
             # 更新字段
             task_model.status = task.status
@@ -834,6 +853,8 @@ class GenerationService:
             task_model.result = task.result if hasattr(task, "result") else None
             task_model.error_message = task.error_message
             task_model.case_count = getattr(task, "case_count", 0) or 0
+            task_model.phase = getattr(task, "phase", None)
+            task_model.phase_details = getattr(task, "phase_details", None)
 
             # 同步分析快照
             if hasattr(task, "analysis_snapshot") and task.analysis_snapshot:
@@ -857,11 +878,11 @@ class GenerationService:
                 task_model.duration = (end_time - task_model.started_at).total_seconds()
                 task.duration = task_model.duration
 
-            self.db_session.commit()
+            session.commit()
         except Exception as e:
             print(f"[GenerationService] 同步任务到数据库失败: {e}")
             try:
-                self.db_session.rollback()
+                session.rollback()
             except:
                 pass
 
@@ -2042,10 +2063,20 @@ class GenerationService:
                 # 从数据库获取需求内容
                 if self.db_session:
                     from src.database.models import Requirement
+                    from src.database.models import engine as db_engine
+                    from sqlalchemy.orm import Session
 
-                    requirement = self.db_session.query(Requirement).get(requirement_id)
-                    if not requirement:
-                        self.fail_task(task_id, "需求不存在")
+                    # 创建新session用于后台线程
+                    bg_session = Session(db_engine)
+                    try:
+                        requirement = bg_session.query(Requirement).get(requirement_id)
+                        if not requirement:
+                            bg_session.close()
+                            self.fail_task(task_id, "需求不存在")
+                            return
+                    except Exception:
+                        bg_session.close()
+                        self.fail_task(task_id, "数据库查询失败")
                         return
                 else:
                     self.fail_task(task_id, "数据库会话不可用")

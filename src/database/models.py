@@ -18,7 +18,7 @@ from sqlalchemy import (
     Float,
 )
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, sessionmaker
+from sqlalchemy.orm import relationship, sessionmaker, scoped_session
 from datetime import datetime
 import enum
 import os
@@ -45,6 +45,14 @@ class CaseStatus(enum.IntEnum):
     PENDING_REVIEW = 2  # 待评审
     APPROVED = 3  # 已通过
     REJECTED = 4  # 已拒绝
+
+
+class GenerationPhase(enum.IntEnum):
+    """生成阶段"""
+    
+    RAG = 1  # RAG检索
+    GENERATION = 2  # 测试用例生成
+    SAVING = 3  # 数据保存
 
 
 class TaskStatus(enum.IntEnum):
@@ -163,7 +171,12 @@ class GenerationTask(Base):
         Integer,
         default=TaskStatus.RUNNING,
     )
-    progress = Column(Float, default=0.0)  # 进度 0-100
+    progress = Column(Integer, default=0)  # 进度 0-100
+    phase = Column(
+        Integer,
+        default=GenerationPhase.RAG,
+    )  # 当前阶段
+    phase_details = Column(Text)  # 阶段详情
     message = Column(Text)  # 状态消息
 
     # 结果
@@ -337,3 +350,21 @@ def get_session(engine):
     """获取数据库会话"""
     Session = sessionmaker(bind=engine)
     return Session()
+
+
+# 线程安全的 scoped session 工厂
+ScopedSession = None
+
+def init_scoped_session(engine):
+    """初始化并返回线程安全的 scoped session"""
+    global ScopedSession
+    if ScopedSession is None:
+        session_factory = sessionmaker(bind=engine)
+        ScopedSession = scoped_session(session_factory)
+    return ScopedSession()
+
+def get_scoped_session():
+    """获取线程安全的 scoped session"""
+    if ScopedSession is None:
+        raise RuntimeError("ScopedSession not initialized. Call init_scoped_session first.")
+    return ScopedSession()
