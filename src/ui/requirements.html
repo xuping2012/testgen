@@ -2734,35 +2734,62 @@
                 const moduleLines = modulesText.split('\n').filter(line => line.trim());
                 const pointsLines = pointsText.split('\n').filter(line => line.trim());
                 
+                // 调试日志
+                console.log('modulesText:', modulesText);
+                console.log('pointsText:', pointsText);
+                console.log('moduleLines:', moduleLines);
+                console.log('pointsLines:', pointsLines);
+
                 // 为每个模块匹配对应的测试点
                 moduleLines.forEach((line, idx) => {
-                    const moduleName = line.replace(/^[\d\.\s　]+/, '').trim();
-                    if (moduleName) {
-                        // 提取模块名称（去掉 " - " 后面的说明部分）
-                        moduleName = moduleName.split(' - ')[0].split('—')[0].trim();
-                        
-                        // 尝试找到与当前模块相关的测试点
-                        const modulePoints = [];
-                        const lowerModule = moduleName.toLowerCase();
-                        
-                        // 简单匹配：查找包含模块名的测试点
-                        pointsLines.forEach(pointLine => {
-                            const point = pointLine.replace(/^[\d\.\s　]+/, '').trim();
-                            if (point && (point.toLowerCase().includes(lowerModule) || lowerModule.includes(point.toLowerCase()) || point.toLowerCase().includes('登录'))) {
-                                modulePoints.push(point);
-                            }
-                        });
-                        
-                        items.push({
-                            title: moduleName,
-                            name: moduleName,
-                            description: '',
-                            priority: 'P1',
-                            risk_level: 'medium',
-                            points: modulePoints
-                        });
-                    }
+                    let moduleName = line.replace(/^[\d\.\s　]+/, '').trim();
+                    if (!moduleName) return;
+                    
+                    // 提取模块名称（去掉 " - " 后面的说明部分）
+                    moduleName = moduleName.split(' - ')[0].split('—')[0].trim();
+                    if (!moduleName) return;
+                    
+                    // 尝试找到与当前模块相关的测试点
+                    const modulePoints = [];
+                    const lowerModule = moduleName.toLowerCase();
+                    
+                    // 简单匹配：查找包含模块名的测试点
+                    pointsLines.forEach(pointLine => {
+                        const point = pointLine.replace(/^[\d\.\s　]+/, '').trim();
+                        if (point && (point.toLowerCase().includes(lowerModule) || lowerModule.includes(point.toLowerCase()) || point.toLowerCase().includes('登录'))) {
+                            modulePoints.push(point);
+                        }
+                    });
+                    
+                    items.push({
+                        title: moduleName,
+                        name: moduleName,
+                        description: '',
+                        priority: 'P1',
+                        risk_level: 'medium',
+                        points: modulePoints
+                    });
                 });
+
+                // 如果没有构建出items但有模块内容，则直接使用模块作为item
+                if (items.length === 0 && moduleLines.length > 0) {
+                    moduleLines.forEach(line => {
+                        let moduleName = line.replace(/^[\d\.\s　]+/, '').trim();
+                        moduleName = moduleName.split(' - ')[0].split('—')[0].trim();
+                        if (moduleName) {
+                            items.push({
+                                title: moduleName,
+                                name: moduleName,
+                                description: '',
+                                priority: 'P1',
+                                risk_level: 'medium',
+                                points: []
+                            });
+                        }
+                    });
+                }
+                
+                console.log('Built items:', items);
 
                 if (modulesText && pointsText) {
                     requestBody.reviewed_plan = {
@@ -3137,6 +3164,24 @@
                         });
                     }
                 });
+
+                // 如果没有构建出items但有模块内容，则直接使用模块作为item
+                if (items.length === 0 && moduleLines.length > 0) {
+                    moduleLines.forEach(line => {
+                        let moduleName = line.replace(/^[\d\.\s　]+/, '').trim();
+                        moduleName = moduleName.split(' - ')[0].split('—')[0].trim();
+                        if (moduleName) {
+                            items.push({
+                                title: moduleName,
+                                name: moduleName,
+                                description: '',
+                                priority: 'P1',
+                                risk_level: 'medium',
+                                points: []
+                            });
+                        }
+                    });
+                }
 
                 reviewedPlan = {
                     modules: modulesText,

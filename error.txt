@@ -1,26 +1,59 @@
-[执行阶段2] reviewed_plan is not None: True
-[执行阶段2] test_plan_data: {'modules': '1. 用户登录 - 处理用户登录相关功能', 'points': '1. [用户登录] 输入有效用户名和 密码登录', 'items': [{'title': '用户登录 - 处理用户登录相关功能', 'name': '用户登录 - 处理用户登录相关功能', 'description': '', 'priority': 'P1', 'risk_level': 'medium'}]}
-[执行阶段2] test_plan_data keys: ['modules', 'points', 'items']
-[执行阶段2] items count: 1
-[执行阶段2] first item: {'title': '用户登录 - 处理用户登录相关功能', 'name': '用户登录 - 处理用户登录相关功能', 'description': '', 'priority': 'P1', 'risk_level': 'medium'}
-[调试] 开始分批生成 - 总共 1 个ITEM
-2026-04-24 23:00:10 [werkzeug] 127.0.0.1 - - [24/Apr/2026 23:00:10] "GET /api/requirements?page=1&limit=10 HTTP/1.1" 200 -
-[RAG组件] DynamicRetriever 初始化完成
-[RAG组件] HybridRetriever 初始化完成
-[RAG组件] QueryOptimizer 初始化完成
-[RAG组件] ConfidenceCalculator 初始化完成
-[RAG组件] CitationParser 初始化完成
-2026-04-24 23:00:10 [werkzeug] 127.0.0.1 - - [24/Apr/2026 23:00:10] "GET /api/tasks?status=1 HTTP/1.1" 200 -
-[RAG组件] RetrievalEvaluator 初始化完成
-2026-04-24 23:00:11 [src.services.hybrid_retriever] 动态检索调整: expand (k=5->10)
-2026-04-24 23:00:11 [src.services.hybrid_retriever] 动态检索调整: keep (k=3->3)
-2026-04-24 23:00:12 [src.services.hybrid_retriever] 动态检索调整: expand (k=3->6)
-[调试] 正在处理 ITEM 1/1: 用户登录 - 处理用户登录相关功能
-[调试]   - item keys: ['title', 'name', 'description', 'priority', 'risk_level']
-[调试]   - points 数量: 0
-[调试] 调用 generate_item_cases for: 用户登录 - 处理用户登录相关功能
-[调试][generate_item_cases] 开始生成 - title: 用户登录 - 处理用户登录相关功能
-[调试][generate_item_cases]   - item keys: ['title', 'name', 'description', 'priority', 'risk_level']
-[调试][generate_item_cases]   - points: 0
-[调试][generate_item_cases]   - priority: P1
-2026-04-24 23:00:12 [src.services.prompt_template_service]
+
+C:\pythonworkspace\auto_generator_testcase>
+
+C:\pythonworkspace\auto_generator_testcase>
+
+C:\pythonworkspace\auto_generator_testcase>python app.py
+2026-04-24 23:05:09 [root] 正在初始化数据库...
+2026-04-24 23:05:09 [root] 正在设置FTS5增量更新监听器...
+2026-04-24 23:05:09 [root]   FTS5监听器已设置
+2026-04-24 23:05:09 [root] 正在初始化LLM管理器...
+2026-04-24 23:05:09 [root]   加载配置: lockin-deepseek (deepseek) - [默认]
+2026-04-24 23:05:09 [root] 已加载 1 个LLM配置，当前默认: lockin-deepseek
+2026-04-24 23:05:09 [root] 默认Prompt模板已存在，跳过初始化
+2026-04-24 23:05:09 [root] 正在初始化向量库...
+2026-04-24 23:05:10 [root] 向量库初始化成功
+2026-04-24 23:05:10 [root] 正在初始化生成服务...
+[GenerationService] 初始化完成，LLM默认配置: lockin-deepseek (deepseek)
+[GenerationService] LLM适配器列表: ['lockin-deepseek']
+[GenerationService] 默认适配器: lockin-deepseek
+2026-04-24 23:05:10 [root] 应用初始化完成！
+2026-04-24 23:05:10 [root] ============================================================
+2026-04-24 23:05:10 [root] TestGen - AI测试用例生成平台
+2026-04-24 23:05:10 [root] 基于PRD需求规格说明书 v0.1
+2026-04-24 23:05:10 [root] ============================================================
+ * Serving Flask app 'app'
+ * Debug mode: on
+2026-04-24 23:05:10 [werkzeug] WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.31.36:5000
+2026-04-24 23:05:10 [werkzeug] Press CTRL+C to quit
+2026-04-24 23:05:10 [werkzeug] 127.0.0.1 - - [24/Apr/2026 23:05:10] "GET /cases.html HTTP/1.1" 304 -
+2026-04-24 23:05:10 [werkzeug] 127.0.0.1 - - [24/Apr/2026 23:05:10] "GET /api/requirements?limit=100 HTTP/1.1" 200 -
+2026-04-24 23:05:10 [werkzeug] 127.0.0.1 - - [24/Apr/2026 23:05:10] "GET /api/cases?page=1&limit=10 HTTP/1.1" 200 -
+2026-04-24 23:05:10 [werkzeug] 127.0.0.1 - - [24/Apr/2026 23:05:10] "GET /api/cases/stats HTTP/1.1" 200 -
+2026-04-24 23:05:12 [werkzeug] 127.0.0.1 - - [24/Apr/2026 23:05:12] "GET /requirements.html HTTP/1.1" 200 -
+2026-04-24 23:05:12 [werkzeug] 127.0.0.1 - - [24/Apr/2026 23:05:12] "GET /api/requirements?page=1&limit=10 HTTP/1.1" 200 -
+2026-04-24 23:05:12 [werkzeug] 127.0.0.1 - - [24/Apr/2026 23:05:12] "GET /api/tasks?status=1 HTTP/1.1" 200 -
+2026-04-24 23:05:13 [werkzeug] 127.0.0.1 - - [24/Apr/2026 23:05:13] "GET /api/requirements/9 HTTP/1.1" 200 -
+2026-04-24 23:05:15 [werkzeug] 127.0.0.1 - - [24/Apr/2026 23:05:15] "POST /api/requirements/9/reset-analysis HTTP/1.1" 200 -
+2026-04-24 23:05:15 [werkzeug] 127.0.0.1 - - [24/Apr/2026 23:05:15] "GET /api/requirements?page=1&limit=10 HTTP/1.1" 200 -
+2026-04-24 23:05:15 [werkzeug] 127.0.0.1 - - [24/Apr/2026 23:05:15] "GET /api/tasks?status=1 HTTP/1.1" 200 -
+2026-04-24 23:05:15 [src.services.prompt_template_service] [Prompt加载] 类型: requirement_analysis, 模板: default_analyze
+2026-04-24 23:05:15 [root] [Analyze] Prompt length: 1090
+2026-04-24 23:05:40 [werkzeug] 127.0.0.1 - - [24/Apr/2026 23:05:40] "POST /api/requirements/9/analyze HTTP/1.1" 200 -
+2026-04-24 23:05:40 [werkzeug] 127.0.0.1 - - [24/Apr/2026 23:05:40] "GET /api/requirements?page=1&limit=10 HTTP/1.1" 200 -
+2026-04-24 23:05:40 [werkzeug] 127.0.0.1 - - [24/Apr/2026 23:05:40] "GET /api/tasks?status=1 HTTP/1.1" 200 -
+2026-04-24 23:05:56 [werkzeug] 127.0.0.1 - - [24/Apr/2026 23:05:56] "GET /api/requirements/9 HTTP/1.1" 200 -
+[API] reviewed_plan: False, keys: None
+2026-04-24 23:06:15 [root] [调试][execute_phase2_generation] 方法被调用 - task_id: task_91c58641b364
+2026-04-24 23:06:15 [root] [调试][execute_phase2_generation] reviewed_plan: provided
+2026-04-24 23:06:15 [root] [调试][execute_phase2_generation] 正在启动后台线程...
+2026-04-24 23:06:15 [root] [调试][run_phase2_batch] ===== 后台线程开始执行 =====
+2026-04-24 23:06:15 [root] [调试][execute_phase2_generation] 后台线程已启动 - thread name: Thread-17 (run_phase2_batch)
+2026-04-24 23:06:15 [root] [调试][run_phase2_batch] task_id: task_91c58641b364
+2026-04-24 23:06:15 [werkzeug] 127.0.0.1 - - [24/Apr/2026 23:06:15] "POST /api/requirements/9/review HTTP/1.1" 202 -
+2026-04-24 23:06:15 [root] [调试][run_phase2_batch] reviewed_plan: provided
+2026-04-24 23:06:15 [root] [调试][run_phase2_batch] task_obj: found
+
