@@ -3287,17 +3287,17 @@
                         updateWorkflowStep('save', 'active', message);
                     }
 
-                    if (data.status === 'completed' || data.status === 'failed') {
+                    if (data.status === 2 || data.status === 3 || data.status === 4 || data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
                         clearInterval(progressInterval);
                         progressInterval = null;
-                        
+
                         // 最终状态更新
-                        if (data.status === 'completed') {
+                        if (data.status === 2 || data.status === 'completed') {
                             updateWorkflowStep('save', 'completed', '✅ 完成');
-                            
+
                             // 获取生成的用例数量
                             const caseCount = (data.result && data.result.total_count) || 0;
-                            
+
                             // 检查是否有质检报告
                             if (data.result && data.result.quality_report) {
                                 setTimeout(() => {
@@ -3311,14 +3311,14 @@
                                     closeProgressModal();
                                     showToast(`生成完成！共生成 ${caseCount} 条测试用例`, 'success');
                                     loadRequirements(currentPage);
-                                    
+
                                     // 显示导航提示
                                     setTimeout(() => {
                                         showCaseNavigationPrompt(caseCount, currentRequirementId);
                                     }, 500);
                                 }, 1000);
                             }
-                        } else if (data.status === 'failed') {
+                        } else if (data.status === 3 || data.status === 'failed') {
                             // 标记当前活跃步骤为错误
                             const steps = ['analysis', 'rag', 'plan', 'generate', 'save'];
                             for (const step of steps) {
@@ -3331,6 +3331,21 @@
                             document.getElementById('retryContainer').style.display = 'block';
                             const errorMsg = data.error_message || '未知错误';
                             showToast(`生成失败：${errorMsg}`, 'error');
+                        } else if (data.status === 4 || data.status === 'cancelled') {
+                            // 标记当前活跃步骤为已取消
+                            const steps = ['analysis', 'rag', 'plan', 'generate', 'save'];
+                            for (const step of steps) {
+                                const stepEl = document.getElementById(`step-${step}`);
+                                if (stepEl && stepEl.classList.contains('active')) {
+                                    updateWorkflowStep(step, 'error', '⛔ 已取消');
+                                    break;
+                                }
+                            }
+                            setTimeout(() => {
+                                closeProgressModal();
+                                showToast('生成任务已取消', 'warning');
+                                loadRequirements(currentPage);
+                            }, 1000);
                         }
                     }
                 } catch (error) {
@@ -3863,23 +3878,33 @@
                 
                 stages.forEach((stage, index) => {
                     let status = 'waiting';
-                    if (progress >= stage.range[1]) status = 'completed';
-                    else if (progress >= stage.range[0]) status = 'active';
-                    else if (task.status === 3 && progress < stage.range[1]) status = 'failed';
-                    
-                    const bgColor = status === 'completed' ? 'rgba(0, 255, 136, 0.1)' : 
-                                   status === 'active' ? 'rgba(0, 245, 255, 0.1)' : 
-                                   status === 'failed' ? 'rgba(255, 0, 85, 0.1)' : 'transparent';
-                    const borderColor = status === 'completed' ? '#00ff88' : 
-                                       status === 'active' ? '#00f5ff' : 
-                                       status === 'failed' ? '#ff0055' : 'var(--dark-border)';
-                    const textColor = status === 'completed' ? '#00ff88' : 
-                                     status === 'active' ? '#00f5ff' : 
-                                     status === 'failed' ? '#ff0055' : 'var(--text-secondary)';
-                    const icon = status === 'completed' ? '✓' : status === 'active' ? '⟳' : status === 'failed' ? '✗' : '○';
-                    const statusText = status === 'completed' ? '已完成' : 
-                                      status === 'active' ? '进行中' : 
-                                      status === 'failed' ? '失败' : '等待中';
+                    if (task.status === 4) {
+                        // 已取消状态：当前进行中的阶段显示为已取消，已完成的保持已完成
+                        if (progress >= stage.range[1]) status = 'completed';
+                        else if (progress >= stage.range[0]) status = 'cancelled';
+                    } else {
+                        if (progress >= stage.range[1]) status = 'completed';
+                        else if (progress >= stage.range[0]) status = 'active';
+                        else if (task.status === 3 && progress < stage.range[1]) status = 'failed';
+                    }
+
+                    const bgColor = status === 'completed' ? 'rgba(0, 255, 136, 0.1)' :
+                                   status === 'active' ? 'rgba(0, 245, 255, 0.1)' :
+                                   status === 'failed' ? 'rgba(255, 0, 85, 0.1)' :
+                                   status === 'cancelled' ? 'rgba(255, 170, 0, 0.1)' : 'transparent';
+                    const borderColor = status === 'completed' ? '#00ff88' :
+                                       status === 'active' ? '#00f5ff' :
+                                       status === 'failed' ? '#ff0055' :
+                                       status === 'cancelled' ? '#ffaa00' : 'var(--dark-border)';
+                    const textColor = status === 'completed' ? '#00ff88' :
+                                     status === 'active' ? '#00f5ff' :
+                                     status === 'failed' ? '#ff0055' :
+                                     status === 'cancelled' ? '#ffaa00' : 'var(--text-secondary)';
+                    const icon = status === 'completed' ? '✓' : status === 'active' ? '⟳' : status === 'failed' ? '✗' : status === 'cancelled' ? '⛔' : '○';
+                    const statusText = status === 'completed' ? '已完成' :
+                                      status === 'active' ? '进行中' :
+                                      status === 'failed' ? '失败' :
+                                      status === 'cancelled' ? '已取消' : '等待中';
                     
                     if (index > 0) stagesHtml += `<div style="height: 1px; background: var(--dark-border);"></div>`;
                     
@@ -3963,6 +3988,7 @@
                     if (response.ok) {
                         showToast('任务已终止', 'success');
                         loadTasks();
+                        loadRequirements(currentPage);
                     } else {
                         showToast('终止失败', 'error');
                     }

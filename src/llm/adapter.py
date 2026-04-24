@@ -10,6 +10,7 @@ import json
 import time
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
+from numpy import random
 import requests
 from dataclasses import dataclass
 
@@ -66,8 +67,8 @@ class OpenAIAdapter(BaseLLMAdapter):
                 payload = {
                     "model": self.model_id,
                     "messages": messages,
-                    "temperature": kwargs.get("temperature", 0.7),
-                    "max_tokens": kwargs.get("max_tokens", 2000),
+                    "temperature": kwargs.get("temperature", random.uniform(0.7, 1.0)),
+                    "max_tokens": kwargs.get("max_tokens", 1024*4),
                     "stream": stream
                 }
 
@@ -278,8 +279,8 @@ class OpenAIAdapter(BaseLLMAdapter):
                 payload = {
                     "model": self.model_id,
                     "messages": messages,
-                    "temperature": kwargs.get("temperature", 0.7),
-                    "max_tokens": kwargs.get("max_tokens", 2000),
+                    "temperature": kwargs.get("temperature", random.uniform(0.7, 1.0)),
+                    "max_tokens": kwargs.get("max_tokens", 1024*4),
                     "stream": True
                 }
 
@@ -469,8 +470,8 @@ class UniAIXAdapter(BaseLLMAdapter):
                 payload = {
                     "model": self.model_id,
                     "messages": messages,
-                    "max_tokens": kwargs.get("max_tokens", 2048),
-                    "temperature": kwargs.get("temperature", 0.7),
+                    "max_tokens": kwargs.get("max_tokens", 1024*4),
+                    "temperature": kwargs.get("temperature", random.uniform(0.7, 1.0)),
                     "stream": stream
                 }
 

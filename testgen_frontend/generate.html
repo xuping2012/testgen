@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>生成任务 - TestGen</title>
+  <style>
+    :root { --bg-primary:#09090b;--bg-secondary:#18181b;--bg-tertiary:#27272a;--text-primary:#fafafa;--text-secondary:#a1a1aa;--text-tertiary:#71717a;--accent:#3b82f6;--accent-muted:rgba(59,130,246,0.15);--success:#22c55e;--success-muted:rgba(34,197,94,0.15);--warning:#f59e0b;--warning-muted:rgba(245,158,11,0.15);--glass-bg:rgba(24,24,27,0.8);--glass-border:rgba(255,255,255,0.08); }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg-primary); color: var(--text-primary); min-height: 100vh; }
+    body::before { content: ''; position: fixed; inset: 0; background: radial-gradient(circle at 20% 20%, rgba(59,130,246,0.1) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(34,197,94,0.08) 0%, transparent 50%); pointer-events: none; z-index: 0; }
+    .app-layout { display: flex; min-height: 100vh; position: relative; z-index: 1; }
+    .sidebar { width: 260px; background: var(--glass-bg); border-right: 1px solid var(--glass-border); position: fixed; height: 100vh; backdrop-filter: blur(20px); }
+    .sidebar-header { padding: 24px; border-bottom: 1px solid var(--glass-border); }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-icon { width: 40px; height: 40px; background: linear-gradient(135deg, #3b82f6, #8b5cf6); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; color: white; }
+    .brand-name { font-size: 22px; font-weight: 700; }
+    .sidebar-nav { padding: 16px; }
+    .nav-group { margin-bottom: 24px; }
+    .nav-group-title { font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; padding: 8px 12px; }
+    .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 12px; border-radius: 8px; color: var(--text-secondary); font-size: 14px; cursor: pointer; transition: all 0.2s; text-decoration: none; }
+    .nav-item:hover { background: var(--accent-muted); color: var(--text-primary); }
+    .nav-item.active { background: var(--accent-muted); color: var(--accent); }
+    .main-content { flex: 1; margin-left: 260px; min-height: 100vh; }
+    .topbar { height: 64px; background: var(--glass-bg); border-bottom: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: space-between; padding: 0 32px; position: sticky; top: 0; backdrop-filter: blur(20px); z-index: 10; }
+    .breadcrumb { display: flex; gap: 8px; font-size: 14px; }
+    .breadcrumb-item { color: var(--text-tertiary); }
+    .breadcrumb-separator { color: var(--text-tertiary); }
+    .breadcrumb-current { color: var(--text-primary); font-weight: 500; }
+    .topbar-actions { display: flex; gap: 12px; align-items: center; }
+    .topbar-btn { width: 40px; height: 40px; background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; }
+    .user-menu { display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 6px; background: var(--bg-tertiary); border-radius: 10px; cursor: pointer; }
+    .user-avatar { width: 32px; height: 32px; background: linear-gradient(135deg, #6366f1, #8b5cf6); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: white; }
+    .page-content { padding: 32px; }
+    .page-title { font-size: 32px; font-weight: 700; margin-bottom: 8px; }
+    .page-subtitle { font-size: 15px; color: var(--text-secondary); margin-bottom: 32px; }
+    .pipeline-card { background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 16px; padding: 32px; margin-bottom: 32px; }
+    .pipeline-title { font-size: 18px; font-weight: 600; margin-bottom: 32px; }
+    .phase-list { display: flex; gap: 40px; position: relative; }
+    .phase-list::before { content: ''; position: absolute; top: 40px; left: 80px; right: 80px; height: 2px; background: var(--glass-border); z-index: 0; }
+    .phase { flex: 1; text-align: center; position: relative; z-index: 1; }
+    .phase-icon { width: 80px; height: 80px; background: var(--bg-tertiary); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; margin: 0 auto 16px; transition: all 0.3s; }
+    .phase.active .phase-icon { background: var(--accent); box-shadow: 0 0 30px var(--accent-muted); }
+    .phase.completed .phase-icon { background: var(--success); box-shadow: 0 0 20px var(--success-muted); }
+    .phase-name { font-weight: 600; margin-bottom: 4px; }
+    .phase-desc { font-size: 13px; color: var(--text-secondary); }
+    .task-section { margin-bottom: 32px; }
+    .task-section-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+    .task-item { background: var(--bg-secondary); border: 1px solid var(--glass-border); border-radius: 12px; padding: 24px; margin-bottom: 16px; display: flex; align-items: center; gap: 24px; }
+    .task-info { flex: 1; }
+    .task-id { font-size: 12px; color: var(--text-tertiary); }
+    .task-name { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+    .progress-bar { height: 8px; background: var(--bg-tertiary); border-radius: 4px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.5s; }
+    .status-badge { padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 500; }
+    .status-completed { background: var(--success-muted); color: var(--success); }
+    .status-processing { background: var(--accent-muted); color: var(--accent); }
+    .status-pending { background: rgba(161,161,170,0.15); color: #a1a1aa; }
+    .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 10px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; transition: all 0.2s; }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-secondary { background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--glass-border); }
+    .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 1000; }
+    .toast { background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 12px; padding: 16px 20px; display: flex; align-items: center; gap: 12px; animation: slideIn 0.3s ease; }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+    .toast-icon { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+    .toast.success .toast-icon { background: var(--success-muted); color: var(--success); }
+    .toast.info .toast-icon { background: var(--accent-muted); color: var(--accent); }
+    @media (max-width: 1200px) { .sidebar { display: none; } .main-content { margin-left: 0; } }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="sidebar-header"><div class="brand"><div class="brand-icon">T</div><span class="brand-name">TestGen</span></div></div>
+      <nav class="sidebar-nav">
+        <div class="nav-group"><div class="nav-group-title">概览</div><a href="index.html" class="nav-item">📊 仪表盘</a></div>
+        <div class="nav-group"><div class="nav-group-title">测试管理</div><a href="requirements.html" class="nav-item">📝 需求管理</a><a href="cases.html" class="nav-item">🧪 测试用例</a><a href="generate.html" class="nav-item active">⚡ 生成任务</a></div>
+        <div class="nav-group"><div class="nav-group-title">智能功能</div><a href="rag.html" class="nav-item">🔍 RAG检索</a><a href="prompts.html" class="nav-item">📋 提示词模板</a></div>
+        <div class="nav-group"><div class="nav-group-title">系统</div><a href="config.html" class="nav-item">⚙️ LLM配置</a></div>
+      </nav>
+    </aside>
+    <main class="main-content">
+      <header class="topbar">
+        <div class="breadcrumb"><span class="breadcrumb-item">TestGen</span><span class="breadcrumb-separator">/</span><span class="breadcrumb-current">生成任务</span></div>
+        <div class="topbar-actions">
+          <button class="topbar-btn" onclick="showToast('info', '通知')">🔔</button>
+          <button class="topbar-btn" onclick="showToast('info', '设置')">⚙️</button>
+        </div>
+      </header>
+      <div class="page-content">
+        <h1 class="page-title">生成任务</h1>
+        <p class="page-subtitle">AI测试用例生成流水线</p>
+        <div class="pipeline-card">
+          <h3 class="pipeline-title">两阶段生成流程</h3>
+          <div class="phase-list">
+            <div class="phase completed"><div class="phase-icon">✓</div><div class="phase-name">Phase 1</div><div class="phase-desc">需求分析 → 测试规划</div></div>
+            <div class="phase active"><div class="phase-icon">⚡</div><div class="phase-name">Phase 2</div><div class="phase-desc">RAG召回 → LLM生成</div></div>
+            <div class="phase"><div class="phase-icon">💾</div><div class="phase-name">保存结果</div><div class="phase-desc">用例入库 → 完成</div></div>
+          </div>
+        </div>
+        <div class="task-section">
+          <h3 class="task-section-title">进行中的任务</h3>
+          <div class="task-item">
+            <div class="task-info"><div class="task-id"># TK-2024-002</div><div class="task-name">订单管理模块用例生成</div><div class="progress-bar"><div class="progress-fill" style="width:65%"></div></div></div>
+            <span class="status-badge status-processing">生成中</span>
+            <button class="btn btn-secondary" onclick="viewTask('TK-2024-002')">查看</button>
+          </div>
+        </div>
+        <div class="task-section">
+          <h3 class="task-section-title">已完成的任务</h3>
+          <div class="task-item">
+            <div class="task-info"><div class="task-id"># TK-2024-001</div><div class="task-name">用户登录模块</div><div class="progress-bar"><div class="progress-fill" style="width:100%"></div></div></div>
+            <span class="status-badge status-completed">已完成</span>
+            <button class="btn btn-primary" onclick="viewCases('TK-2024-001')">查看用例</button>
+          </div>
+          <div class="task-item">
+            <div class="task-info"><div class="task-id"># TK-2023-156</div><div class="task-name">支付模块</div><div class="progress-bar"><div class="progress-fill" style="width:100%"></div></div></div>
+            <span class="status-badge status-completed">已完成</span>
+            <button class="btn btn-primary" onclick="viewCases('TK-2023-156')">查看用例</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div class="toast-container" id="toastContainer"></div>
+  <script>
+    function navigate(p){window.location.href=p}
+    document.querySelectorAll('.nav-item').forEach(i=>{i.addEventListener('click',e=>{e.preventDefault();navigate(i.getAttribute('href'))})});
+    function showToast(t,m){const c=document.getElementById('toastContainer'),x=document.createElement('div');x.className='toast '+t;x.innerHTML='<div class="toast-icon">'+(t==='success'?'✓':'ℹ')+'</div><span>'+m+'</span>';c.appendChild(x);setTimeout(()=>x.remove(),2500);}
+    function viewTask(id){showToast('info','查看任务: '+id)}
+    function viewCases(id){showToast('success','查看用例');setTimeout(()=>navigate('cases.html'),500);}
+  </script>
+</body>
+</html>

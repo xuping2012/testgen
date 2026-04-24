@@ -1277,8 +1277,9 @@
                     <div class="form-group">
                         <label>状态</label>
                         <select class="form-control" id="caseStatus">
+                            <option value="draft">草稿</option>
                             <option value="pending_review">待评审</option>
-                            <option value="approved">已评审</option>
+                            <option value="approved">已通过</option>
                             <option value="rejected">已拒绝</option>
                         </select>
                     </div>
@@ -1734,7 +1735,7 @@
                 document.getElementById('caseName').value = c.name;
                 document.getElementById('casePriority').value = c.priority;
                 // 将整数状态转换为字符串值以匹配select选项
-                const statusMap = { 1: 'pending_review', 2: 'pending_review', 3: 'approved', 4: 'rejected' };
+                const statusMap = { 1: 'draft', 2: 'pending_review', 3: 'approved', 4: 'rejected' };
                 document.getElementById('caseStatus').value = statusMap[c.status] || 'pending_review';
                 document.getElementById('casePreconditions').value = c.preconditions || '';
                 document.getElementById('caseSteps').value = (c.test_steps || []).join('\n');

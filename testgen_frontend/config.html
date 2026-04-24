@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM配置 - TestGen</title>
+  <style>
+    :root { --bg-primary:#09090b;--bg-secondary:#18181b;--bg-tertiary:#27272a;--text-primary:#fafafa;--text-secondary:#a1a1aa;--text-tertiary:#71717a;--accent:#3b82f6;--accent-muted:rgba(59,130,246,0.15);--success:#22c55e;--warning:#f59e0b;--error:#ef4444;--glass-bg:rgba(24,24,27,0.8);--glass-border:rgba(255,255,255,0.08); }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg-primary); color: var(--text-primary); min-height: 100vh; }
+    body::before { content: ''; position: fixed; inset: 0; background: radial-gradient(circle at 20% 20%, rgba(59,130,246,0.1) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(34,197,94,0.08) 0%, transparent 50%); pointer-events: none; z-index: 0; }
+    .app-layout { display: flex; min-height: 100vh; position: relative; z-index: 1; }
+    .sidebar { width: 260px; background: var(--glass-bg); border-right: 1px solid var(--glass-border); position: fixed; height: 100vh; backdrop-filter: blur(20px); }
+    .sidebar-header { padding: 24px; border-bottom: 1px solid var(--glass-border); }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-icon { width: 40px; height: 40px; background: linear-gradient(135deg, #3b82f6, #8b5cf6); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; color: white; }
+    .brand-name { font-size: 22px; font-weight: 700; }
+    .sidebar-nav { padding: 16px; }
+    .nav-group { margin-bottom: 24px; }
+    .nav-group-title { font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; padding: 8px 12px; }
+    .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 12px; border-radius: 8px; color: var(--text-secondary); font-size: 14px; cursor: pointer; transition: all 0.2s; text-decoration: none; }
+    .nav-item:hover { background: var(--accent-muted); color: var(--text-primary); }
+    .nav-item.active { background: var(--accent-muted); color: var(--accent); }
+    .main-content { flex: 1; margin-left: 260px; min-height: 100vh; }
+    .topbar { height: 64px; background: var(--glass-bg); border-bottom: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: space-between; padding: 0 32px; position: sticky; top: 0; backdrop-filter: blur(20px); z-index: 10; }
+    .breadcrumb { display: flex; gap: 8px; font-size: 14px; }
+    .breadcrumb-item { color: var(--text-tertiary); }
+    .breadcrumb-separator { color: var(--text-tertiary); }
+    .breadcrumb-current { color: var(--text-primary); font-weight: 500; }
+    .topbar-actions { display: flex; gap: 12px; align-items: center; }
+    .topbar-btn { width: 40px; height: 40px; background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; }
+    .user-menu { display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 6px; background: var(--bg-tertiary); border-radius: 10px; cursor: pointer; }
+    .user-avatar { width: 32px; height: 32px; background: linear-gradient(135deg, #6366f1, #8b5cf6); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: white; }
+    .page-content { padding: 32px; }
+    .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; }
+    .page-title { font-size: 32px; font-weight: 700; margin-bottom: 8px; }
+    .page-subtitle { font-size: 15px; color: var(--text-secondary); }
+    .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 10px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; transition: all 0.2s; }
+    .btn-primary { background: linear-gradient(135deg, #3b82f6, #6366f1); color: white; }
+    .model-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+    .model-card { background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 16px; padding: 24px; transition: all 0.3s; }
+    .model-card:hover { border-color: var(--accent); }
+    .model-card.active { border-color: var(--success); box-shadow: 0 0 20px rgba(34,197,94,0.2); }
+    .model-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .model-name { font-size: 18px; font-weight: 600; }
+    .model-badge { padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+    .model-badge.active { background: var(--success); color: white; }
+    .model-badge.inactive { background: var(--bg-tertiary); color: var(--text-tertiary); }
+    .model-info { font-size: 14px; color: var(--text-secondary); margin-bottom: 12px; }
+    .model-meta { display: flex; gap: 16px; font-size: 12px; color: var(--text-tertiary); margin-bottom: 16px; }
+    .model-actions { display: flex; gap: 12px; padding-top: 16px; border-top: 1px solid var(--glass-border); }
+    .action-btn { background: transparent; color: var(--text-secondary); font-size: 13px; cursor: pointer; }
+    .action-btn:hover { color: var(--accent); }
+    .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 1000; }
+    .toast { background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 12px; padding: 16px 20px; display: flex; align-items: center; gap: 12px; animation: slideIn 0.3s ease; }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+    .toast-icon { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+    .toast.success .toast-icon { background: var(--success-muted); color: var(--success); }
+    .toast.info .toast-icon { background: var(--accent-muted); color: var(--accent); }
+    @media (max-width: 1200px) { .sidebar { display: none; } .main-content { margin-left: 0; } .model-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="sidebar-header"><div class="brand"><div class="brand-icon">T</div><span class="brand-name">TestGen</span></div></div>
+      <nav class="sidebar-nav">
+        <div class="nav-group"><div class="nav-group-title">概览</div><a href="index.html" class="nav-item">📊 仪表盘</a></div>
+        <div class="nav-group"><div class="nav-group-title">测试管理</div><a href="requirements.html" class="nav-item">📝 需求管理</a><a href="cases.html" class="nav-item">🧪 测试用例</a><a href="generate.html" class="nav-item">⚡ 生成任务</a></div>
+        <div class="nav-group"><div class="nav-group-title">智能功能</div><a href="rag.html" class="nav-item">🔍 RAG检索</a><a href="prompts.html" class="nav-item">📋 提示词模板</a></div>
+        <div class="nav-group"><div class="nav-group-title">系统</div><a href="config.html" class="nav-item active">⚙️ LLM配置</a></div>
+      </nav>
+    </aside>
+    <main class="main-content">
+      <header class="topbar">
+        <div class="breadcrumb"><span class="breadcrumb-item">TestGen</span><span class="breadcrumb-separator">/</span><span class="breadcrumb-current">LLM配置</span></div>
+        <div class="topbar-actions">
+          <button class="topbar-btn" onclick="showToast('info', '通知')">🔔</button>
+          <button class="topbar-btn" onclick="showToast('info', '设置')">⚙️</button>
+        </div>
+      </header>
+      <div class="page-content">
+        <div class="page-header">
+          <div><h1 class="page-title">LLM 配置</h1><p class="page-subtitle">配置语言模型提供商</p></div>
+          <button class="btn btn-primary" onclick="showToast('info', '添加模型')">➕ 添加模型</button>
+        </div>
+        <div class="model-grid">
+          <div class="model-card active">
+            <div class="model-header"><div class="model-name">KIMI</div><span class="model-badge active">使用中</span></div>
+            <div class="model-info">月之暗面Moonshot AI - 长文本理解能力强</div>
+            <div class="model-meta"><span>moonshot-v1-8k</span><span>API</span></div>
+            <div class="model-actions">
+              <span class="action-btn" onclick="editModel('kimi')">✏️ 编辑</span>
+              <span class="action-btn" onclick="testModel('kimi')">🧪 测试</span>
+              <span class="action-btn" onclick="setDefault('kimi')">⭐ 设为默认</span>
+            </div>
+          </div>
+          <div class="model-card">
+            <div class="model-header"><div class="model-name">DeepSeek</div><span class="model-badge inactive">未激活</span></div>
+            <div class="model-info">DeepSeek - 高性价比国产大模型</div>
+            <div class="model-meta"><span>deepseek-chat</span><span>API</span></div>
+            <div class="model-actions">
+              <span class="action-btn" onclick="editModel('deepseek')">✏️ 编辑</span>
+              <span class="action-btn" onclick="testModel('deepseek')">🧪 测试</span>
+              <span class="action-btn" onclick="activateModel('deepseek')">✓ 激活</span>
+            </div>
+          </div>
+          <div class="model-card">
+            <div class="model-header"><div class="model-name">Claude</div><span class="model-badge inactive">未激活</span></div>
+            <div class="model-info">Anthropic Claude - 代码能力突出</div>
+            <div class="model-meta"><span>claude-3-sonnet</span><span>API</span></div>
+            <div class="model-actions">
+              <span class="action-btn" onclick="editModel('claude')">✏️ 编辑</span>
+              <span class="action-btn" onclick="testModel('claude')">🧪 测试</span>
+              <span class="action-btn" onclick="activateModel('claude')">✓ 激活</span>
+            </div>
+          </div>
+          <div class="model-card">
+            <div class="model-header"><div class="model-name">OpenRouter</div><span class="model-badge inactive">未激活</span></div>
+            <div class="model-info">OpenRouter - 聚合多个模型</div>
+            <div class="model-meta"><span>openrouter/*</span><span>API</span></div>
+            <div class="model-actions">
+              <span class="action-btn" onclick="editModel('openrouter')">✏️ 编辑</span>
+              <span class="action-btn" onclick="testModel('openrouter')">🧪 测试</span>
+              <span class="action-btn" onclick="activateModel('openrouter')">✓ 激活</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div class="toast-container" id="toastContainer"></div>
+  <script>
+    function showToast(t,m){const c=document.getElementById('toastContainer'),x=document.createElement('div');x.className='toast '+t;x.innerHTML='<div class="toast-icon">'+(t==='success'?'✓':'ℹ')+'</div><span>'+m+'</span>';c.appendChild(x);setTimeout(()=>x.remove(),2500);}
+    function editModel(id){showToast('info','编辑: '+id)}
+    function testModel(id){showToast('info','测试: '+id)}
+    function activateModel(id){showToast('success','激活: '+id)}
+    function setDefault(id){showToast('success','设为默认: '+id)}
+  </script>
+</body>
+</html>

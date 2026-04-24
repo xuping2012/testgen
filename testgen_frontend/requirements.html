@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>需求管理 - TestGen</title>
+  <style>
+    :root {
+      --bg-primary: #09090b; --bg-secondary: #18181b; --bg-tertiary: #27272a; --bg-elevated: #1c1c1f;
+      --text-primary: #fafafa; --text-secondary: #a1a1aa; --text-tertiary: #71717a;
+      --accent: #3b82f6; --accent-hover: #2563eb; --accent-muted: rgba(59, 130, 246, 0.15); --accent-glow: rgba(59, 130, 246, 0.4);
+      --success: #22c55e; --success-muted: rgba(34, 197, 94, 0.15);
+      --warning: #f59e0b; --warning-muted: rgba(245, 158, 11, 0.15);
+      --error: #ef4444; --error-muted: rgba(239, 68, 68, 0.15);
+      --glass-bg: rgba(24, 24, 27, 0.8); --glass-border: rgba(255, 255, 255, 0.08);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg-primary); color: var(--text-primary); min-height: 100vh; }
+    body::before { content: ''; position: fixed; inset: 0; background: radial-gradient(circle at 20% 20%, rgba(59,130,246,0.1) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(34,197,94,0.08) 0%, transparent 50%); pointer-events: none; z-index: 0; }
+    .app-layout { display: flex; min-height: 100vh; position: relative; z-index: 1; }
+    .sidebar { width: 260px; background: var(--glass-bg); border-right: 1px solid var(--glass-border); position: fixed; height: 100vh; backdrop-filter: blur(20px); }
+    .sidebar-header { padding: 24px; border-bottom: 1px solid var(--glass-border); }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-icon { width: 40px; height: 40px; background: linear-gradient(135deg, #3b82f6, #8b5cf6); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; color: white; }
+    .brand-name { font-size: 22px; font-weight: 700; }
+    .sidebar-nav { padding: 16px; }
+    .nav-group { margin-bottom: 24px; }
+    .nav-group-title { font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 12px; }
+    .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 12px; border-radius: 8px; color: var(--text-secondary); font-size: 14px; cursor: pointer; transition: all 0.2s; text-decoration: none; }
+    .nav-item:hover { background: var(--accent-muted); color: var(--text-primary); }
+    .nav-item.active { background: var(--accent-muted); color: var(--accent); }
+    .main-content { flex: 1; margin-left: 260px; min-height: 100vh; }
+    .topbar { height: 64px; background: var(--glass-bg); border-bottom: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: space-between; padding: 0 32px; position: sticky; top: 0; backdrop-filter: blur(20px); z-index: 10; }
+    .breadcrumb { display: flex; gap: 8px; font-size: 14px; }
+    .breadcrumb-item { color: var(--text-tertiary); }
+    .breadcrumb-separator { color: var(--text-tertiary); }
+    .breadcrumb-current { color: var(--text-primary); font-weight: 500; }
+    .topbar-actions { display: flex; gap: 12px; align-items: center; }
+    .topbar-btn { width: 40px; height: 40px; background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; transition: all 0.2s; }
+    .topbar-btn:hover { background: var(--bg-elevated); }
+    .user-menu { display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 6px; background: var(--bg-tertiary); border-radius: 10px; cursor: pointer; }
+    .user-avatar { width: 32px; height: 32px; background: linear-gradient(135deg, #6366f1, #8b5cf6); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: white; }
+    .page-content { padding: 32px; }
+    .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; }
+    .page-title { font-size: 32px; font-weight: 700; margin-bottom: 8px; }
+    .page-subtitle { font-size: 15px; color: var(--text-secondary); }
+    .page-actions { display: flex; gap: 12px; }
+    .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+    .stat-card { background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 16px; padding: 24px; }
+    .stat-label { font-size: 14px; color: var(--text-secondary); margin-bottom: 8px; }
+    .stat-value { font-size: 32px; font-weight: 700; }
+    .stat-change { font-size: 13px; margin-top: 8px; }
+    .stat-change.positive { color: var(--success); }
+    .stat-change.warning { color: var(--warning); }
+    .toolbar { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+    .filter-select { padding: 12px 16px; background: var(--bg-tertiary); border: 1px solid var(--glass-border); border-radius: 10px; color: var(--text-primary); font-size: 14px; cursor: pointer; min-width: 280px; }
+    .req-list { display: flex; flex-direction: column; gap: 16px; }
+    .req-card { background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 16px; padding: 24px; transition: all 0.3s; cursor: pointer; }
+    .req-card:hover { border-color: var(--accent-glow); box-shadow: 0 0 30px var(--accent-muted); }
+    .req-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+    .req-info { flex: 1; }
+    .req-id { font-size: 12px; color: var(--text-tertiary); font-family: monospace; margin-bottom: 8px; }
+    .req-name { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+    .req-desc { font-size: 14px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 16px; }
+    .req-meta { display: flex; gap: 20px; font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; flex-wrap: wrap; }
+    .req-actions { display: flex; gap: 12px; padding-top: 16px; border-top: 1px solid var(--glass-border); }
+    .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: 500; }
+    .status-badge.completed { background: var(--success-muted); color: var(--success); }
+    .status-badge.analyzing { background: var(--accent-muted); color: var(--accent); }
+    .status-badge.pending { background: var(--warning-muted); color: var(--warning); }
+    .status-badge.failed { background: var(--error-muted); color: var(--error); }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; border: none; cursor: pointer; transition: all 0.2s; }
+    .btn-primary { background: linear-gradient(135deg, #3b82f6, #6366f1); color: white; }
+    .btn-secondary { background: var(--glass-bg); color: var(--text-primary); border: 1px solid var(--glass-border); }
+    .btn-ghost { background: transparent; color: var(--text-secondary); }
+    .btn-ghost:hover { background: var(--accent-muted); color: var(--accent); }
+    .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 1000; display: flex; flex-direction: column; gap: 12px; }
+    .toast { background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 12px; padding: 16px 20px; display: flex; align-items: center; gap: 12px; animation: slideIn 0.3s ease; }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+    .toast-icon { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+    .toast.success .toast-icon { background: var(--success-muted); color: var(--success); }
+    .toast.info .toast-icon { background: var(--accent-muted); color: var(--accent); }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 1000; }
+    .modal-overlay.show { display: flex; }
+    .modal { background: var(--bg-secondary); border: 1px solid var(--glass-border); border-radius: 16px; width: 90%; max-width: 500px; max-height: 80vh; overflow: hidden; animation: fadeIn 0.2s; }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--glass-border); }
+    .modal-header h3 { font-size: 18px; font-weight: 600; }
+    .modal-close { width: 32px; height: 32px; background: var(--bg-tertiary); border: none; border-radius: 8px; color: var(--text-secondary); font-size: 20px; cursor: pointer; }
+    .modal-close:hover { background: var(--error); color: white; }
+    .modal-body { padding: 24px; overflow-y: auto; max-height: 60vh; }
+    .modal-footer { padding: 16px 24px; border-top: 1px solid var(--glass-border); display: flex; justify-content: flex-end; gap: 12px; }
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
+    .form-input { width: 100%; padding: 12px 16px; background: var(--bg-tertiary); border: 1px solid var(--glass-border); border-radius: 10px; color: var(--text-primary); font-size: 14px; }
+    .form-textarea { width: 100%; padding: 12px 16px; background: var(--bg-tertiary); border: 1px solid var(--glass-border); border-radius: 10px; color: var(--text-primary); font-size: 14px; resize: vertical; min-height: 100px; }
+    @keyframes fadeIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+    @media (max-width: 1200px) { .sidebar { display: none; } .main-content { margin-left: 0; } .stats-row { grid-template-columns: repeat(2, 1fr); } }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="sidebar-header"><div class="brand"><div class="brand-icon">T</div><span class="brand-name">TestGen</span></div></div>
+      <nav class="sidebar-nav">
+        <div class="nav-group"><div class="nav-group-title">概览</div><a href="index.html" class="nav-item">📊 仪表盘</a></div>
+        <div class="nav-group"><div class="nav-group-title">测试管理</div><a href="requirements.html" class="nav-item active">📝 需求管理</a><a href="cases.html" class="nav-item">🧪 测试用例</a><a href="generate.html" class="nav-item">⚡ 生成任务</a></div>
+        <div class="nav-group"><div class="nav-group-title">智能功能</div><a href="rag.html" class="nav-item">🔍 RAG检索</a><a href="prompts.html" class="nav-item">�� 提���词模板</a></div>
+        <div class="nav-group"><div class="nav-group-title">系统</div><a href="config.html" class="nav-item">⚙️ LLM配置</a></div>
+      </nav>
+    </aside>
+    <main class="main-content">
+      <header class="topbar">
+        <div class="breadcrumb"><span class="breadcrumb-item">TestGen</span><span class="breadcrumb-separator">/</span><span class="breadcrumb-current">需求管理</span></div>
+        <div class="topbar-actions">
+          <button class="topbar-btn" onclick="showToast('info', '通知')">🔔</button>
+          <button class="topbar-btn" onclick="showToast('info', '设置')">⚙️</button>
+        </div>
+      </header>
+      <div class="page-content">
+        <div class="page-header">
+          <div><h1 class="page-title">需求管理</h1><p class="page-subtitle">管理和创建测试需求文档</p></div>
+          <div class="page-actions">
+            <button class="btn btn-secondary" onclick="openImportModal()">📥 导入文档</button>
+            <button class="btn btn-primary" onclick="openCreateModal()">➕ 新建需求</button>
+          </div>
+        </div>
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-label">总需求</div><div class="stat-value">156</div><div class="stat-change positive">↑ 12%</div></div>
+          <div class="stat-card"><div class="stat-label">待分析</div><div class="stat-value" style="color:var(--warning)">23</div><div class="stat-change warning">需处理</div></div>
+          <div class="stat-card"><div class="stat-label">分析中</div><div class="stat-value" style="color:var(--accent)">5</div><div class="stat-change">进行中</div></div>
+          <div class="stat-card"><div class="stat-label">已完成</div><div class="stat-value" style="color:var(--success)">128</div><div class="stat-change positive">↑ 8%</div></div>
+        </div>
+        <div class="toolbar">
+          <select class="filter-select" onchange="filterReq(this.value)">
+            <option value="">🔍 选择需求...</option>
+            <option value="REQ-2024-024">REQ-2024-024 用户登录模块功能需求</option>
+            <option value="REQ-2024-023">REQ-2024-023 订单管理模块</option>
+            <option value="REQ-2024-022">REQ-2024-022 支付模块功能需求</option>
+            <option value="REQ-2024-021">REQ-2024-021 会员管理模块</option>
+          </select>
+          <select class="filter-select" onchange="filterStatus(this.value)">
+            <option value="">全部状态</option>
+            <option value="pending">待分析</option>
+            <option value="analyzing">分析中</option>
+            <option value="completed">已完成</option>
+            <option value="failed">分析失败</option>
+          </select>
+        </div>
+        <div class="req-list">
+          <div class="req-card" onclick="viewDetail('REQ-2024-024')">
+            <div class="req-card-header">
+              <div class="req-info"><div class="req-id"># REQ-2024-024</div><div class="req-name">用户登录模块功能需求</div></div>
+              <span class="status-badge completed"><span class="status-dot"></span>已完成</span>
+            </div>
+            <p class="req-desc">包含用户登录、注册、密码找回、手机验证码、第三方OAuth登录等功能模块的完整需求分析与测试用例生成</p>
+            <div class="req-meta"><span>📊 28个用例</span><span>📅 2024-01-15</span><span>👤 admin</span></div>
+            <div class="req-actions">
+              <button class="btn btn-ghost" onclick="event.stopPropagation();viewCases('REQ-2024-024')">📋 查看用例</button>
+              <button class="btn btn-ghost" onclick="event.stopPropagation();analyzeReq('REQ-2024-024')">🔄 重新分析</button>
+              <button class="btn btn-primary" onclick="event.stopPropagation();generateCases('REQ-2024-024')">⚡ 生成用例</button>
+            </div>
+          </div>
+          <div class="req-card" onclick="viewDetail('REQ-2024-023')">
+            <div class="req-card-header">
+              <div class="req-info"><div class="req-id"># REQ-2024-023</div><div class="req-name">订单管理模块</div></div>
+              <span class="status-badge analyzing"><span class="status-dot"></span>分析中</span>
+            </div>
+            <p class="req-desc">订单创建、订单列表、订单详情、订单取消、订单搜索等功能的完整测试需求分析与用例生成</p>
+            <div class="req-meta"><span>📊 35个用例</span><span>📅 2024-01-15</span><span>👤 admin</span></div>
+            <div class="req-actions"><button class="btn btn-ghost" disabled style="opacity:0.5">⏳ 分析进行中...</button></div>
+          </div>
+          <div class="req-card" onclick="viewDetail('REQ-2024-022')">
+            <div class="req-card-header">
+              <div class="req-info"><div class="req-id"># REQ-2024-022</div><div class="req-name">支付模块功能需求</div></div>
+              <span class="status-badge pending">待分析</span>
+            </div>
+            <p class="req-desc">微信支付、支付宝、银联、信用卡等支付方式的功能测试需求分析与用例生成</p>
+            <div class="req-meta"><span>📊 -</span><span>📅 2024-01-14</span><span>👤 admin</span></div>
+            <div class="req-actions">
+              <button class="btn btn-ghost" onclick="event.stopPropagation();deleteReq('REQ-2024-022')">🗑️ 删除</button>
+              <button class="btn btn-primary" onclick="event.stopPropagation();startAnalysis('REQ-2024-022')">🔍 开始分析</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div class="toast-container" id="toastContainer"></div>
+  <div class="modal-overlay" id="modal"><div class="modal"><div class="modal-header"><h3 id="modalTitle"></h3><button class="modal-close" onclick="closeModal()">×</button></div><div class="modal-body" id="modalBody"></div><div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">关闭</button></div></div></div>
+  <script>
+    function navigate(p){window.location.href=p}
+    document.querySelectorAll('.nav-item').forEach(i=>{i.addEventListener('click',e=>{e.preventDefault();navigate(i.getAttribute('href'))})});
+    function showToast(t,m){const c=document.getElementById('toastContainer'),x=document.createElement('div');x.className='toast '+t;x.innerHTML='<div class="toast-icon">'+(t==='success'?'✓':'ℹ')+'</div><span>'+m+'</span>';c.appendChild(x);setTimeout(()=>{x.style.opacity='0';setTimeout(()=>x.remove(),300)},2500)}
+    function filterReq(id){if(id)viewDetail(id)}
+    function filterStatus(s){showToast('info','筛选: '+(s||'全部'))}
+    function viewDetail(id){
+      const r={'_024':{name:'用户登录模块功能需求',status:'已完成',caseCount:28,date:'2024-01-15',desc:'包含用户登录、注册、密码找回、手机验证码、第三方OAuth登录等功能模块。',mods:['用户登录','用户注册','密码找回','验证码登录','第三方OAuth']},'_023':{name:'订单管理模块',status:'分析中',caseCount:35,date:'2024-01-15',desc:'订单创建、订单列表、订单详情、订单取消、订单搜索等。',mods:['订单创建','订单列表','订单详情','订单取消']},'_022':{name:'支付模块功能需求',status:'待分析',caseCount:0,date:'2024-01-14',desc:'微信支付、支付宝、银联、信用卡等支付方式。',mods:['微信支付','支付宝','银联']}};
+      const k=id.slice(-3),d=r[k]||{name:'-',status:'-',caseCount:0,date:'-',desc:'-',mods:[]};
+      document.getElementById('modalTitle').textContent=id;document.getElementById('modalBody').innerHTML='<div style="font-size:18px;font-weight:600;margin-bottom:12px;">'+d.name+'</div><div style="margin-bottom:12px;"><span style="background:var(--accent-muted);color:var(--accent);padding:4px 10px;border-radius:6px;font-size:13px;">'+d.status+'</span></div><p style="color:var(--text-secondary);margin-bottom:12px;line-height:1.6;">'+d.desc+'</p><div><strong>功能模块:</strong></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">'+(d.mods.length?d.mods.map(m=>'<span style="background:var(--bg-tertiary);padding:4px 10px;border-radius:4px;font-size:12px;">'+m+'</span>').join(''):'<span style="color:var(--text-tertiary)">无</span>')+'</div>';
+      document.getElementById('modal').classList.add('show');
+    }
+    function closeModal(){document.getElementById('modal').classList.remove('show')}
+    function openImportModal(){document.getElementById('modalTitle').textContent='导入需求文档';document.getElementById('modalBody').innerHTML='<p style="color:var(--text-secondary);margin-bottom:16px;">支持DOCX、PDF、MD、TXT格式</p><div style="display:flex;gap:12px;margin-bottom:20px;"><span style="background:var(--accent-muted);color:var(--accent);padding:8px 16px;border-radius:8px;">📄 DOCX</span><span style="background:var(--accent-muted);color:var(--accent);padding:8px 16px;border-radius:8px;">📄 PDF</span><span style="background:var(--accent-muted);color:var(--accent);padding:8px 16px;border-radius:8px;">📄 MD</span><span style="background:var(--accent-muted);color:var(--accent);padding:8px 16px;border-radius:8px;">📄 TXT</span></div><div class="form-group"><label class="form-label">选择文件</label><input type="file" class="form-input"></div>';document.getElementById('modal').classList.add('show');}
+    function openCreateModal(){document.getElementById('modalTitle').textContent='新建需求';document.getElementById('modalBody').innerHTML='<div class="form-group"><label class="form-label">需求名称</label><input type="text" class="form-input" placeholder="输入需求名称"></div><div class="form-group"><label class="form-label">需求描述</label><textarea class="form-textarea" placeholder="输入需求描述或粘贴内容"></textarea></div>';document.getElementById('modal').classList.add('show');}
+    function viewCases(id){showToast('success','查看用例: '+id);setTimeout(()=>navigate('cases.html'),500)}
+    function analyzeReq(id){showToast('info','重新分析: '+id)}
+    function generateCases(id){showToast('success','开始生成用例: '+id);setTimeout(()=>navigate('generate.html'),500)}
+    function startAnalysis(id){showToast('info','开始分析: '+id)}
+    function deleteReq(id){if(confirm('删除 '+id+' ?')){showToast('success','已删除')}}
+  </script>
+</body>
+</html>

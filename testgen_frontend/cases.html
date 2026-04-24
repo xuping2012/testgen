@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>测试用例 - TestGen</title>
+  <style>
+    :root {
+      --bg-primary: #09090b; --bg-secondary: #18181b; --bg-tertiary: #27272a; --bg-elevated: #1c1c1f;
+      --text-primary: #fafafa; --text-secondary: #a1a1aa; --text-tertiary: #71717a;
+      --accent: #3b82f6; --accent-muted: rgba(59, 130, 246, 0.15); --accent-glow: rgba(59, 130, 246, 0.4);
+      --success: #22c55e; --success-muted: rgba(34, 197, 94, 0.15);
+      --warning: #f59e0b; --warning-muted: rgba(245, 158, 11, 0.15);
+      --error: #ef4444; --error-muted: rgba(239, 68, 68, 0.15);
+      --glass-bg: rgba(24, 24, 27, 0.8); --glass-border: rgba(255, 255, 255, 0.08);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg-primary); color: var(--text-primary); min-height: 100vh; }
+    body::before { content: ''; position: fixed; inset: 0; background: radial-gradient(circle at 20% 20%, rgba(59,130,246,0.1) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(34,197,94,0.08) 0%, transparent 50%); pointer-events: none; z-index: 0; }
+    .app-layout { display: flex; min-height: 100vh; position: relative; z-index: 1; }
+    .sidebar { width: 260px; background: var(--glass-bg); border-right: 1px solid var(--glass-border); position: fixed; height: 100vh; backdrop-filter: blur(20px); }
+    .sidebar-header { padding: 24px; border-bottom: 1px solid var(--glass-border); }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-icon { width: 40px; height: 40px; background: linear-gradient(135deg, #3b82f6, #8b5cf6); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; color: white; }
+    .brand-name { font-size: 22px; font-weight: 700; }
+    .sidebar-nav { padding: 16px; }
+    .nav-group { margin-bottom: 24px; }
+    .nav-group-title { font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 12px; }
+    .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 12px; border-radius: 8px; color: var(--text-secondary); font-size: 14px; cursor: pointer; transition: all 0.2s; text-decoration: none; }
+    .nav-item:hover { background: var(--accent-muted); color: var(--text-primary); }
+    .nav-item.active { background: var(--accent-muted); color: var(--accent); }
+    .main-content { flex: 1; margin-left: 260px; min-height: 100vh; }
+    .topbar { height: 64px; background: var(--glass-bg); border-bottom: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: space-between; padding: 0 32px; position: sticky; top: 0; backdrop-filter: blur(20px); z-index: 10; }
+    .breadcrumb { display: flex; gap: 8px; font-size: 14px; }
+    .breadcrumb-item { color: var(--text-tertiary); }
+    .breadcrumb-separator { color: var(--text-tertiary); }
+    .breadcrumb-current { color: var(--text-primary); font-weight: 500; }
+    .topbar-actions { display: flex; gap: 12px; align-items: center; }
+    .topbar-btn { width: 40px; height: 40px; background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; }
+    .user-menu { display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 6px; background: var(--bg-tertiary); border-radius: 10px; cursor: pointer; }
+    .user-avatar { width: 32px; height: 32px; background: linear-gradient(135deg, #6366f1, #8b5cf6); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: white; }
+    .page-content { padding: 32px; }
+    .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; }
+    .page-title { font-size: 32px; font-weight: 700; margin-bottom: 8px; }
+    .page-subtitle { font-size: 15px; color: var(--text-secondary); }
+    .page-actions { display: flex; gap: 12px; }
+    .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+    .stat-card { background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 16px; padding: 24px; }
+    .stat-label { font-size: 14px; color: var(--text-secondary); margin-bottom: 8px; }
+    .stat-value { font-size: 32px; font-weight: 700; }
+    .stat-change { font-size: 13px; margin-top: 8px; }
+    .toolbar { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+    .filter-select { padding: 12px 16px; background: var(--bg-tertiary); border: 1px solid var(--glass-border); border-radius: 10px; color: var(--text-primary); font-size: 14px; cursor: pointer; min-width: 180px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 24px; padding-bottom: 12px; border-bottom: 1px solid var(--glass-border); }
+    .tab { padding: 10px 20px; border-radius: 8px; color: var(--text-secondary); cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; }
+    .tab:hover { background: var(--bg-tertiary); }
+    .tab.active { background: var(--accent); color: white; }
+    .batch-bar { display: flex; align-items: center; gap: 12px; padding: 16px 20px; background: var(--glass-bg); border-radius: 12px; margin-bottom: 20px; }
+    .batch-label { color: var(--text-secondary); margin-right: 12px; font-weight: 500; }
+    .batch-btn { padding: 10px 18px; border-radius: 8px; font-size: 13px; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--glass-border); cursor: pointer; }
+    .batch-btn:hover { background: var(--accent); color: white; }
+    .case-table { background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 16px; overflow: hidden; }
+    .table-header { display: grid; grid-template-columns: 40px 80px 100px 1fr 60px 60px 80px 120px; gap: 8px; padding: 14px 20px; background: var(--bg-tertiary); border-bottom: 1px solid var(--glass-border); font-size: 12px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; }
+    .table-body { max-height: 500px; overflow-y: auto; }
+    .table-row { display: grid; grid-template-columns: 40px 80px 100px 1fr 60px 60px 80px 120px; gap: 8px; padding: 16px 20px; border-bottom: 1px solid var(--glass-border); align-items: center; transition: all 0.2s; cursor: pointer; }
+    .table-row:hover { background: var(--accent-muted); }
+    .checkbox { width: 18px; height: 18px; accent-color: var(--accent); }
+    .case-id { font-family: monospace; font-size: 13px; color: var(--text-tertiary); }
+    .case-module { font-size: 13px; font-weight: 500; }
+    .case-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .case-desc { font-size: 12px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .priority-badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+    .priority-badge.p0 { background: var(--error); color: white; }
+    .priority-badge.p1 { background: var(--warning); color: black; }
+    .priority-badge.p2 { background: var(--bg-tertiary); color: var(--text-primary); }
+    .confidence-badge { font-size: 14px; font-weight: 600; }
+    .confidence-badge.a { color: var(--success); }
+    .confidence-badge.b { color: var(--accent); }
+    .confidence-badge.c { color: var(--warning); }
+    .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 16px; font-size: 13px; font-weight: 500; }
+    .status-badge.pending { background: var(--warning-muted); color: var(--warning); }
+    .status-badge.approved { background: var(--success-muted); color: var(--success); }
+    .status-badge.rejected { background: var(--error-muted); color: var(--error); }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .action-group { display: flex; gap: 6px; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; border: none; cursor: pointer; transition: all 0.2s; }
+    .btn-primary { background: linear-gradient(135deg, #3b82f6, #6366f1); color: white; }
+    .btn-secondary { background: var(--glass-bg); color: var(--text-primary); border: 1px solid var(--glass-border); }
+    .btn-ghost { background: transparent; color: var(--text-secondary); }
+    .btn-ghost:hover { background: var(--accent-muted); color: var(--accent); }
+    .btn-success { background: var(--success); color: white; }
+    .btn-danger { background: var(--error); color: white; }
+    .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 1000; }
+    .toast { background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 12px; padding: 16px 20px; display: flex; align-items: center; gap: 12px; animation: slideIn 0.3s ease; }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+    .toast-icon { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+    .toast.success .toast-icon { background: var(--success-muted); color: var(--success); }
+    .toast.info .toast-icon { background: var(--accent-muted); color: var(--accent); }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 1000; }
+    .modal-overlay.show { display: flex; }
+    .modal { background: var(--bg-secondary); border: 1px solid var(--glass-border); border-radius: 16px; width: 90%; max-width: 600px; max-height: 80vh; overflow: hidden; }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--glass-border); }
+    .modal-header h3 { font-size: 18px; font-weight: 600; }
+    .modal-close { width: 32px; height: 32px; background: var(--bg-tertiary); border: none; border-radius: 8px; color: var(--text-secondary); font-size: 20px; cursor: pointer; }
+    .modal-close:hover { background: var(--error); color: white; }
+    .modal-body { padding: 24px; overflow-y: auto; max-height: 60vh; }
+    .modal-footer { padding: 16px 24px; border-top: 1px solid var(--glass-border); display: flex; justify-content: flex-end; }
+    .detail-row { display: flex; margin-bottom: 16px; }
+    .detail-label { width: 80px; font-size: 13px; color: var(--text-tertiary); }
+    .detail-value { font-size: 14px; flex: 1; }
+    .detail-section { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--glass-border); }
+    .detail-section-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+    .detail-steps { background: var(--bg-tertiary); border-radius: 8px; padding: 16px; }
+    .detail-step { font-size: 13px; margin-bottom: 8px; }
+    @media (max-width: 1200px) { .sidebar { display: none; } .main-content { margin-left: 0; } .stats-row { grid-template-columns: repeat(2, 1fr); } }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="sidebar-header"><div class="brand"><div class="brand-icon">T</div><span class="brand-name">TestGen</span></div></div>
+      <nav class="sidebar-nav">
+        <div class="nav-group"><div class="nav-group-title">概览</div><a href="index.html" class="nav-item">📊 仪表盘</a></div>
+        <div class="nav-group"><div class="nav-group-title">测试管理</div><a href="requirements.html" class="nav-item">📝 需求管理</a><a href="cases.html" class="nav-item active">🧪 测试用例</a><a href="generate.html" class="nav-item">⚡ 生成任务</a></div>
+        <div class="nav-group"><div class="nav-group-title">智能功能</div><a href="rag.html" class="nav-item">🔍 RAG检索</a><a href="prompts.html" class="nav-item">📋 提示词模板</a></div>
+        <div class="nav-group"><div class="nav-group-title">系统</div><a href="config.html" class="nav-item">⚙️ LLM配置</a></div>
+      </nav>
+    </aside>
+    <main class="main-content">
+      <header class="topbar">
+        <div class="breadcrumb"><span class="breadcrumb-item">TestGen</span><span class="breadcrumb-separator">/</span><span class="breadcrumb-current">测试用例</span></div>
+        <div class="topbar-actions">
+          <button class="topbar-btn" onclick="showToast('info', '通知')">🔔</button>
+          <button class="topbar-btn" onclick="showToast('info', '设置')">⚙️</button>
+        </div>
+      </header>
+      <div class="page-content">
+        <div class="page-header">
+          <div><h1 class="page-title">测试用例</h1><p class="page-subtitle">管理AI生成的测试用例</p></div>
+          <div class="page-actions">
+            <button class="btn btn-secondary" onclick="importCases()">📥 导入</button>
+            <button class="btn btn-primary" onclick="exportCases()">📤 导出已评审用例</button>
+          </div>
+        </div>
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-label">总用例数</div><div class="stat-value">156</div><div class="stat-change">↑ 15%</div></div>
+          <div class="stat-card"><div class="stat-label">待评审</div><div class="stat-value" style="color:var(--warning)">12</div><div class="stat-change">需处理</div></div>
+          <div class="stat-card"><div class="stat-label">已通过</div><div class="stat-value" style="color:var(--success)">128</div><div class="stat-change">↑ 12%</div></div>
+          <div class="stat-card"><div class="stat-label">已拒绝</div><div class="stat-value" style="color:var(--error)">16</div><div class="stat-change">-3%</div></div>
+        </div>
+        <div class="tabs">
+          <a class="tab active" onclick="filterTab(this,'all')">全部(156)</a>
+          <a class="tab" onclick="filterTab(this,'pending')">待评审(12)</a>
+          <a class="tab" onclick="filterTab(this,'approved')">已通过(128)</a>
+          <a class="tab" onclick="filterTab(this,'rejected')">已拒绝(16)</a>
+        </div>
+        <div class="toolbar">
+          <select class="filter-select" onchange="filterReq(this.value)"><option value="">🔍 选择需求</option><option value="REQ-2024-024">REQ-2024-024 用户登录</option><option value="REQ-2024-023">REQ-2024-023 订单</option></select>
+          <select class="filter-select" onchange="filterPriority(this.value)"><option value="">全部优先级</option><option value="p0">P0</option><option value="p1">P1</option><option value="p2">P2</option></select>
+          <select class="filter-select" onchange="filterStatus(this.value)"><option value="">全部状态</option><option value="pending">待评审</option><option value="approved">已通过</option><option value="rejected">已拒绝</option></select>
+        </div>
+        <div class="batch-bar">
+          <span class="batch-label">批量操作:</span>
+          <button class="batch-btn" onclick="batchApprove()">✓ 批量通过</button>
+          <button class="batch-btn" onclick="batchReject()">✕ 批量拒绝</button>
+          <button class="batch-btn" onclick="batchExport()">📤 批量导出</button>
+        </div>
+        <div class="case-table">
+          <div class="table-header"><input type="checkbox"><div>用例ID</div><div>模块</div><div>用例名称</div><div>优先级</div><div>置信度</div><div>状态</div><div>操作</div></div>
+          <div class="table-body">
+            <div class="table-row">
+              <input type="checkbox" class="checkbox">
+              <div class="case-id">#TC-0892</div>
+              <div class="case-module">用户模块</div>
+              <div><div class="case-name">手机号格式验证</div><div class="case-desc">验证138/139/150/151开头的11位纯数字手机号</div></div>
+              <div><span class="priority-badge p0">P0</span></div>
+              <div><span class="confidence-badge a">A</span></div>
+              <div><span class="status-badge pending"><span class="status-dot"></span>待评审</span></div>
+              <div class="action-group">
+                <button class="btn btn-success" onclick="handleCase('TC-0892','approve')">✓</button>
+                <button class="btn btn-danger" onclick="handleCase('TC-0892','reject')">✕</button>
+                <button class="btn btn-ghost" onclick="viewDetail('TC-0892')">👁</button>
+              </div>
+            </div>
+            <div class="table-row">
+              <input type="checkbox" class="checkbox">
+              <div class="case-id">#TC-0893</div>
+              <div class="case-module">用户模块</div>
+              <div><div class="case-name">密码强度校验</div><div class="case-desc">验证密码包含大小写字母、数字和特殊字��</div></div>
+              <div><span class="priority-badge p1">P1</span></div>
+              <div><span class="confidence-badge b">B</span></div>
+              <div><span class="status-badge approved">已通过</span></div>
+              <div class="action-group">
+                <button class="btn btn-ghost" onclick="viewDetail('TC-0893')">👁</button>
+                <button class="btn btn-ghost" onclick="editCase('TC-0893')">✎</button>
+              </div>
+            </div>
+            <div class="table-row">
+              <input type="checkbox" class="checkbox">
+              <div class="case-id">#TC-0889</div>
+              <div class="case-module">订单模块</div>
+              <div><div class="case-name">订单创建成功流程</div><div class="case-desc">验证选择商品、加入购物车、提交订单的完整流程</div></div>
+              <div><span class="priority-badge p0">P0</span></div>
+              <div><span class="confidence-badge a">A</span></div>
+              <div><span class="status-badge approved">已通过</span></div>
+              <div class="action-group">
+                <button class="btn btn-ghost" onclick="viewDetail('TC-0889')">👁</button>
+                <button class="btn btn-ghost" onclick="editCase('TC-0889')">✎</button>
+              </div>
+            </div>
+            <div class="table-row">
+              <input type="checkbox" class="checkbox">
+              <div class="case-id">#TC-0888</div>
+              <div class="case-module">支付模块</div>
+              <div><div class="case-name">微信支付成功</div><div class="case-desc">验证微信扫码支付成功的完整流程和回调处理</div></div>
+              <div><span class="priority-badge p0">P0</span></div>
+              <div><span class="confidence-badge b">B</span></div>
+              <div><span class="status-badge pending"><span class="status-dot"></span>待评审</span></div>
+              <div class="action-group">
+                <button class="btn btn-success" onclick="handleCase('TC-0888','approve')">✓</button>
+                <button class="btn btn-danger" onclick="handleCase('TC-0888','reject')">✕</button>
+                <button class="btn btn-ghost" onclick="viewDetail('TC-0888')">👁</button>
+              </div>
+            </div>
+            <div class="table-row">
+              <input type="checkbox" class="checkbox">
+              <div class="case-id">#TC-0875</div>
+              <div class="case-module">会员模块</div>
+              <div><div class="case-name">积分充值失败</div><div class="case-desc">验证积分充值失败时余额不变</div></div>
+              <div><span class="priority-badge p2">P2</span></div>
+              <div><span class="confidence-badge c">C</span></div>
+              <div><span class="status-badge rejected">已拒绝</span></div>
+              <div class="action-group">
+                <button class="btn btn-ghost" onclick="viewDetail('TC-0875')">👁</button>
+                <button class="btn btn-ghost" onclick="retryCase('TC-0875')">↺</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div class="toast-container" id="toastContainer"></div>
+  <div class="modal-overlay" id="modal"><div class="modal"><div class="modal-header"><h3>用例详情 <span id="modalId"></span></h3><button class="modal-close" onclick="closeModal()">×</button></div><div class="modal-body" id="modalBody"></div><div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">关闭</button></div></div></div>
+  <script>
+    function navigate(p){window.location.href=p}
+    document.querySelectorAll('.nav-item').forEach(i=>{i.addEventListener('click',e=>{e.preventDefault();navigate(i.getAttribute('href'))})});
+    function showToast(t,m){const c=document.getElementById('toastContainer'),x=document.createElement('div');x.className='toast '+t;x.innerHTML='<div class="toast-icon">'+(t==='success'?'✓':'ℹ')+'</div><span>'+m+'</span>';c.appendChild(x);setTimeout(()=>{x.style.opacity='0';setTimeout(()=>x.remove(),300)},2500)}
+    function filterReq(q){showToast('info','需求: '+(q||'全部'))}
+    function filterPriority(p){showToast('info','优先级: '+(p||'全部'))}
+    function filterStatus(s){showToast('info','状态: '+(s||'全部'))}
+    function filterTab(el,t){document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));el.classList.add('active');showToast('info','筛选: '+t)}
+    function batchApprove(){const n=document.querySelectorAll('.checkbox:checked').length;if(n===0){showToast('error','请先选择用例');return}showToast('success','批量通过 '+n+' 个用例')}
+    function batchReject(){const n=document.querySelectorAll('.checkbox:checked').length;if(n===0){showToast('error','请先选择用例');return}showToast('info','批量拒绝 '+n+' 个用例')}
+    function batchExport(){showToast('success','批量导出')}
+    function handleCase(id,a){showToast(a==='approve'?'success':'info','用例 '+id+' 已'+(a==='approve'?'通过':'拒绝'))}
+    function importCases(){showToast('info','导入用例，支持 Excel/JSON')}
+    function exportCases(){showToast('info','导出已评审用例')}
+    function editCase(id){showToast('info','编辑用例: '+id)}
+    function retryCase(id){showToast('info','重新生成用例: '+id)}
+    function viewDetail(id){
+      const c={'_0892':{name:'手机号格式验证',module:'用户模块',priority:'P0',confidence:'A',status:'待评审',desc:'验证138/139/150/151开头的11位纯数字手机号',precond:['用户未登录','已打开注册页面'],steps:['输入有效手机号13812345678','点击注册按钮','验证提示注册成功','输入无效手机号138','验证提示手机号格式错误'],expected:['注册成功跳转首页','提示手机号格式错误']},'_0893':{name:'密码强度校验',module:'用户模块',priority:'P1',confidence:'B',status:'已通过',desc:'验证密码包含大小写字母、数字和特殊字符',precond:['用户未登录','已打开注册页面'],steps:['输入弱密码abc123','验证提示密码强度不足','输入强密码Abc123!@#','验证提示密码强度OK'],expected:['提示密码强度不足','允许提交']},'_0889':{name:'订单创建成功流程',module:'订单模块',priority:'P0',confidence:'A',status:'已通过',desc:'验证选择商品、加入购物车、提交订单的完整流程',precond:['用户已登录','购物车有商品'],steps:['浏览商品列表','点击加入购物车','进入购物车','点击提交订单','选择支付方式','确认支付'],expected:['订单创建成功','生成订单号']},'_0888':{name:'微信支付成功',module:'支付模块',priority:'P0',confidence:'B',status:'待评审',desc:'验证微信扫码支付成功的完整流程和回调处理',precond:['用户已登录','已创建待支付订单'],steps:['创建订单','选择微信支付','打开微信扫码','扫描二维码','输入支付密码','确认支付'],expected:['支付成功','订单状态更新']},'_0875':{name:'积分充值失败',module:'会员模块',priority:'P2',confidence:'C',status:'已拒绝',desc:'验证积分充值失败时余额不变',precond:['用户已登录','账户余额100积分'],steps:['充值输入-50','点击充值','提示充值失败'],expected:['余额保持100','提示错误信息']}};
+      const k=id.slice(-4),d=c[k]||{name:'-',module:'-',priority:'-',confidence:'-',status:'-',desc:'-',precond:[],steps:[],expected:[]};
+      document.getElementById('modalId').textContent=id;document.getElementById('modalBody').innerHTML='<div class="detail-row"><span class="detail-label">用例名称</span><span class="detail-value">'+d.name+'</span></div><div class="detail-row"><span class="detail-label">模块</span><span class="detail-value">'+d.module+'</span></div><div class="detail-row"><span class="detail-label">优先级</span><span class="detail-value">'+d.priority+'</span></div><div class="detail-row"><span class="detail-label">置信度</span><span class="detail-value">'+d.confidence+'</span></div><div class="detail-row"><span class="detail-label">状态</span><span class="detail-value">'+d.status+'</span></div><div class="detail-row"><span class="detail-label">描述</span><span class="detail-value">'+d.desc+'</span></div><div class="detail-section"><div class="detail-section-title">前置条件</div><div class="detail-steps">'+d.precond.map((s,i)=>'<div class="detail-step">'+(i+1)+'. '+s+'</div>').join('')+'</div></div><div class="detail-section"><div class="detail-section-title">测试步骤</div><div class="detail-steps">'+d.steps.map((s,i)=>'<div class="detail-step">'+(i+1)+'. '+s+'</div>').join('')+'</div></div><div class="detail-section"><div class="detail-section-title">预期结果</div><div class="detail-steps">'+d.expected.map((s,i)=>'<div class="detail-step">'+(i+1)+'. '+s+'</div>').join('')+'</div></div>';
+      document.getElementById('modal').classList.add('show');
+    }
+    function closeModal(){document.getElementById('modal').classList.remove('show')}
+  </script>
+</body>
+</html>

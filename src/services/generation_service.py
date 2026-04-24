@@ -818,6 +818,14 @@ class GenerationService:
             # 同步到数据库
             self._sync_task_to_db(task)
 
+    def _check_task_cancelled(self, task_id: str) -> bool:
+        """检查任务是否已被取消"""
+        task = self.get_task(task_id)
+        if task and task.status == int(TaskStatus.CANCELLED):
+            logging.info("[GenerationService] 任务 %s 已被取消，停止后续处理", task_id)
+            return True
+        return False
+
     def complete_task(self, task_id: str, result: Dict[str, Any]):
         """标记任务完成"""
         task = self.get_task(task_id)
@@ -2166,8 +2174,15 @@ class GenerationService:
                 else:
                     self.update_progress(task_id, 35.0, "⚠️ 向量库未初始化，跳过RAG召回")
 
+                # 检查任务是否已取消
+                if self._check_task_cancelled(task_id):
+                    return
+
                 # ========== 步骤2: 按ITEM分批生成 ==========
                 for idx, item in enumerate(items, 1):
+                    # 每个ITEM生成前检查取消状态
+                    if self._check_task_cancelled(task_id):
+                        return
                     item_title = item.get("title", item.get("name", f"模块{idx}"))
                     item_points = item.get("points", [])
 
@@ -2226,6 +2241,10 @@ class GenerationService:
                         )
                         # 继续处理下一个ITEM，不中断整个流程
 
+                # 所有ITEM处理完成后检查取消状态
+                if self._check_task_cancelled(task_id):
+                    return
+
                 # ========== 步骤3: 质量检查 ==========
                 self.update_progress(
                     task_id,
@@ -2274,6 +2293,10 @@ class GenerationService:
                     quality_report = self.run_quality_check(
                         all_generated_cases, test_plan_data
                     )
+
+                # 保存结果前检查取消状态
+                if self._check_task_cancelled(task_id):
+                    return
 
                 if all_generated_cases:
                     try:
@@ -2555,6 +2578,10 @@ class GenerationService:
                     print(f"[置信度/引用] 计算失败，忽略继续: {e}")
                     confidence_stats = {"error": str(e)}
                     citation_batch_stats = {"error": str(e)}
+
+                # 保存结果前检查取消状态
+                if self._check_task_cancelled(task_id):
+                    return
 
                 # 阶段4: 直接保存用例到数据库（不再暂存）
                 self.update_progress(task_id, 92.0, "💾 正在保存测试用例到数据库...")

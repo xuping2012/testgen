@@ -3113,7 +3113,19 @@ def cancel_task(task_id):
                 task_model.status = int(TaskStatus.CANCELLED)
                 task_model.message = "用户已终止生成"
                 task_model.completed_at = datetime.utcnow()
-                db_session.commit()
+
+            # 更新需求状态为已取消
+            from src.database.models import Requirement, RequirementStatus
+
+            requirement = (
+                db_session.query(Requirement).get(task.requirement_id)
+                if task.requirement_id
+                else None
+            )
+            if requirement:
+                requirement.status = RequirementStatus.CANCELLED_GENERATION
+
+            db_session.commit()
 
         return jsonify({"message": "任务已终止"})
 
