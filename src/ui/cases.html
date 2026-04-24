@@ -378,6 +378,9 @@
         .confidence-D { background: rgba(255, 0, 85, 0.15); color: #ff4466; border-color: rgba(255, 0, 85, 0.4); }
         .confidence-none { background: rgba(136,136,136,0.1); color: #666; border-color: rgba(136,136,136,0.3); }
 
+        /* RAG参考标签 */
+        .rag-ref-badge { display: inline-block; }
+
         /* 低置信度行背景 */
         tr.row-confidence-C td { background: rgba(255, 238, 0, 0.04) !important; }
         tr.row-confidence-D td { background: rgba(255, 0, 85, 0.05) !important; }
@@ -1155,15 +1158,15 @@
                     <div class="stat-label">总用例数</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-value" id="draftCases">0</div>
+                    <div class="stat-value" id="pendingCases">0</div>
                     <div class="stat-label">待评审</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-value" id="pendingCases">0</div>
-                    <div class="stat-label">已评审</div>
+                    <div class="stat-value" id="approvedCases">0</div>
+                    <div class="stat-label">已通过</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-value" id="approvedCases">0</div>
+                    <div class="stat-value" id="rejectedCases">0</div>
                     <div class="stat-label">已拒绝</div>
                 </div>
             </div>
@@ -1181,9 +1184,10 @@
                         <label>状态:</label>
                         <select id="filterStatus">
                             <option value="">全部状态</option>
-                            <option value="pending_review">待评审</option>
-                            <option value="approved">已评审</option>
-                            <option value="rejected">已拒绝</option>
+                            <option value="1">草稿</option>
+                            <option value="2">待评审</option>
+                            <option value="3">已通过</option>
+                            <option value="4">已拒绝</option>
                         </select>
                     </div>
                     <div class="filter-item">
@@ -1194,17 +1198,6 @@
                             <option value="P1">P1</option>
                             <option value="P2">P2</option>
                             <option value="P3">P3</option>
-                        </select>
-                    </div>
-                    <div class="filter-item">
-                        <label>置信度:</label>
-                        <select id="filterConfidence">
-                            <option value="">全部</option>
-                            <option value="A">A级（高）</option>
-                            <option value="B">B级（较高）</option>
-                            <option value="C">C级（中）</option>
-                            <option value="D">D级（低）</option>
-                            <option value="无">无置信度</option>
                         </select>
                     </div>
                     <div class="filter-item">
@@ -1230,14 +1223,13 @@
                             <th>用例标题</th>
                             <th>优先级</th>
                             <th>状态</th>
-                            <th class="sortable" onclick="toggleConfidenceSort()">置信度 <span id="confidenceSortArrow" class="sort-arrow">⇅</span></th>
                             <th>关联需求</th>
                             <th>操作</th>
                         </tr>
                     </thead>
                     <tbody id="caseList">
                         <tr>
-                            <td colspan="9" class="empty-state">
+                            <td colspan="8" class="empty-state">
                                 <div class="empty-state-icon">◆</div>
                                 <p>暂无测试用例</p>
                             </td>
@@ -1254,6 +1246,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3>// 用例详情</h3>
+                <span id="ragReferenceLabel" class="rag-ref-badge" style="display:none; margin-left: 10px; padding: 4px 10px; background: rgba(0, 245, 255, 0.15); color: var(--neon-cyan); border: 1px solid rgba(0, 245, 255, 0.3); border-radius: 4px; font-size: 12px;">RAG参考</span>
                 <button class="close-btn" onclick="closeModal()">&times;</button>
             </div>
             <div class="modal-body">
@@ -1373,16 +1366,6 @@
         let selectedCases = new Set();
         let currentCaseId = null;
         let confirmCallback = null;
-        let confidenceSortOrder = ''; // '' | 'asc' | 'desc'
-
-        function toggleConfidenceSort() {
-            if (confidenceSortOrder === '') confidenceSortOrder = 'desc';
-            else if (confidenceSortOrder === 'desc') confidenceSortOrder = 'asc';
-            else confidenceSortOrder = '';
-            const arrow = document.getElementById('confidenceSortArrow');
-            if (arrow) arrow.textContent = confidenceSortOrder === 'desc' ? '↓' : confidenceSortOrder === 'asc' ? '↑' : '⇅';
-            loadCases(1);
-        }
 
         // 自定义确认弹窗
         function showConfirm(message, onConfirm) {
@@ -1431,16 +1414,11 @@
                 const requirementId = document.getElementById('filterRequirement').value;
                 const status = document.getElementById('filterStatus').value;
                 const priority = document.getElementById('filterPriority').value;
-                const confidenceLevel = document.getElementById('filterConfidence').value;
 
                 let url = `/api/cases?page=${page}&limit=${currentLimit}`;
                 if (requirementId) url += `&requirement_id=${requirementId}`;
                 if (status) url += `&status=${status}`;
                 if (priority) url += `&priority=${priority}`;
-                if (confidenceLevel) url += `&confidence_level=${encodeURIComponent(confidenceLevel)}`;
-                if (confidenceSortOrder) {
-                    url += `&sort=confidence_score&order=${confidenceSortOrder}`;
-                }
 
                 const response = await fetch(url);
                 const data = await response.json();
@@ -1457,9 +1435,9 @@
                 const response = await fetch('/api/cases/stats');
                 const stats = await response.json();
                 document.getElementById('totalCases').textContent = stats.total || 0;
-                document.getElementById('draftCases').textContent = stats.pending_review || 0;
-                document.getElementById('pendingCases').textContent = stats.approved || 0;
-                document.getElementById('approvedCases').textContent = stats.rejected || 0;
+                document.getElementById('pendingCases').textContent = stats.pending_review || 0;
+                document.getElementById('approvedCases').textContent = stats.approved || 0;
+                document.getElementById('rejectedCases').textContent = stats.rejected || 0;
             } catch (error) {
                 console.error('加载统计失败:', error);
             }
@@ -1470,7 +1448,7 @@
             if (cases.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="9" class="empty-state">
+                        <td colspan="8" class="empty-state">
                             <div class="empty-state-icon">◆</div>
                             <p>暂无测试用例</p>
                         </td>
@@ -1488,7 +1466,6 @@
                     : c.confidence_level === 'D'
                     ? `<span style="font-size:10px;color:#ff4466;margin-left:4px;">⚠️ 需人工审核</span>`
                     : '';
-                // 低置信度用例默认不勾选
                 const checkboxAttrs = `class="checkbox" value="${c.id}" onchange="toggleSelect(${c.id})"`;
                 return `
                 <tr class="${rowClass}">
@@ -1498,27 +1475,19 @@
                     <td>${c.name}${lowConfTag}</td>
                     <td><span class="priority-badge priority-${c.priority}">${c.priority}</span></td>
                     <td><span class="status-badge status-${c.status}">${getStatusText(c.status)}</span></td>
-                    <td>${confBadge}</td>
                     <td>${c.requirement_title || '-'}</td>
                     <td>
                         <div class="action-btns">
+                            <button class="action-btn" onclick="viewCase(${c.id})" title="查看" aria-label="查看">👁️</button>
+                            <button class="action-btn" onclick="editCase(${c.id})" title="编辑" aria-label="编辑">✏️</button>
                             ${c.status === 2 ? `
-                                <button class="action-btn" onclick="viewCase(${c.id})" title="查看" aria-label="查看">👁️</button>
-                                <button class="action-btn" onclick="editCase(${c.id})" title="编辑" aria-label="编辑">✏️</button>
                                 <button class="action-btn approve" onclick="approveCase(${c.id})" title="通过" aria-label="通过">✓</button>
                                 <button class="action-btn reject" onclick="rejectCase(${c.id})" title="拒绝" aria-label="拒绝">✗</button>
-                                <button class="action-btn" onclick="deleteCase(${c.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="删除" aria-label="删除">🗑️</button>
                             ` : ''}
-                            ${c.status === 3 ? `
-                                <button class="action-btn" onclick="viewCase(${c.id})" title="查看" aria-label="查看">👁️</button>
+                            ${(c.status === 3 || c.status === 4) ? `
                                 <button class="action-btn" onclick="activateCase(${c.id})" title="激活" aria-label="激活">↻</button>
-                                <button class="action-btn" onclick="deleteCase(${c.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="删除" aria-label="删除">🗑️</button>
                             ` : ''}
-                            ${c.status === 4 ? `
-                                <button class="action-btn" onclick="viewCase(${c.id})" title="查看" aria-label="查看">👁️</button>
-                                <button class="action-btn" onclick="activateCase(${c.id})" title="激活" aria-label="激活">↻</button>
-                                <button class="action-btn" onclick="deleteCase(${c.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="删除" aria-label="删除">🗑️</button>
-                            ` : ''}
+                            <button class="action-btn" onclick="deleteCase(${c.id})" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="删除" aria-label="删除">🗑️</button>
                         </div>
                     </td>
                 </tr>`;
@@ -1764,7 +1733,9 @@
                 document.getElementById('caseModule').value = c.module;
                 document.getElementById('caseName').value = c.name;
                 document.getElementById('casePriority').value = c.priority;
-                document.getElementById('caseStatus').value = c.status;
+                // 将整数状态转换为字符串值以匹配select选项
+                const statusMap = { 1: 'pending_review', 2: 'pending_review', 3: 'approved', 4: 'rejected' };
+                document.getElementById('caseStatus').value = statusMap[c.status] || 'pending_review';
                 document.getElementById('casePreconditions').value = c.preconditions || '';
                 document.getElementById('caseSteps').value = (c.test_steps || []).join('\n');
                 document.getElementById('caseExpected').value = (c.expected_results || []).join('\n');
@@ -1796,6 +1767,13 @@
                     }
                 } else {
                     confPanel.style.display = 'none';
+                }
+
+                // RAG参考标签
+                const ragLabel = document.getElementById('ragReferenceLabel');
+                if (ragLabel) {
+                    ragLabel.textContent = c.rag_context && Object.keys(c.rag_context).length > 0 ? '已引用' : '未引用';
+                    ragLabel.style.display = c.rag_context && Object.keys(c.rag_context).length > 0 ? 'inline-block' : 'none';
                 }
 
                 // 引用来源
@@ -2104,10 +2082,6 @@
             document.getElementById('filterRequirement').value = '';
             document.getElementById('filterStatus').value = '';
             document.getElementById('filterPriority').value = '';
-            document.getElementById('filterConfidence').value = '';
-            confidenceSortOrder = '';
-            const arrow = document.getElementById('confidenceSortArrow');
-            if (arrow) arrow.textContent = '⇅';
             loadCases(1);
         }
 

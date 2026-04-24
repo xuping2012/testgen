@@ -2200,16 +2200,14 @@
                     const hasProcessingTask = processingReqIds.has(req.id);
                     
                     let actionBtn = '';
-                    if (hasProcessingTask) {
-                        actionBtn = `<button class="action-btn" onclick="viewProgress(${req.id})" title="查看进度" aria-label="查看进度">📊</button>`;
-                    } else if (req.status === 1) {
+                    if (req.status === 1) {
                         actionBtn = `<button class="action-btn" onclick="analyzeRequirement(${req.id})" title="分析需求" aria-label="分析需求">🔍</button>`;
                     } else if (req.status === 2) {
                         actionBtn = `<button class="action-btn" disabled style="opacity:0.5;cursor:not-allowed;" title="分析中" aria-label="分析中">⏳</button>`;
                     } else if (req.status === 3) {
                         actionBtn = `<button class="action-btn" onclick="reviewRequirement(${req.id})" title="查看需求分析" aria-label="查看需求分析">📋</button>`;
                     } else if (req.status === 4) {
-                        actionBtn = `<button class="action-btn" onclick="viewProgress(${req.id})" title="查看进度" aria-label="查看进度">📊</button>`;
+                        actionBtn = ``;
                     } else if (req.status === 5) {
                         actionBtn = `<button class="action-btn" onclick="reviewExistingRequirement(${req.id})" title="查看/重新生成" aria-label="查看/重新生成">🔄</button>`;
                     } else if (req.status === 6) {
@@ -2601,34 +2599,42 @@
         let analysisPollIntervals = {};
 
         async function analyzeRequirement(requirementId) {
-            try {
-                showToast('正在启动需求分析...', 'info');
+            // 先显示确认弹窗
+            showConfirm('确定要开始分析此需求吗？分析过程可能需要一些时间。', async () => {
+                try {
+                    showToast('正在启动需求分析...', 'info');
 
-                const response = await fetch(`/api/requirements/${requirementId}/analyze`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
+                    // 立即刷新列表，显示"分析中"状态
+                    loadRequirements(currentPage);
 
-                const data = await response.json();
+                    const response = await fetch(`/api/requirements/${requirementId}/analyze`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
 
-                if (response.ok) {
-                    if (data.analysis_data) {
-                        loadRequirements(currentPage);
-                        showReviewModal(data.analysis_data, data.analyzed_content);
-                        showToast('需求分析完成，请审核后生成用例', 'success');
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        if (data.analysis_data) {
+                            currentRequirementId = requirementId;
+                            loadRequirements(currentPage);
+                            showReviewModal(data.analysis_data, data.analyzed_content);
+                            showToast('需求分析完成，请审核后生成用例', 'success');
+                        } else {
+                            currentRequirementId = requirementId;
+                            loadRequirements(currentPage);
+                            startAnalysisStatusPoll(requirementId);
+                        }
                     } else {
+                        showToast(`分析失败：${data.error || '未知错误'}`, 'error');
                         loadRequirements(currentPage);
-                        startAnalysisStatusPoll(requirementId);
                     }
-                } else {
-                    showToast(`分析失败：${data.error || '未知错误'}`, 'error');
+                } catch (error) {
+                    console.error('分析需求失败:', error);
+                    showToast('分析失败', 'error');
                     loadRequirements(currentPage);
                 }
-            } catch (error) {
-                console.error('分析需求失败:', error);
-                showToast('分析失败', 'error');
-                loadRequirements(currentPage);
-            }
+            });
         }
 
         // 轮询需求分析状态
@@ -2663,6 +2669,7 @@
                     if (reqData.status === 3) { // ANALYZED = 3
                         clearInterval(analysisPollIntervals[requirementId]);
                         delete analysisPollIntervals[requirementId];
+                        currentRequirementId = requirementId;
 
                         if (reqData.analysis_data) {
                             showReviewModal(reqData.analysis_data, reqData.analyzed_content);
@@ -2748,7 +2755,7 @@
                     currentTaskId = data.task_id;
                     showToast('生成任务已启动', 'success');
                     closeReviewModal();
-                    showGenerationProgress(data.task_id);
+                    await loadRequirements(currentPage);
                 } else {
                     showToast(`生成失败：${data.error || '未知错误'}`, 'error');
                 }
@@ -2776,6 +2783,10 @@
 
             // 打开弹窗
             openProgressModal();
+
+            // Phase 1（需求分析和测试规划）已完成，显示为已完成
+            updateWorkflowStep('analysis', 'completed', '✅ 已使用');
+            updateWorkflowStep('plan', 'completed', '✅ 已使用');
 
             // 初始加载进度
             try {
@@ -2903,10 +2914,32 @@
             // 填充评审弹窗数据
             document.getElementById('reviewTaskId').value = currentTaskId || '';
 
-            // 保存items数组（用于后续生成）
+            // 保存items数组（用于后续生成）- 支持多种字段名
             const itemsInput = document.getElementById('reviewItems');
+            let items = null;
+            
+            // 尝试从多种字段名提取items
             if (analysisResult.items && analysisResult.items.length > 0) {
-                itemsInput.value = JSON.stringify(analysisResult.items);
+                items = analysisResult.items;
+            } else if (analysisResult.modules && analysisResult.modules.length > 0) {
+                // 从modules构造items数组
+                items = analysisResult.modules.map((m, i) => {
+                    const moduleName = typeof m === 'string' ? m : (m.name || '');
+                    const moduleDesc = typeof m === 'object' ? (m.description || '') : '';
+                    return {
+                        title: moduleName,
+                        name: moduleName,
+                        description: moduleDesc,
+                        priority: 'P1',
+                        risk_level: 'medium'
+                    };
+                });
+            } else if (analysisResult.test_items && analysisResult.test_items.length > 0) {
+                items = analysisResult.test_items;
+            }
+            
+            if (items && items.length > 0) {
+                itemsInput.value = JSON.stringify(items);
             } else {
                 itemsInput.value = '[]';
             }
@@ -3024,10 +3057,26 @@
         
         async function confirmAndContinue() {
             try {
+                // 检查modules和points是否有实际内容，而不是仅依赖items
+                const modulesText = document.getElementById('reviewModules').value;
+                const pointsText = document.getElementById('reviewPoints').value;
+                
+                // 占位符检测
+                const placeholders = ['未识别到功能模块', '未识别到测试点'];
+                const modulesHasContent = modulesText && modulesText.trim() && !placeholders.includes(modulesText.trim());
+                const pointsHasContent = pointsText && pointsText.trim() && !placeholders.includes(pointsText.trim());
+                
+                if (!modulesHasContent || !pointsHasContent) {
+                    showToast('功能模块和测试点不能为空，请重新分析需求', 'error');
+                    return;
+                }
+
+                const items = JSON.parse(document.getElementById('reviewItems').value || '[]');
+
                 reviewedPlan = {
-                    modules: document.getElementById('reviewModules').value,
-                    points: document.getElementById('reviewPoints').value,
-                    items: JSON.parse(document.getElementById('reviewItems').value || '[]')
+                    modules: modulesText,
+                    points: pointsText,
+                    items: items
                 };
 
                 closeReviewModal();
@@ -3487,6 +3536,21 @@
             const priority = document.getElementById('strategyPriority').value;
             const qualityThreshold = parseFloat(document.getElementById('strategyQualityThreshold').value);
             
+            // 检查modules和points是否有实际内容
+            const modulesText = document.getElementById('reviewModules').value;
+            const pointsText = document.getElementById('reviewPoints').value;
+            
+            const placeholders = ['未识别到功能模块', '未识别到测试点'];
+            const modulesHasContent = modulesText && modulesText.trim() && !placeholders.includes(modulesText.trim());
+            const pointsHasContent = pointsText && pointsText.trim() && !placeholders.includes(pointsText.trim());
+            
+            if (!modulesHasContent || !pointsHasContent) {
+                showToast('功能模块和测试点不能为空，请重新分析需求', 'error');
+                return;
+            }
+            
+            const items = JSON.parse(document.getElementById('reviewItems').value || '[]');
+            
             closeStrategyConfig();
             showToast('正在启动用例生成...', 'info');
             
@@ -3497,9 +3561,9 @@
                     body: JSON.stringify({ 
                         task_id: currentTaskId,
                         reviewed_plan: {
-                            modules: document.getElementById('reviewModules').value,
-                            points: document.getElementById('reviewPoints').value,
-                            items: JSON.parse(document.getElementById('reviewItems').value || '[]')
+                            modules: modulesText,
+                            points: pointsText,
+                            items: items
                         },
                         generation_strategy: {
                             coverage_rule: coverage,
@@ -3515,7 +3579,12 @@
                     showToast('用例生成中，可在「生成进度」查看进度', 'info');
                     loadRequirements(currentPage);
                 } else {
-                    showToast(`生成失败：${data.error || '未知错误'}`, 'error');
+                    const errorMsg = data.error || '未知错误';
+                    if (errorMsg.includes('测试计划中未找到测试项')) {
+                        showToast('测试计划为空，请检查需求分析结果是否包含测试模块和测试点', 'error');
+                    } else {
+                        showToast(`生成失败：${errorMsg}`, 'error');
+                    }
                 }
             } catch (error) {
                 console.error('启动生成失败:', error);

@@ -126,7 +126,9 @@ def list_requirements():
                         "status": int(r.status),
                         "analysis_data": (
                             json.loads(r.analysis_data)
-                            if r.analysis_data and isinstance(r.analysis_data, str) and r.analysis_data.startswith('{')
+                            if r.analysis_data
+                            and isinstance(r.analysis_data, str)
+                            and r.analysis_data.startswith("{")
                             else r.analysis_data
                         ),
                         "created_at": (
@@ -197,6 +199,7 @@ def analyze_requirement(requirement_id):
 
         if requirement.status not in [
             RequirementStatus.PENDING_ANALYSIS,
+            RequirementStatus.COMPLETED,
             RequirementStatus.FAILED,
         ]:
             return (
@@ -307,11 +310,13 @@ def reset_analysis(requirement_id):
         requirement.analyzed_content = None
         db_session.commit()
 
-        return jsonify({
-            "requirement_id": requirement_id,
-            "status": int(requirement.status),
-            "message": "需求分析状态已重置"
-        }), 200
+        return jsonify(
+            {
+                "requirement_id": requirement_id,
+                "status": int(requirement.status),
+                "message": "需求分析状态已重置",
+            }
+        ), 200
 
     except Exception as e:
         db_session.rollback()
@@ -374,7 +379,10 @@ def review_requirement(requirement_id):
         if not requirement:
             return jsonify({"error": "需求不存在"}), 404
 
-        if requirement.status not in [RequirementStatus.ANALYZED]:
+        if requirement.status not in [
+            RequirementStatus.ANALYZED,
+            RequirementStatus.COMPLETED,
+        ]:
             return (
                 jsonify(
                     {"error": f"当前状态 {int(requirement.status)} 不支持确认操作"}
@@ -818,6 +826,11 @@ def continue_generation():
         if not task:
             return jsonify({"error": "任务不存在"}), 404
 
+        # 设置任务开始时间
+        from datetime import datetime
+
+        task.started_at = datetime.utcnow().isoformat()
+
         # 异步执行阶段2：RAG检索+LLM生成
         generation_service.execute_phase2_generation(task_id, reviewed_plan)
 
@@ -933,19 +946,37 @@ def get_generation_progress(task_id):
         if not task:
             return jsonify({"error": "任务不存在"}), 404
 
-        return jsonify({
-            "task_id": task.task_id,
-            "requirement_id": task.requirement_id,
-            "requirement_title": task.requirement_title,
-            "phase": int(task.phase) if task.phase else None,
-            "phase_name": GenerationPhase(task.phase).name if task.phase else None,
-            "phase_details": task.phase_details,
-            "progress": task.progress,
-            "status": task.status,
-            "message": task.message,
-            "started_at": task.started_at.isoformat() if task.started_at else None,
-            "updated_at": task.updated_at.isoformat() if task.updated_at else None,
-        })
+        current_item = None
+        total_items = None
+        item_title = None
+
+        if task.phase_details:
+            import re
+
+            match = re.search(r"正在生成模块 (\d+)/(\d+): (.+)", task.phase_details)
+            if match:
+                current_item = int(match.group(1))
+                total_items = int(match.group(2))
+                item_title = match.group(3)
+
+        return jsonify(
+            {
+                "task_id": task.task_id,
+                "requirement_id": task.requirement_id,
+                "requirement_title": task.requirement_title,
+                "phase": int(task.phase) if task.phase else None,
+                "phase_name": GenerationPhase(task.phase).name if task.phase else None,
+                "phase_details": task.phase_details,
+                "progress": task.progress,
+                "status": task.status,
+                "message": task.message,
+                "current_item": current_item,
+                "total_items": total_items,
+                "item_title": item_title,
+                "started_at": task.started_at.isoformat() if task.started_at else None,
+                "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+            }
+        )
 
     except Exception as e:
         db_session.rollback()
@@ -1057,7 +1088,11 @@ def list_cases():
         if requirement_id:
             query = query.filter(TestCase.requirement_id == requirement_id)
         if status:
-            query = query.filter(TestCase.status == status)
+            try:
+                status_int = int(status)
+                query = query.filter(TestCase.status == status_int)
+            except (ValueError, TypeError):
+                pass
         if priority:
             query = query.filter(TestCase.priority == priority)
         # 按置信度等级筛选
@@ -1134,16 +1169,11 @@ def get_case_stats():
             "draft": 0,
             "pending_review": 0,
             "approved": 0,
-            "rejected": 0
+            "rejected": 0,
         }
 
         # 状态映射：整数 -> 字符串
-        status_map = {
-            1: "draft",
-            2: "pending_review",
-            3: "approved",
-            4: "rejected"
-        }
+        status_map = {1: "draft", 2: "pending_review", 3: "approved", 4: "rejected"}
 
         for status, count in stats:
             status_value = int(status) if status else 2
@@ -1200,6 +1230,7 @@ def get_case(case_id):
                 "confidence_score": case.confidence_score,
                 "confidence_level": case.confidence_level,
                 "citations": case.citations,
+                "rag_context": case.rag_context,
             }
         )
 
@@ -1305,7 +1336,17 @@ def update_case(case_id):
         if "priority" in data:
             case.priority = data["priority"]
         if "status" in data:
-            case.status = data["status"]
+            status_value = data["status"]
+            if isinstance(status_value, str):
+                status_map = {
+                    "pending_review": CaseStatus.PENDING_REVIEW,
+                    "approved": CaseStatus.APPROVED,
+                    "rejected": CaseStatus.REJECTED,
+                    "draft": CaseStatus.DRAFT,
+                }
+                case.status = status_map.get(status_value, status_value)
+            else:
+                case.status = status_value
         if "case_type" in data:
             case.case_type = data["case_type"]
 
@@ -1387,12 +1428,15 @@ def batch_update_case_status():
         case_ids = data["case_ids"]
         status_str = data["status"]
 
-        # 转换状态整数为枚举
         status_map = {
             1: CaseStatus.DRAFT,
             2: CaseStatus.PENDING_REVIEW,
             3: CaseStatus.APPROVED,
             4: CaseStatus.REJECTED,
+            "pending_review": CaseStatus.PENDING_REVIEW,
+            "approved": CaseStatus.APPROVED,
+            "rejected": CaseStatus.REJECTED,
+            "draft": CaseStatus.DRAFT,
         }
         status = status_map.get(status_str)
         if not status:
@@ -1970,12 +2014,16 @@ def export_cases_post():
                 "test_steps": (
                     c.test_steps
                     if isinstance(c.test_steps, list)
-                    else json.loads(c.test_steps) if c.test_steps else []
+                    else json.loads(c.test_steps)
+                    if c.test_steps
+                    else []
                 ),
                 "expected_results": (
                     c.expected_results
                     if isinstance(c.expected_results, list)
-                    else json.loads(c.expected_results) if c.expected_results else []
+                    else json.loads(c.expected_results)
+                    if c.expected_results
+                    else []
                 ),
                 "priority": c.priority.value if c.priority else "P2",
                 "case_type": c.case_type,
@@ -3666,15 +3714,17 @@ def create_defect_entry():
         from src.database.models import DefectSourceType
 
         kb = DefectKnowledgeBase(db_session)
-        result = kb.create_defect({
-            "title": data.get("title", ""),
-            "description": data.get("description", ""),
-            "severity": data.get("severity", "P2"),
-            "category": data.get("category"),
-            "module": data.get("module"),
-            "source_type": DefectSourceType.MANUAL_ENTRY,
-            "created_by": data.get("created_by"),
-        })
+        result = kb.create_defect(
+            {
+                "title": data.get("title", ""),
+                "description": data.get("description", ""),
+                "severity": data.get("severity", "P2"),
+                "category": data.get("category"),
+                "module": data.get("module"),
+                "source_type": DefectSourceType.MANUAL_ENTRY,
+                "created_by": data.get("created_by"),
+            }
+        )
         return jsonify(result), 201
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -3799,7 +3849,9 @@ def confirm_analysis(requirement_id):
             return jsonify({"error": "需求不存在"}), 404
 
         if req.status != RequirementStatus.ANALYZED:
-            return jsonify({"error": "需求未处于已分析状态", "current_status": int(req.status)}), 400
+            return jsonify(
+                {"error": "需求未处于已分析状态", "current_status": int(req.status)}
+            ), 400
 
         service = RequirementReviewService(db_session)
         result = service.confirm_analysis(requirement_id)
@@ -3811,11 +3863,13 @@ def confirm_analysis(requirement_id):
         generation_service.start_task(task_id)
         generation_service.execute_phase2_generation(task_id, req.analysis_data)
 
-        return jsonify({
-            "status": "confirmed",
-            "task_id": task_id,
-            "message": "分析已确认，开始生成测试用例"
-        }), 202
+        return jsonify(
+            {
+                "status": "confirmed",
+                "task_id": task_id,
+                "message": "分析已确认，开始生成测试用例",
+            }
+        ), 202
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -3834,20 +3888,21 @@ def regenerate_requirement(requirement_id):
             return jsonify({"error": "需求不存在"}), 404
 
         # 只允许从 CANCELLED_GENERATION 或 FAILED 状态重新生成
-        if req.status not in [RequirementStatus.CANCELLED_GENERATION, RequirementStatus.FAILED]:
-            return jsonify({
-                "error": "当前状态不允许重新生成",
-                "current_status": int(req.status)
-            }), 400
+        if req.status not in [
+            RequirementStatus.CANCELLED_GENERATION,
+            RequirementStatus.FAILED,
+        ]:
+            return jsonify(
+                {"error": "当前状态不允许重新生成", "current_status": int(req.status)}
+            ), 400
 
         # 重置状态为 ANALYZING，触发重新分析
         req.status = RequirementStatus.ANALYZING
         db_session.commit()
 
-        return jsonify({
-            "status": "regenerating",
-            "message": "需求已重置，请重新执行分析"
-        }), 202
+        return jsonify(
+            {"status": "regenerating", "message": "需求已重置，请重新执行分析"}
+        ), 202
     except Exception as e:
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -3866,20 +3921,24 @@ def get_task_review_results(task_id):
 
         items = []
         for r in records:
-            items.append({
-                "batch_index": r.batch_index,
-                "case_count": r.case_count,
-                "scores": r.scores,
-                "overall_score": r.overall_score,
-                "decision": r.decision,
-                "conclusion": r.conclusion,
-                "reviewed_at": r.reviewed_at.isoformat() if r.reviewed_at else None,
-            })
+            items.append(
+                {
+                    "batch_index": r.batch_index,
+                    "case_count": r.case_count,
+                    "scores": r.scores,
+                    "overall_score": r.overall_score,
+                    "decision": r.decision,
+                    "conclusion": r.conclusion,
+                    "reviewed_at": r.reviewed_at.isoformat() if r.reviewed_at else None,
+                }
+            )
 
-        return jsonify({
-            "task_id": task_id,
-            "items": items,
-            "total": len(items),
-        }), 200
+        return jsonify(
+            {
+                "task_id": task_id,
+                "items": items,
+                "total": len(items),
+            }
+        ), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500

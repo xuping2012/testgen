@@ -54,6 +54,7 @@ class GenerationService:
         # 获取线程安全的scoped session工厂
         try:
             from src.database.models import get_scoped_session
+
             self._scoped_session_factory = get_scoped_session
         except:
             self._scoped_session_factory = None
@@ -71,6 +72,7 @@ class GenerationService:
         if llm_manager:
             try:
                 from src.services.case_review_agent import CaseReviewAgent
+
                 self.case_review_agent = CaseReviewAgent(llm_manager=llm_manager)
             except Exception as e:
                 logging.warning(f"[GenerationService] CaseReviewAgent 初始化失败: {e}")
@@ -96,6 +98,7 @@ class GenerationService:
     def _get_db_session(self):
         """获取适合当前线程的数据库session"""
         import threading
+
         main_thread = threading.main_thread()
         if threading.current_thread() is main_thread:
             return self.db_session
@@ -806,6 +809,12 @@ class GenerationService:
                 task.progress = current_progress
 
             task.message = message
+            # 从message中提取phase_details（正在生成模块信息）
+            import re
+
+            match = re.search(r"正在生成模块 (\d+)/(\d+): (.+)", message)
+            if match:
+                task.phase_details = message
             # 同步到数据库
             self._sync_task_to_db(task)
 
@@ -897,6 +906,18 @@ class GenerationService:
             # 同步到数据库
             self._sync_task_to_db(task)
 
+            # 更新需求状态为 FAILED
+            if self.db_session and task.requirement_id:
+                try:
+                    from src.database.models import Requirement
+
+                    req = self.db_session.query(Requirement).get(task.requirement_id)
+                    if req:
+                        req.status = RequirementStatus.FAILED
+                        self.db_session.commit()
+                except Exception as e:
+                    logging.error(f"[fail_task] 更新需求状态失败: {e}")
+
     def cancel_task(self, task_id: str) -> Dict[str, Any]:
         """取消生成任务
 
@@ -923,6 +944,7 @@ class GenerationService:
             if self.db_session and task.requirement_id:
                 try:
                     from src.database.models import Requirement
+
                     req = self.db_session.query(Requirement).get(task.requirement_id)
                     if req:
                         req.status = RequirementStatus.CANCELLED_GENERATION
@@ -972,8 +994,7 @@ class GenerationService:
                 return review_result.get("overall_score", 0)
 
             weighted_sum = sum(
-                get_overall_score(b) * b.get("case_count", 0)
-                for b in batch_reviews
+                get_overall_score(b) * b.get("case_count", 0) for b in batch_reviews
             )
             overall_score = round(weighted_sum / total_cases, 1)
 
@@ -996,7 +1017,10 @@ class GenerationService:
         return self.case_review_agent.aggregate_reviews(batch_reviews)
 
     def save_review_records(
-        self, task_id: str, batch_reviews: List[Dict[str, Any]], aggregated: Dict[str, Any]
+        self,
+        task_id: str,
+        batch_reviews: List[Dict[str, Any]],
+        aggregated: Dict[str, Any],
     ) -> bool:
         """保存评审记录到数据库
 
@@ -1025,7 +1049,9 @@ class GenerationService:
                     overall_score=review_result.get("overall_score"),
                     issues=review_result.get("issues", []),
                     duplicate_cases=review_result.get("duplicate_cases", []),
-                    improvement_suggestions=review_result.get("improvement_suggestions", []),
+                    improvement_suggestions=review_result.get(
+                        "improvement_suggestions", []
+                    ),
                     decision=review_result.get("decision"),
                     conclusion=review_result.get("conclusion"),
                 )
@@ -2138,9 +2164,7 @@ class GenerationService:
                         print(f"RAG召回失败: {e}")
                         self.update_progress(task_id, 35.0, "⚠️ RAG召回失败，继续生成")
                 else:
-                    self.update_progress(
-                        task_id, 35.0, "⚠️ 向量库未初始化，跳过RAG召回"
-                    )
+                    self.update_progress(task_id, 35.0, "⚠️ 向量库未初始化，跳过RAG召回")
 
                 # ========== 步骤2: 按ITEM分批生成 ==========
                 for idx, item in enumerate(items, 1):
@@ -2414,9 +2438,7 @@ class GenerationService:
                         print(f"RAG召回失败: {e}")
                         self.update_progress(task_id, 40.0, "⚠️ RAG召回失败，继续生成")
                 else:
-                    self.update_progress(
-                        task_id, 40.0, "⚠️ 向量库未初始化，跳过RAG召回"
-                    )
+                    self.update_progress(task_id, 40.0, "⚠️ 向量库未初始化，跳过RAG召回")
 
                 # 阶段2: LLM生成测试用例 (50%-80%)
                 self.update_progress(task_id, 50.0, "🤖 开始生成测试用例...")
@@ -2737,9 +2759,7 @@ class GenerationService:
                         if progress_callback:
                             progress_callback(30.0, "⚠️ RAG召回失败，继续生成")
                 else:
-                    self.update_progress(
-                        task_id, 30.0, "⚠️ 向量库未初始化，跳过RAG召回"
-                    )
+                    self.update_progress(task_id, 30.0, "⚠️ 向量库未初始化，跳过RAG召回")
                     if progress_callback:
                         progress_callback(30.0, "⚠️ 向量库未初始化，跳过RAG召回")
 
@@ -3133,9 +3153,7 @@ class GenerationService:
             # 这样可以确保不会与其他需求的用例ID冲突
             from sqlalchemy import func
 
-            max_case = (
-                session.query(TestCase).order_by(TestCase.id.desc()).first()
-            )
+            max_case = session.query(TestCase).order_by(TestCase.id.desc()).first()
 
             if max_case and max_case.case_id.startswith("TC_"):
                 try:
@@ -5532,4 +5550,3 @@ class IncrementalUpdateService:
         thread.start()
 
         return new_task_id
-

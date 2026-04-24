@@ -39,7 +39,8 @@
       "Bash(python -c \"\nimport sqlite3\nconn = sqlite3.connect\\('data/testgen.db'\\)\ncursor = conn.cursor\\(\\)\ncursor.execute\\('PRAGMA table_info\\(prompt_templates\\)'\\)\nfor row in cursor.fetchall\\(\\):\n    print\\(row\\)\nconn.close\\(\\)\n\")",
       "Bash(python -c \"\nimport sqlite3\nconn = sqlite3.connect\\('data/testgen.db'\\)\ncursor = conn.cursor\\(\\)\ncursor.execute\\('SELECT name, template_type, template FROM prompt_templates WHERE template_type = \\\\\"requirement_analysis\\\\\"'\\)\nrow = cursor.fetchone\\(\\)\nif row:\n    print\\(f'=== {row[0]} \\({row[1]}\\) ==='\\)\n    print\\(row[2]\\)\nelse:\n    print\\('No requirement_analysis template found'\\)\nconn.close\\(\\)\n\")",
       "Bash(python -m pytest tests/test_api.py -v -x --tb=short 2>&1 | head -80)",
-      "Bash(python -m pytest tests/test_api_rag_enhanced.py tests/test_integration_two_phase.py -v -x --tb=short 2>&1 | head -60)"
+      "Bash(python -m pytest tests/test_api_rag_enhanced.py tests/test_integration_two_phase.py -v -x --tb=short 2>&1 | head -60)",
+      "Bash(python -m py_compile src/api/routes.py 2>&1 || echo \"Python syntax error\")"
     ]
   }
 }
