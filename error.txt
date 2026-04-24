@@ -1,0 +1,26 @@
+[执行阶段2] reviewed_plan is not None: True
+[执行阶段2] test_plan_data: {'modules': '1. 用户登录 - 处理用户登录相关功能', 'points': '1. [用户登录] 输入有效用户名和 密码登录', 'items': [{'title': '用户登录 - 处理用户登录相关功能', 'name': '用户登录 - 处理用户登录相关功能', 'description': '', 'priority': 'P1', 'risk_level': 'medium'}]}
+[执行阶段2] test_plan_data keys: ['modules', 'points', 'items']
+[执行阶段2] items count: 1
+[执行阶段2] first item: {'title': '用户登录 - 处理用户登录相关功能', 'name': '用户登录 - 处理用户登录相关功能', 'description': '', 'priority': 'P1', 'risk_level': 'medium'}
+[调试] 开始分批生成 - 总共 1 个ITEM
+2026-04-24 23:00:10 [werkzeug] 127.0.0.1 - - [24/Apr/2026 23:00:10] "GET /api/requirements?page=1&limit=10 HTTP/1.1" 200 -
+[RAG组件] DynamicRetriever 初始化完成
+[RAG组件] HybridRetriever 初始化完成
+[RAG组件] QueryOptimizer 初始化完成
+[RAG组件] ConfidenceCalculator 初始化完成
+[RAG组件] CitationParser 初始化完成
+2026-04-24 23:00:10 [werkzeug] 127.0.0.1 - - [24/Apr/2026 23:00:10] "GET /api/tasks?status=1 HTTP/1.1" 200 -
+[RAG组件] RetrievalEvaluator 初始化完成
+2026-04-24 23:00:11 [src.services.hybrid_retriever] 动态检索调整: expand (k=5->10)
+2026-04-24 23:00:11 [src.services.hybrid_retriever] 动态检索调整: keep (k=3->3)
+2026-04-24 23:00:12 [src.services.hybrid_retriever] 动态检索调整: expand (k=3->6)
+[调试] 正在处理 ITEM 1/1: 用户登录 - 处理用户登录相关功能
+[调试]   - item keys: ['title', 'name', 'description', 'priority', 'risk_level']
+[调试]   - points 数量: 0
+[调试] 调用 generate_item_cases for: 用户登录 - 处理用户登录相关功能
+[调试][generate_item_cases] 开始生成 - title: 用户登录 - 处理用户登录相关功能
+[调试][generate_item_cases]   - item keys: ['title', 'name', 'description', 'priority', 'risk_level']
+[调试][generate_item_cases]   - points: 0
+[调试][generate_item_cases]   - priority: P1
+2026-04-24 23:00:12 [src.services.prompt_template_service]

@@ -2732,18 +2732,34 @@
                 // 根据用户编辑的内容重新构建items数组
                 const items = [];
                 const moduleLines = modulesText.split('\n').filter(line => line.trim());
-                const pointLines = pointsText.split('\n').filter(line => line.trim());
+                const pointsLines = pointsText.split('\n').filter(line => line.trim());
                 
-                // 将每个模块转换为item
+                // 为每个模块匹配对应的测试点
                 moduleLines.forEach((line, idx) => {
                     const moduleName = line.replace(/^[\d\.\s　]+/, '').trim();
                     if (moduleName) {
+                        // 提取模块名称（去掉 " - " 后面的说明部分）
+                        moduleName = moduleName.split(' - ')[0].split('—')[0].trim();
+                        
+                        // 尝试找到与当前模块相关的测试点
+                        const modulePoints = [];
+                        const lowerModule = moduleName.toLowerCase();
+                        
+                        // 简单匹配：查找包含模块名的测试点
+                        pointsLines.forEach(pointLine => {
+                            const point = pointLine.replace(/^[\d\.\s　]+/, '').trim();
+                            if (point && (point.toLowerCase().includes(lowerModule) || lowerModule.includes(point.toLowerCase()) || point.toLowerCase().includes('登录'))) {
+                                modulePoints.push(point);
+                            }
+                        });
+                        
                         items.push({
                             title: moduleName,
                             name: moduleName,
                             description: '',
                             priority: 'P1',
-                            risk_level: 'medium'
+                            risk_level: 'medium',
+                            points: modulePoints
                         });
                     }
                 });
@@ -3092,15 +3108,32 @@
                 // 根据用户编辑的内容重新构建items数组
                 const items = [];
                 const moduleLines = modulesText.split('\n').filter(line => line.trim());
+                const pointsLines = pointsText.split('\n').filter(line => line.trim());
+                
                 moduleLines.forEach((line) => {
-                    const moduleName = line.replace(/^[\d\.\s　]+/, '').trim();
+                    // 提取模块名称（去掉 " - " 后面的说明部分）
+                    let moduleName = line.replace(/^[\d\.\s　]+/, '').trim();
+                    moduleName = moduleName.split(' - ')[0].split('—')[0].trim();
+                    
                     if (moduleName) {
+                        // 尝试找到与当前模块相关的测试点
+                        const modulePoints = [];
+                        const lowerModule = moduleName.toLowerCase();
+                        
+                        pointsLines.forEach(pointLine => {
+                            const point = pointLine.replace(/^[\d\.\s　]+/, '').trim();
+                            if (point && (point.toLowerCase().includes(lowerModule) || lowerModule.includes(point.toLowerCase()) || point.toLowerCase().includes('登录'))) {
+                                modulePoints.push(point);
+                            }
+                        });
+                        
                         items.push({
                             title: moduleName,
                             name: moduleName,
                             description: '',
                             priority: 'P1',
-                            risk_level: 'medium'
+                            risk_level: 'medium',
+                            points: modulePoints
                         });
                     }
                 });

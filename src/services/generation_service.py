@@ -3243,12 +3243,15 @@ class GenerationService:
                 if not isinstance(expected_results, list):
                     expected_results = [str(expected_results)]
 
-                # 清理步骤和结果中的前缀（如 "步骤1："、"结果1：" 等）
+                # 清理步骤和结果中的前缀（如 "步骤1："、"结果1："、"1." 序号等）
                 def clean_prefix(text):
                     text = str(text).strip()
+                    # 清理中文前缀
                     text = re.sub(
                         r"^(步骤|结果|前置)\d+[\：\:]\s*", "", text, flags=re.IGNORECASE
                     )
+                    # 清理已有的序号 "1." "2." 等（只清理开头的序号）
+                    text = re.sub(r"^(\d+)[\.\、]\s*", "", text)
                     return text.strip()
 
                 test_steps = [clean_prefix(s) for s in test_steps if str(s).strip()]
