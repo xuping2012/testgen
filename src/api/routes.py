@@ -382,11 +382,19 @@ def review_requirement(requirement_id):
         if requirement.status not in [
             RequirementStatus.ANALYZED,
             RequirementStatus.COMPLETED,
+            RequirementStatus.FAILED,
+            RequirementStatus.CANCELLED_GENERATION,
         ]:
+            status_names = {
+                RequirementStatus.PENDING_ANALYSIS: "待分析",
+                RequirementStatus.ANALYZING: "分析中",
+                RequirementStatus.GENERATING: "生成中",
+            }
+            status_name = status_names.get(
+                requirement.status, f"状态{requirement.status}"
+            )
             return (
-                jsonify(
-                    {"error": f"当前状态 {int(requirement.status)} 不支持确认操作"}
-                ),
+                jsonify({"error": f"当前状态 {status_name} 不支持确认操作"}),
                 400,
             )
 
@@ -411,6 +419,9 @@ def review_requirement(requirement_id):
 
         # 使用用户评审后的数据，或回退到数据库中的原始数据
         reviewed_plan = data.get("reviewed_plan")
+        print(
+            f"[API] reviewed_plan: {reviewed_plan is not None}, keys: {list(reviewed_plan.keys()) if reviewed_plan else None}"
+        )
         generation_data = reviewed_plan if reviewed_plan else requirement.analysis_data
 
         generation_service.start_task(task_id)
@@ -713,19 +724,14 @@ def trigger_generation():
         if not requirement:
             return jsonify({"error": "需求不存在"}), 404
 
-        if requirement.status in [RequirementStatus.FAILED]:
-            return (
-                jsonify(
-                    {
-                        "error": f"需求状态为 {requirement.status.value}，请重新分析后再生成"
-                    }
-                ),
-                400,
-            )
-
-        if requirement.status == RequirementStatus.COMPLETED:
+        # 状态5/6/7：已有分析数据，支持重新生成
+        if requirement.status in [
+            RequirementStatus.COMPLETED,
+            RequirementStatus.FAILED,
+            RequirementStatus.CANCELLED_GENERATION,
+        ]:
             if not requirement.analysis_data:
-                return jsonify({"error": "需求无分析数据，请重新分析后再生成"}), 400
+                return jsonify({"error": "需求无分析数据，请先进行需求分析"}), 400
             return (
                 jsonify(
                     {
@@ -738,32 +744,49 @@ def trigger_generation():
                 200,
             )
 
-        if requirement.status not in [
-            RequirementStatus.GENERATING,
-            RequirementStatus.PROCESSING,
-        ]:
+        # 状态3：已分析，可以生成
+        if requirement.status == RequirementStatus.ANALYZED:
+            if not requirement.analysis_data:
+                return jsonify({"error": "需求无分析数据，请先进行需求分析"}), 400
             return (
                 jsonify(
-                    {"error": f"需求状态为 {requirement.status.value}，请先完成分析"}
+                    {
+                        "requirement_id": requirement_id,
+                        "analysis_data": requirement.analysis_data,
+                        "status": int(requirement.status),
+                        "message": "已有分析数据，请确认后生成",
+                    }
                 ),
+                200,
+            )
+
+        # 状态1/2：待分析或分析中
+        if requirement.status in [
+            RequirementStatus.PENDING_ANALYSIS,
+            RequirementStatus.ANALYZING,
+        ]:
+            status_map = {
+                RequirementStatus.PENDING_ANALYSIS: "待分析",
+                RequirementStatus.ANALYZING: "分析中",
+            }
+            current_status = status_map.get(
+                requirement.status, f"状态{requirement.status}"
+            )
+            return (
+                jsonify({"error": f"需求状态为 {current_status}，请先完成分析"}),
                 400,
             )
 
-        if not task_id:
-            task_id = generation_service.create_task(requirement_id)
-
-        generation_service.execute_phase2_generation(task_id, None)
+            # 状态4：生成中，不支持触发生成
+        if requirement.status == RequirementStatus.GENERATING:
+            return (
+                jsonify({"error": "需求状态为 生成中，请等待完成"}),
+                400,
+            )
 
         return (
-            jsonify(
-                {
-                    "task_id": task_id,
-                    "requirement_id": requirement_id,
-                    "status": int(TaskStatus.RUNNING),
-                    "message": "生成任务已启动",
-                }
-            ),
-            202,
+            jsonify({"error": f"需求状态为 {int(requirement.status)}，不支持触发生成"}),
+            400,
         )
 
     except Exception as e:
@@ -889,6 +912,29 @@ def retry_generation():
 
         if not requirement.analysis_data:
             return jsonify({"error": "需求无分析数据，请先进行需求分析"}), 400
+
+        # 允许状态5(COMPLETED)、6(FAILED)、7(CANCELLED_GENERATION)的需求重新生成
+        allowed_statuses = [
+            RequirementStatus.COMPLETED,
+            RequirementStatus.FAILED,
+            RequirementStatus.CANCELLED_GENERATION,
+        ]
+        if requirement.status not in allowed_statuses:
+            status_map = {
+                RequirementStatus.PENDING_ANALYSIS: "待分析",
+                RequirementStatus.ANALYZING: "分析中",
+                RequirementStatus.ANALYZED: "已分析",
+                RequirementStatus.GENERATING: "生成中",
+                RequirementStatus.COMPLETED: "已完成",
+                RequirementStatus.FAILED: "失败",
+                RequirementStatus.CANCELLED_GENERATION: "已取消",
+            }
+            current_status = status_map.get(requirement.status, str(requirement.status))
+            return jsonify(
+                {
+                    "error": f"当前需求状态为{current_status}，无法重新生成。支持的状态: 已完成、失败、已取消"
+                }
+            ), 400
 
         # 创建新任务
         task_id = generation_service.create_task(requirement_id)
@@ -1206,6 +1252,13 @@ def get_case(case_id):
         if not case:
             return jsonify({"error": "用例不存在"}), 404
 
+        requirement_title = None
+        if case.requirement:
+            try:
+                requirement_title = case.requirement.title
+            except Exception:
+                pass
+
         return jsonify(
             {
                 "id": case.id,
@@ -1222,21 +1275,21 @@ def get_case(case_id):
                 "status": int(case.status) if case.status else None,
                 "requirement_clause": case.requirement_clause,
                 "requirement_id": case.requirement_id,
-                "requirement_title": (
-                    case.requirement.title if case.requirement else None
-                ),
+                "requirement_title": requirement_title,
                 "created_at": case.created_at.isoformat() if case.created_at else None,
                 "updated_at": case.updated_at.isoformat() if case.updated_at else None,
                 "confidence_score": case.confidence_score,
                 "confidence_level": case.confidence_level,
                 "citations": case.citations,
-                "rag_context": case.rag_context,
+                "rag_context": None,
             }
         )
 
     except Exception as e:
+        import traceback
+
         db_session.rollback()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"加载失败: {str(e)}"}), 500
 
 
 @api_bp.route("/cases/<int:case_id>/confidence", methods=["GET"])

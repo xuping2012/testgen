@@ -2115,12 +2115,15 @@ class GenerationService:
                 test_plan_data = reviewed_plan or {}
                 items = test_plan_data.get("items", [])
 
-                # [调试] 打印测试计划数据
-                print(f"[调试] reviewed_plan 类型: {type(reviewed_plan)}")
-                print(f"[调试] test_plan_data keys: {list(test_plan_data.keys())}")
-                print(f"[调试] items 数量: {len(items)}")
+                # 打印调试信息
+                print(
+                    f"[执行阶段2] reviewed_plan is not None: {reviewed_plan is not None}"
+                )
+                print(f"[执行阶段2] test_plan_data: {test_plan_data}")
+                print(f"[执行阶段2] test_plan_data keys: {list(test_plan_data.keys())}")
+                print(f"[执行阶段2] items count: {len(items)}")
                 if items:
-                    print(f"[调试] 第一个item: {items[0]}")
+                    print(f"[执行阶段2] first item: {items[0]}")
 
                 if not items:
                     self.fail_task(task_id, "测试计划中未找到测试项")
@@ -3159,10 +3162,12 @@ class GenerationService:
             import time
             import random
             import json as json_module
+            import re
 
             saved_count = 0
 
             print(f"开始保存用例，需求ID: {requirement_id}, 用例数: {len(test_cases)}")
+            print(f"第一个用例数据: {test_cases[0]}")
 
             # 先删除该需求的所有旧用例
             deleted_count = (
@@ -3238,18 +3243,29 @@ class GenerationService:
                 if not isinstance(expected_results, list):
                     expected_results = [str(expected_results)]
 
+                # 清理步骤和结果中的前缀（如 "步骤1："、"结果1：" 等）
+                def clean_prefix(text):
+                    text = str(text).strip()
+                    text = re.sub(
+                        r"^(步骤|结果|前置)\d+[\：\:]\s*", "", text, flags=re.IGNORECASE
+                    )
+                    return text.strip()
+
+                test_steps = [clean_prefix(s) for s in test_steps if str(s).strip()]
+                expected_results = [
+                    clean_prefix(r) for r in expected_results if str(r).strip()
+                ]
+
                 # 为测试步骤添加序号（从1开始）
                 test_steps = [
-                    f"{i + 1}. {str(step).strip()}"
-                    for i, step in enumerate(test_steps)
-                    if str(step).strip()
+                    f"{i + 1}. {step}" for i, step in enumerate(test_steps) if step
                 ]
 
                 # 为预期结果添加序号（从1开始）
                 expected_results = [
-                    f"{i + 1}. {str(result).strip()}"
+                    f"{i + 1}. {result}"
                     for i, result in enumerate(expected_results)
-                    if str(result).strip()
+                    if result
                 ]
 
                 # 处理优先级

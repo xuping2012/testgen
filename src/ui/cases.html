@@ -1184,7 +1184,6 @@
                         <label>状态:</label>
                         <select id="filterStatus">
                             <option value="">全部状态</option>
-                            <option value="1">草稿</option>
                             <option value="2">待评审</option>
                             <option value="3">已通过</option>
                             <option value="4">已拒绝</option>
@@ -1245,7 +1244,7 @@
     <div class="modal" id="caseModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>// 用例详情</h3>
+                <h3 id="modalTitle">用例详情</h3>
                 <span id="ragReferenceLabel" class="rag-ref-badge" style="display:none; margin-left: 10px; padding: 4px 10px; background: rgba(0, 245, 255, 0.15); color: var(--neon-cyan); border: 1px solid rgba(0, 245, 255, 0.3); border-radius: 4px; font-size: 12px;">RAG参考</span>
                 <button class="close-btn" onclick="closeModal()">&times;</button>
             </div>
@@ -1264,6 +1263,10 @@
                     <label>用例标题</label>
                     <input type="text" class="form-control" id="caseName">
                 </div>
+                <div class="form-group">
+                    <label>测试点</label>
+                    <input type="text" class="form-control" id="caseTestPoint">
+                </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label>优先级</label>
@@ -1277,7 +1280,6 @@
                     <div class="form-group">
                         <label>状态</label>
                         <select class="form-control" id="caseStatus">
-                            <option value="draft">草稿</option>
                             <option value="pending_review">待评审</option>
                             <option value="approved">已通过</option>
                             <option value="rejected">已拒绝</option>
@@ -1285,15 +1287,15 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label>前置条件</label>
+                    <label>前置条件 (每行一条)</label>
                     <textarea class="form-control" id="casePreconditions"></textarea>
                 </div>
                 <div class="form-group">
-                    <label>测试步骤 (每行一步)</label>
+                    <label>测试步骤 (每行一步，格式：1. 步骤描述)</label>
                     <textarea class="form-control" id="caseSteps"></textarea>
                 </div>
                 <div class="form-group">
-                    <label>预期结果 (每行一条)</label>
+                    <label>预期结果 (每行一条，格式：1. 结果描述)</label>
                     <textarea class="form-control" id="caseExpected"></textarea>
                 </div>
 
@@ -1316,8 +1318,8 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal()">取消</button>
-                <button class="btn btn-primary" onclick="saveCase()">保存</button>
+                <button class="btn btn-secondary" onclick="closeModal()">关闭</button>
+                <button class="btn btn-primary" id="saveCaseBtn" onclick="saveCase()">保存</button>
             </div>
         </div>
     </div>
@@ -1444,6 +1446,16 @@
             }
         }
 
+        function getStatusString(status) {
+            const map = {
+                1: 'draft',
+                2: 'pending_review',
+                3: 'approved',
+                4: 'rejected'
+            };
+            return map[status] || 'draft';
+        }
+
         function renderCaseList(cases) {
             const tbody = document.getElementById('caseList');
             if (cases.length === 0) {
@@ -1468,6 +1480,7 @@
                     ? `<span style="font-size:10px;color:#ff4466;margin-left:4px;">⚠️ 需人工审核</span>`
                     : '';
                 const checkboxAttrs = `class="checkbox" value="${c.id}" onchange="toggleSelect(${c.id})"`;
+                const statusStr = getStatusString(c.status);
                 return `
                 <tr class="${rowClass}">
                     <td><input type="checkbox" ${checkboxAttrs}></td>
@@ -1475,7 +1488,7 @@
                     <td>${c.module}</td>
                     <td>${c.name}${lowConfTag}</td>
                     <td><span class="priority-badge priority-${c.priority}">${c.priority}</span></td>
-                    <td><span class="status-badge status-${c.status}">${getStatusText(c.status)}</span></td>
+                    <td><span class="status-badge status-${statusStr}">${getStatusText(c.status)}</span></td>
                     <td>${c.requirement_title || '-'}</td>
                     <td>
                         <div class="action-btns">
@@ -1724,25 +1737,78 @@
             try {
                 const response = await fetch(`/api/cases/${id}`);
                 const c = await response.json();
-                if (!c || c.error) {
-                    showToast('加载用例详情失败', 'error');
+                
+                if (!response.ok || c.error) {
+                    showToast(c.error || '加载用例详情失败', 'error');
+                    console.error('API错误:', c);
+                    return;
+                }
+                if (!c || !c.id) {
+                    showToast('用例数据无效', 'error');
+                    console.error('用例数据无效:', c);
                     return;
                 }
 
                 currentCaseId = id;
+                document.getElementById('modalTitle').textContent = editable ? '编辑用例' : '查看用例';
                 document.getElementById('caseId').value = c.case_id;
-                document.getElementById('caseModule').value = c.module;
-                document.getElementById('caseName').value = c.name;
-                document.getElementById('casePriority').value = c.priority;
+                document.getElementById('caseModule').value = c.module || '';
+                document.getElementById('caseName').value = c.name || '';
+                document.getElementById('caseTestPoint').value = c.test_point || '';
+                document.getElementById('casePriority').value = c.priority || 'P0';
                 // 将整数状态转换为字符串值以匹配select选项
-                const statusMap = { 1: 'draft', 2: 'pending_review', 3: 'approved', 4: 'rejected' };
+const statusMap = { 2: 'pending_review', 3: 'approved', 4: 'rejected' };
                 document.getElementById('caseStatus').value = statusMap[c.status] || 'pending_review';
-                document.getElementById('casePreconditions').value = c.preconditions || '';
-                document.getElementById('caseSteps').value = (c.test_steps || []).join('\n');
-                document.getElementById('caseExpected').value = (c.expected_results || []).join('\n');
+                
+                // 智能解析带序号的内容，格式：1.xx 2.yy 3.zz 或 1.xx\n2.yy\n3.zz
+                const parseWithNumber = (text) => {
+                    if (!text) return [];
+                    // 优先按换行符分割
+                    if (text.includes('\n')) {
+                        return text.split('\n').map(s => s.replace(/^\d+[\.\、]\s*/, '').trim()).filter(s => s);
+                    }
+                    // 按 "数字." 分割（支持 "1.xx 2.yy" 格式）
+                    const parts = text.split(/(?=\d+[\.\、]\s)/).filter(s => s.trim());
+                    if (parts.length > 1) {
+                        return parts.map(s => s.replace(/^\d+[\.\、]\s*/, '').trim()).filter(s => s);
+                    }
+                    return [text];
+                };
+                
+                // 解析数组中的每个元素（可能包含序号格式和前缀）
+                const parseArrayWithNumber = (arr) => {
+                    if (!Array.isArray(arr)) return [];
+                    return arr.map(item => {
+                        if (typeof item !== 'string') return String(item);
+                        // 移除序号前缀，同时移除 "步骤X："、"结果X：" 等前缀
+                        let text = item.replace(/^\d+[\.\、]\s*/, '').trim();
+                        // 移除 "步骤X：" 或 "结果X：" 格式的前缀
+                        text = text.replace(/^(步骤|结果|前置)\d+[\：\:]\s*/i, '').trim();
+                        return text;
+                    }).filter(s => s);
+                };
+                
+                // 前置条件
+                let preconditionsList = [];
+                if (Array.isArray(c.preconditions)) {
+                    preconditionsList = c.preconditions;
+                } else if (typeof c.preconditions === 'string') {
+                    preconditionsList = parseWithNumber(c.preconditions);
+                }
+                const preconditions = preconditionsList.map((p, i) => `${i + 1}. ${p}`).join('\n');
+                document.getElementById('casePreconditions').value = preconditions;
+                // 测试步骤 - 也需要解析序号格式
+                const testStepsList = parseArrayWithNumber(c.test_steps || []);
+                const testSteps = testStepsList.map((s, i) => `${i + 1}. ${s}`).join('\n');
+                document.getElementById('caseSteps').value = testSteps;
+                // 预期结果 - 也需要解析序号格式
+                const expectedResultsList = parseArrayWithNumber(c.expected_results || []);
+                const expectedResults = expectedResultsList.map((r, i) => `${i + 1}. ${r}`).join('\n');
+                document.getElementById('caseExpected').value = expectedResults;
 
                 // 置信度信息
                 const confPanel = document.getElementById('confidencePanel');
+                const citations = c.citations || [];
                 if (c.confidence_level) {
                     confPanel.style.display = 'block';
                     document.getElementById('modalConfidenceBadge').innerHTML = renderConfidenceBadge(c.confidence_level, c.confidence_score);
@@ -1750,7 +1816,6 @@
                     document.getElementById('modalConfidenceScore').textContent = pct ? `综合分数: ${pct}` : '';
                     // 分项详情（存储在 citations 第0项的 breakdown 字段中）
                     const breakdownEl = document.getElementById('modalConfidenceBreakdown');
-                    const citations = c.citations || [];
                     const breakdown = (citations[0] && citations[0].breakdown) || {};
                     const breakdownLabels = {
                         semantic_similarity: '语义相似度',
@@ -1777,8 +1842,17 @@
                     ragLabel.style.display = c.rag_context && Object.keys(c.rag_context).length > 0 ? 'inline-block' : 'none';
                 }
 
-                // 引用来源
-                renderModalCitations(c.citations || []);
+// 引用来源
+                renderModalCitations(citations || []);
+
+                // 设置表单可编辑状态
+                const fields = ['caseModule', 'caseName', 'caseTestPoint', 'casePriority', 'caseStatus', 'casePreconditions', 'caseSteps', 'caseExpected'];
+                fields.forEach(fieldId => {
+                    const el = document.getElementById(fieldId);
+                    if (el) el.disabled = !editable;
+                });
+                // 保存按钮显示/隐藏
+                document.getElementById('saveCaseBtn').style.display = editable ? 'inline-block' : 'none';
 
                 document.getElementById('caseModal').classList.add('active');
             } catch (error) {
@@ -1985,13 +2059,30 @@
         async function saveCase() {
             if (!currentCaseId) return;
 
+            // 解析带序号的内容，去掉序号部分
+            const parseNumbered = (text) => {
+                return text.split('\n')
+                    .map(line => line.replace(/^\d+\.\s*/, '').trim())
+                    .filter(line => line);
+            };
+
+            const parsePreconditions = (text) => {
+                // 前置条件是字符串，用换行连接
+                return text.split('\n')
+                    .map(line => line.replace(/^\d+\.\s*/, '').trim())
+                    .filter(line => line)
+                    .join('\n');
+            };
+
             const data = {
                 name: document.getElementById('caseName').value,
+                module: document.getElementById('caseModule').value,
+                test_point: document.getElementById('caseTestPoint').value,
                 priority: document.getElementById('casePriority').value,
                 status: document.getElementById('caseStatus').value,
-                preconditions: document.getElementById('casePreconditions').value,
-                test_steps: document.getElementById('caseSteps').value.split('\n').filter(s => s.trim()),
-                expected_results: document.getElementById('caseExpected').value.split('\n').filter(s => s.trim())
+                preconditions: parsePreconditions(document.getElementById('casePreconditions').value),
+                test_steps: parseNumbered(document.getElementById('caseSteps').value),
+                expected_results: parseNumbered(document.getElementById('caseExpected').value)
             };
 
             try {
@@ -2002,6 +2093,7 @@
                 });
 
                 if (response.ok) {
+                    showToast('保存成功', 'success');
                     closeModal();
                     loadCases(currentPage);
                 } else {

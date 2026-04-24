@@ -283,24 +283,22 @@
             border-color: rgba(255, 193, 7, 0.3);
         }
         
-        .status-2, .status-analyzing {
-            background: rgba(0, 245, 255, 0.1);
-            color: var(--neon-cyan);
-            border-color: rgba(0, 245, 255, 0.3);
-            animation: pulse 2s infinite;
+        .status-2, .status-completed-task {
+            background: rgba(0, 255, 136, 0.1);
+            color: #00ff88;
+            border-color: rgba(0, 255, 136, 0.3);
         }
         
-        .status-3 {
-            background: rgba(184, 41, 221, 0.1);
-            color: var(--neon-purple);
-            border-color: rgba(184, 41, 221, 0.3);
+        .status-3, .status-failed-task {
+            background: rgba(255, 0, 85, 0.1);
+            color: #ff0055;
+            border-color: rgba(255, 0, 85, 0.3);
         }
         
-        .status-4, .status-generating {
-            background: rgba(0, 245, 255, 0.1);
-            color: var(--neon-cyan);
-            border-color: rgba(0, 245, 255, 0.3);
-            animation: pulse 2s infinite;
+        .status-4, .status-cancelled {
+            background: rgba(255, 170, 0, 0.1);
+            color: #ffaa00;
+            border-color: rgba(255, 170, 0, 0.3);
         }
         
         .status-5, .status-completed {
@@ -309,16 +307,16 @@
             border-color: rgba(0, 255, 136, 0.3);
         }
         
-        .status-6 {
-            background: rgba(110, 118, 129, 0.1);
-            color: #8b949e;
-            border-color: rgba(110, 118, 129, 0.3);
-        }
-        
-        .status-7, .status-failed {
+        .status-6, .status-failed {
             background: rgba(255, 0, 85, 0.1);
             color: #ff0055;
             border-color: rgba(255, 0, 85, 0.3);
+        }
+        
+        .status-7, .status-cancelled {
+            background: rgba(255, 170, 0, 0.1);
+            color: #ffaa00;
+            border-color: rgba(255, 170, 0, 0.3);
         }
         
         .status-pending_review {
@@ -1642,7 +1640,7 @@
                             <option value="completed">已完成</option>
                             <option value="cancelled,failed">已终止</option>
                         </select>
-                        <input type="text" id="searchInput" placeholder="搜索需求名称..." maxlength="50" style="max-width: 300px;" oninput="loadTasks()">
+                        <input type="text" id="searchInput" placeholder="搜索需求名称..." maxlength="50" style="max-width: 300px; margin-left: 10px;" oninput="loadTasks()">
                         <!-- <span id="taskCount" style="color: var(--text-secondary);"></span> -->
                     </div>
 
@@ -2208,12 +2206,8 @@
                         actionBtn = `<button class="action-btn" onclick="reviewRequirement(${req.id})" title="查看需求分析" aria-label="查看需求分析">📋</button>`;
                     } else if (req.status === 4) {
                         actionBtn = ``;
-                    } else if (req.status === 5) {
+                    } else if (req.status === 5 || req.status === 6 || req.status === 7) {
                         actionBtn = `<button class="action-btn" onclick="reviewExistingRequirement(${req.id})" title="查看/重新生成" aria-label="查看/重新生成">🔄</button>`;
-                    } else if (req.status === 6) {
-                        actionBtn = `<button class="action-btn" disabled style="opacity:0.5;cursor:not-allowed;" title="已取消" aria-label="已取消">⛔</button>`;
-                    } else if (req.status === 7) {
-                        actionBtn = `<button class="action-btn" disabled style="opacity:0.5;cursor:not-allowed;" title="已失败" aria-label="已失败">❌</button>`;
                     } else {
                         actionBtn = `<button class="action-btn generate" onclick="generateCases(${req.id})" title="生成用例" aria-label="生成用例">▶️</button>`;
                     }
@@ -2268,8 +2262,8 @@
                 3: '已分析',
                 4: '生成中',
                 5: '已完成',
-                6: '已取消',
-                7: '失败'
+                6: '失败',
+                7: '已取消'
             };
             return map[status] || '未知';
         }
@@ -2734,14 +2728,33 @@
                 // 读取用户评审后编辑的数据
                 const modulesText = document.getElementById('reviewModules').value;
                 const pointsText = document.getElementById('reviewPoints').value;
-                const itemsStr = document.getElementById('reviewItems').value || '[]';
+                
+                // 根据用户编辑的内容重新构建items数组
+                const items = [];
+                const moduleLines = modulesText.split('\n').filter(line => line.trim());
+                const pointLines = pointsText.split('\n').filter(line => line.trim());
+                
+                // 将每个模块转换为item
+                moduleLines.forEach((line, idx) => {
+                    const moduleName = line.replace(/^[\d\.\s　]+/, '').trim();
+                    if (moduleName) {
+                        items.push({
+                            title: moduleName,
+                            name: moduleName,
+                            description: '',
+                            priority: 'P1',
+                            risk_level: 'medium'
+                        });
+                    }
+                });
 
                 if (modulesText && pointsText) {
                     requestBody.reviewed_plan = {
                         modules: modulesText,
                         points: pointsText,
-                        items: JSON.parse(itemsStr)
+                        items: items
                     };
+                    console.log('Sending reviewed_plan with items:', items.length, items);
                 }
 
                 const response = await fetch(`/api/requirements/${requirementId}/review`, {
@@ -2830,7 +2843,12 @@
                 });
 
                 const data = await response.json();
-                if (data.task_id) {
+                
+                // 处理已有分析数据的情况（状态5/6/7）
+                if (data.analysis_data) {
+                    showReviewModal(data.analysis_data);
+                    showToast('已有分析数据，请确认后生成', 'info');
+                } else if (data.task_id) {
                     currentTaskId = data.task_id;
                     
                     // 如果已经有分析结果（同步返回），直接显示
@@ -3071,7 +3089,21 @@
                     return;
                 }
 
-                const items = JSON.parse(document.getElementById('reviewItems').value || '[]');
+                // 根据用户编辑的内容重新构建items数组
+                const items = [];
+                const moduleLines = modulesText.split('\n').filter(line => line.trim());
+                moduleLines.forEach((line) => {
+                    const moduleName = line.replace(/^[\d\.\s　]+/, '').trim();
+                    if (moduleName) {
+                        items.push({
+                            title: moduleName,
+                            name: moduleName,
+                            description: '',
+                            priority: 'P1',
+                            risk_level: 'medium'
+                        });
+                    }
+                });
 
                 reviewedPlan = {
                     modules: modulesText,
@@ -3662,7 +3694,9 @@
                 const data = await response.json();
                 
                 renderTasks(data.tasks || []);
-                document.getElementById('taskCount').textContent = `共 ${data.total || 0} 条`;
+                console.log('Total:', data.total, 'Page:', data.page, 'Limit:', data.limit);
+                const taskCountEl = document.getElementById('taskCount');
+                if (taskCountEl) taskCountEl.textContent = `共 ${data.total || 0} 条`;
                 renderProgressPagination(data.total || 0, data.page || 1, data.limit || progressLimit);
             } catch (error) {
                 console.error('加载任务失败:', error);
@@ -3709,7 +3743,6 @@
                             <div class="action-btns">
                                 <button class="action-btn" onclick="showDetail('${task.task_id}')" title="查看详情" aria-label="查看详情">👁️</button>
                                 ${(task.status === 1) ? `<button class="action-btn" onclick="cancelTask('${task.task_id}')" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="终止任务" aria-label="终止任务">⏹</button>` : ''}
-                                ${(task.status === 3 || task.status === 4) ? `<button class="action-btn" onclick="regenerateTask('${task.task_id}')" title="重新生成" aria-label="重新生成">🔄</button>` : ''}
                                 ${canDelete ? `<button class="action-btn" onclick="deleteTask('${task.task_id}')" style="color: #ff0055; border-color: rgba(255, 0, 85, 0.3);" title="删除任务" aria-label="删除任务">🗑️</button>` : ''}
                             </div>
                         </td>
@@ -3751,15 +3784,16 @@
         }
 
         function renderProgressPagination(total, page, limit) {
-            const pages = Math.ceil(total / limit);
+            const totalPages = Math.ceil(total / limit);
             const pagination = document.getElementById('progressPagination');
+            console.log('renderProgressPagination called:', {total, page, limit, totalPages, pagination_exists: !!pagination});
             
-            if (total === 0) {
-                pagination.innerHTML = `<div class="pagination-info">共 0 条记录</div>`;
+            if (!pagination) {
+                console.error('progressPagination element not found!');
                 return;
             }
             
-            if (pages <= 1) {
+            if (totalPages <= 1) {
                 pagination.innerHTML = `<div class="pagination-info">共 ${total} 条记录</div>`;
                 return;
             }
@@ -3770,7 +3804,7 @@
             html += '<div class="pagination-left">';
             html += `<span>共 ${total} 条</span>`;
             html += '<select class="page-size-select" onchange="changeProgressPageSize(this.value)">';
-            [10, 20, 50, 100].forEach(size => {
+            [10, 20, 50, 100, 200].forEach(size => {
                 html += `<option value="${size}" ${size === limit ? 'selected' : ''}>${size}条/页</option>`;
             });
             html += '</select>';
@@ -3789,7 +3823,7 @@
             // 页码逻辑（智能显示页码）
             const maxVisible = 7;
             let startPage = Math.max(1, page - Math.floor(maxVisible / 2));
-            let endPage = Math.min(pages, startPage + maxVisible - 1);
+            let endPage = Math.min(totalPages, startPage + maxVisible - 1);
             
             if (endPage - startPage < maxVisible - 1) {
                 startPage = Math.max(1, endPage - maxVisible + 1);
@@ -3809,15 +3843,15 @@
             }
             
             // 最后一页和省略号
-            if (endPage < pages) {
-                if (endPage < pages - 1) {
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
                     html += '<span class="page-ellipsis">...</span>';
                 }
-                html += `<button class="page-btn" onclick="goProgressPage(${pages})">${pages}</button>`;
+                html += `<button class="page-btn" onclick="goProgressPage(${totalPages})">${totalPages}</button>`;
             }
             
             // 下一页
-            if (page < pages) {
+            if (page < totalPages) {
                 html += `<button class="page-btn" onclick="goProgressPage(${page + 1})">下一页</button>`;
             } else {
                 html += `<button class="page-btn disabled" disabled>下一页</button>`;
@@ -3828,7 +3862,7 @@
             // 右侧：跳转到指定页
             html += '<div class="pagination-right">';
             html += `<span>跳至</span>`;
-            html += `<input type="number" class="page-jump-input" min="1" max="${pages}" value="${page}" onkeypress="if(event.key==='Enter')jumpToProgressPage(this)" />`;
+            html += `<input type="number" class="page-jump-input" min="1" max="${totalPages}" value="${page}" onkeypress="if(event.key==='Enter')jumpToProgressPage(this)" />`;
             html += '</div>';
             
             html += '</div>';
@@ -3850,8 +3884,7 @@
             const page = parseInt(input.value);
             const maxPage = parseInt(input.max);
             if (page >= 1 && page <= maxPage) {
-                progressCurrentPage = page;
-                loadTasks();
+                goProgressPage(page);
             } else {
                 input.value = progressCurrentPage;
             }
@@ -3879,13 +3912,17 @@
                 stages.forEach((stage, index) => {
                     let status = 'waiting';
                     if (task.status === 4) {
-                        // 已取消状态：当前进行中的阶段显示为已取消，已完成的保持已完成
                         if (progress >= stage.range[1]) status = 'completed';
                         else if (progress >= stage.range[0]) status = 'cancelled';
+                    } else if (task.status === 3) {
+                        if (progress >= stage.range[1]) status = 'completed';
+                        else if (progress >= stage.range[0]) status = 'failed';
+                    } else if (task.status === 2) {
+                        if (progress >= stage.range[1]) status = 'completed';
+                        else if (progress >= stage.range[0]) status = 'completed';
                     } else {
                         if (progress >= stage.range[1]) status = 'completed';
                         else if (progress >= stage.range[0]) status = 'active';
-                        else if (task.status === 3 && progress < stage.range[1]) status = 'failed';
                     }
 
                     const bgColor = status === 'completed' ? 'rgba(0, 255, 136, 0.1)' :
