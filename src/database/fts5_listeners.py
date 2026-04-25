@@ -8,7 +8,7 @@ FTS5增量更新监听器 - 通过SQLAlchemy事件自动同步FTS5索引
 """
 
 import logging
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -37,6 +37,43 @@ def setup_fts5_listeners(engine):
     Args:
         engine: SQLAlchemy引擎实例
     """
+    import time
+
+    # 预创建所有FTS5表（带重试）
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            with engine.connect() as conn:
+                for table_name, fts_config in FTS5_TABLES.items():
+                    fts_table = fts_config["fts_table"]
+                    try:
+                        result = conn.execute(
+                            text(
+                                f"SELECT name FROM sqlite_master WHERE type='table' AND name='{fts_table}'"
+                            )
+                        )
+                        if not result.fetchone():
+                            columns_sql = ", ".join(
+                                [f"{col} TEXT" for col in fts_config["columns"]]
+                            )
+                            conn.execute(
+                                text(
+                                    f"CREATE VIRTUAL TABLE {fts_table} USING fts5({columns_sql})"
+                                )
+                            )
+                            logger.info(f"创建FTS5虚拟表: {fts_table}")
+                    except Exception as e:
+                        logger.warning(f"创建FTS5表失败 {table_name}: {e}")
+                conn.commit()
+            logger.info("FTS5表预创建完成")
+            break
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait_time = 0.2 * (attempt + 1)
+                logger.warning(f"FTS5预创建失败，%.1f秒后重试..." % wait_time)
+                time.sleep(wait_time)
+            else:
+                logger.error(f"FTS5预创建失败: {e}")
 
     @event.listens_for(Session, "after_flush")
     def receive_after_flush(session, flush_context):
@@ -90,61 +127,101 @@ def _update_fts5_for_table(engine, table_name, operations):
         table_name: 源表名
         operations: {"insert": [...], "update": [...], "delete": [...]}
     """
+    import time
+
     fts_config = FTS5_TABLES[table_name]
     fts_table = fts_config["fts_table"]
 
-    with engine.connect() as conn:
-        # INSERT操作
-        for obj in operations.get("insert", []):
-            _insert_fts5_row(conn, fts_table, fts_config, obj)
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            with engine.connect() as conn:
+                # INSERT操作
+                for obj in operations.get("insert", []):
+                    _insert_fts5_row(conn, fts_table, fts_config, obj)
 
-        # UPDATE操作（先删后插）
-        for obj in operations.get("update", []):
-            _delete_fts5_row(conn, fts_table, obj)
-            _insert_fts5_row(conn, fts_table, fts_config, obj)
+                # UPDATE操作（先删后插）
+                for obj in operations.get("update", []):
+                    _delete_fts5_row(conn, fts_table, obj)
+                    _insert_fts5_row(conn, fts_table, fts_config, obj)
 
-        # DELETE操作
-        for obj in operations.get("delete", []):
-            _delete_fts5_row(conn, fts_table, obj)
+                # DELETE操作
+                for obj in operations.get("delete", []):
+                    _delete_fts5_row(conn, fts_table, obj)
 
-        conn.commit()
+                conn.commit()
+            return
+        except Exception as e:
+            if "database is locked" in str(e) and attempt < max_retries - 1:
+                wait_time = 0.2 * (attempt + 1)
+                logger.warning(
+                    f"FTS5更新失败 (attempt {attempt + 1}), {wait_time}秒后重试: {e}"
+                )
+                time.sleep(wait_time)
+            else:
+                logger.warning(f"FTS5更新失败 (已重试{max_retries}次): {e}")
+                return
 
 
-def _ensure_fts5_table_exists(conn, table_name, fts_config):
-    """检查FTS5表是否存在，不存在则创建"""
+def _ensure_fts5_table_exists(conn, fts_config):
+    """确保FTS5表存在"""
     fts_table = fts_config["fts_table"]
-    try:
-        result = conn.execute(
-            f"SELECT name FROM sqlite_master WHERE type='table' AND name='{fts_table}'"
-        )
-        if not result.fetchone():
-            columns_sql = ", ".join([f"{col} TEXT" for col in fts_config["columns"]])
-            conn.execute(f"CREATE VIRTUAL TABLE {fts_table} USING fts5({columns_sql})")
-            logger.info(f"创建FTS5虚拟表: {fts_table}")
-    except Exception as e:
-        logger.warning(f"检查/创建FTS5表失败: {e}")
+    for _ in range(3):
+        try:
+            result = conn.execute(
+                text(
+                    f"SELECT name FROM sqlite_master WHERE type='table' AND name='{fts_table}'"
+                )
+            )
+            if not result.fetchone():
+                columns_sql = ", ".join(
+                    [f"{col} TEXT" for col in fts_config["columns"]]
+                )
+                conn.execute(
+                    text(f"CREATE VIRTUAL TABLE {fts_table} USING fts5({columns_sql})")
+                )
+                conn.commit()
+                logger.info(f"创建FTS5虚拟表: {fts_table}")
+            return True
+        except Exception as e:
+            if "locked" in str(e).lower():
+                import time
+
+                time.sleep(0.1)
+                continue
+            logger.warning(f"检查FTS5表失败: {e}")
+            return False
+    return True
 
 
 def _insert_fts5_row(conn, fts_table, fts_config, obj):
-    """向FTS5表插入一行"""
-    try:
-        _ensure_fts5_table_exists(conn, fts_table, fts_config)
+    """向FTS5表插入一行（带重试）"""
+    import time
 
-        row_id = obj.id
-        values = {}
-        for col in fts_config["columns"]:
-            values[col] = getattr(obj, col, "") or ""
+    for attempt in range(3):
+        try:
+            _ensure_fts5_table_exists(conn, fts_config)
 
-        columns_str = ", ".join(fts_config["columns"])
-        placeholders = ", ".join([f":{col}" for col in fts_config["columns"]])
+            row_id = obj.id
+            values = {}
+            for col in fts_config["columns"]:
+                values[col] = getattr(obj, col, "") or ""
 
-        sql = f"INSERT INTO {fts_table}(rowid, {columns_str}) VALUES (:rowid, {placeholders})"
-        values["rowid"] = row_id
+            columns_str = ", ".join(fts_config["columns"])
+            placeholders = ", ".join([f":{col}" for col in fts_config["columns"]])
 
-        conn.execute(sql, values)
-        logger.debug(f"FTS5插入: {fts_table} rowid={row_id}")
-    except Exception as e:
-        logger.warning(f"FTS5插入失败 (rowid={obj.id}): {e}")
+            sql = f"INSERT INTO {fts_table}(rowid, {columns_str}) VALUES (:rowid, {placeholders})"
+            values["rowid"] = row_id
+
+            conn.execute(text(sql), values)
+            logger.debug(f"FTS5插入: {fts_table} rowid={row_id}")
+            return
+        except Exception as e:
+            if "locked" in str(e).lower() and attempt < 2:
+                time.sleep(0.1 * (attempt + 1))
+                continue
+            logger.warning(f"FTS5插入失败 (rowid={obj.id}): {e}")
+            return
 
 
 def _delete_fts5_row(conn, fts_table, obj):
@@ -152,7 +229,7 @@ def _delete_fts5_row(conn, fts_table, obj):
     try:
         row_id = obj.id
         sql = f"DELETE FROM {fts_table} WHERE rowid = :rowid"
-        conn.execute(sql, {"rowid": row_id})
+        conn.execute(text(sql), {"rowid": row_id})
         logger.debug(f"FTS5删除: {fts_table} rowid={row_id}")
     except Exception as e:
         logger.warning(f"FTS5删除失败 (rowid={obj.id}): {e}")
@@ -175,7 +252,9 @@ def rebuild_fts5_index(engine, table_name=None):
 
             fts_table = FTS5_TABLES[tbl]["fts_table"]
             try:
-                conn.execute(f"INSERT INTO {fts_table}({fts_table}) VALUES('rebuild')")
+                conn.execute(
+                    text(f"INSERT INTO {fts_table}({fts_table}) VALUES('rebuild')")
+                )
                 logger.info(f"FTS5索引重建: {fts_table}")
             except Exception as e:
                 logger.warning(f"FTS5索引重建失败 ({fts_table}): {e}")
@@ -193,14 +272,18 @@ def init_fts5_indexes(engine):
             fts_table = fts_config["fts_table"]
             try:
                 result = conn.execute(
-                    f"SELECT name FROM sqlite_master WHERE type='table' AND name='{fts_table}'"
+                    text(
+                        f"SELECT name FROM sqlite_master WHERE type='table' AND name='{fts_table}'"
+                    )
                 )
                 if not result.fetchone():
                     columns_sql = ", ".join(
                         [f"{col} TEXT" for col in fts_config["columns"]]
                     )
                     conn.execute(
-                        f"CREATE VIRTUAL TABLE {fts_table} USING fts5({columns_sql})"
+                        text(
+                            f"CREATE VIRTUAL TABLE {fts_table} USING fts5({columns_sql})"
+                        )
                     )
                     logger.info(f"初始化FTS5虚拟表: {fts_table}")
             except Exception as e:

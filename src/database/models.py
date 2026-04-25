@@ -49,7 +49,7 @@ class CaseStatus(enum.IntEnum):
 
 class GenerationPhase(enum.IntEnum):
     """生成阶段"""
-    
+
     RAG = 1  # RAG检索
     GENERATION = 2  # 测试用例生成
     SAVING = 3  # 数据保存
@@ -252,7 +252,9 @@ class Defect(Base):
     category = Column(String(100))
     status = Column(String(50), default="open")
     related_case_id = Column(Integer, ForeignKey("test_cases.id"), nullable=True)
-    related_requirement_id = Column(Integer, ForeignKey("requirements.id"), nullable=True)
+    related_requirement_id = Column(
+        Integer, ForeignKey("requirements.id"), nullable=True
+    )
     created_by = Column(String(100))
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -340,9 +342,42 @@ class CaseReviewRecord(Base):
 # 数据库初始化函数
 def init_database(db_path="data/testgen.db"):
     """初始化数据库"""
+    from sqlalchemy import text
+
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    engine = create_engine(f"sqlite:///{db_path}")
+    engine = create_engine(
+        f"sqlite:///{db_path}", connect_args={"timeout": 30, "check_same_thread": False}
+    )
+
+    # 启用WAL模式减少锁冲突
+    with engine.connect() as conn:
+        conn.execute(text("PRAGMA journal_mode=WAL"))
+        conn.commit()
+
     Base.metadata.create_all(engine)
+
+    # 创建FTS5虚拟表
+    from src.database.fts5_listeners import FTS5_TABLES
+
+    with engine.connect() as conn:
+        for table_name, fts_config in FTS5_TABLES.items():
+            fts_table = fts_config["fts_table"]
+            try:
+                result = conn.execute(
+                    text(
+                        f"SELECT name FROM sqlite_master WHERE type='table' AND name='{fts_table}'"
+                    )
+                )
+                if not result.fetchone():
+                    columns = ", ".join(fts_config["columns"])
+                    conn.execute(
+                        text(f"CREATE VIRTUAL TABLE {fts_table} USING fts5({columns})")
+                    )
+                    print(f"创建FTS5虚拟表: {fts_table}")
+            except Exception as e:
+                print(f"创建FTS5表失败: {e}")
+        conn.commit()
+
     return engine
 
 
@@ -355,6 +390,7 @@ def get_session(engine):
 # 线程安全的 scoped session 工厂
 ScopedSession = None
 
+
 def init_scoped_session(engine):
     """初始化并返回线程安全的 scoped session"""
     global ScopedSession
@@ -363,8 +399,11 @@ def init_scoped_session(engine):
         ScopedSession = scoped_session(session_factory)
     return ScopedSession()
 
+
 def get_scoped_session():
     """获取线程安全的 scoped session"""
     if ScopedSession is None:
-        raise RuntimeError("ScopedSession not initialized. Call init_scoped_session first.")
+        raise RuntimeError(
+            "ScopedSession not initialized. Call init_scoped_session first."
+        )
     return ScopedSession()

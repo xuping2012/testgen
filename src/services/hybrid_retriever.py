@@ -226,7 +226,7 @@ class HybridRetriever:
             return []
 
         try:
-            if collection == "historical_cases":
+            if collection == "cases":
                 return self.vector_store.search_similar_cases(query, top_k)
             elif collection == "defects":
                 return self.vector_store.search_similar_defects(query, top_k)
@@ -325,6 +325,7 @@ class HybridRetriever:
     ) -> List[Dict[str, Any]]:
         """基于SQLite FTS5的全文检索"""
         table_map = {
+            "cases": "test_cases_fts",
             "historical_cases": "historical_cases_fts",
             "defects": "defects_fts",
             "requirements": "requirements_fts",
@@ -347,15 +348,26 @@ class HybridRetriever:
                 return []
 
             # 执行FTS5检索
-            source_table = collection.replace("_fts", "")
+            source_table_map = {
+                "cases": "test_cases",
+                "historical_cases": "historical_cases",
+                "defects": "defects",
+                "requirements": "requirements",
+            }
+            source_table = source_table_map.get(collection, collection)
+
+            # 处理查询字符串，移除特殊字符并转为FTS5查询格式
+            safe_query = query.replace('"', " ").replace("'", " ").replace("\n", " ")
+            if not safe_query.strip():
+                return []
+
             query_sql = f"""
                 SELECT rowid, rank
                 FROM {fts_table}
-                WHERE {fts_table} MATCH ?
+                MATCH '{safe_query}'
                 ORDER BY rank
-                LIMIT ?
+                LIMIT {top_k}
             """
-            cursor.execute(query_sql, (query, top_k))
             rows = cursor.fetchall()
 
             if not rows:
@@ -412,11 +424,20 @@ class HybridRetriever:
 
     def _build_bm25_index(self, collection: str):
         """从数据库构建BM25索引"""
+        # 表名映射
+        table_map = {
+            "cases": "test_cases",
+            "historical_cases": "historical_cases",
+            "defects": "defects",
+            "requirements": "requirements",
+        }
+        db_table = table_map.get(collection, collection)
+
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
 
-            cursor.execute(f"SELECT * FROM {collection}")
+            cursor.execute(f"SELECT * FROM {db_table}")
             rows = cursor.fetchall()
 
             documents = {}

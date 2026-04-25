@@ -1444,6 +1444,23 @@ class GenerationService:
                 f"[调试][generate_item_cases]   - temperature: 0.7, max_tokens: 4096, timeout: 120"
             )
 
+            # 保存prompt到日志文件
+            import os
+            from datetime import datetime
+
+            log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            prompt_log_path = os.path.join(log_dir, f"prompt_{timestamp}.txt")
+            with open(prompt_log_path, "w", encoding="utf-8") as f:
+                f.write(f"=== 模块: {item_title} ===\n")
+                f.write(f"=== 时间: {timestamp} ===\n")
+                f.write(f"=== Points: {item_points_str[:500]}...\n\n")
+                f.write("========== PROMPT START ==========\n")
+                f.write(prompt)
+                f.write("\n========== PROMPT END ==========\n")
+            print(f"[调试][generate_item_cases] Prompt已保存到: {prompt_log_path}")
+
             response = adapter.generate(
                 prompt,
                 temperature=0.7,
@@ -2115,6 +2132,14 @@ class GenerationService:
                 test_plan_data = reviewed_plan or {}
                 items = test_plan_data.get("items", [])
 
+                # 过滤每个模块只保留属于该模块的测试点
+                for item in items:
+                    item_title = item.get("title", item.get("name", ""))
+                    item_points = item.get("points", [])
+                    if item_points:
+                        filtered = [pt for pt in item_points if item_title in pt]
+                        item["points"] = filtered
+
                 # 打印调试信息
                 print(
                     f"[执行阶段2] reviewed_plan is not None: {reviewed_plan is not None}"
@@ -2272,6 +2297,9 @@ class GenerationService:
                 )
                 if current_coverage is None:
                     current_coverage = 0.0
+
+                # 禁用补充生成（设置为1.0，永远不触发）
+                coverage_threshold = 1.0
 
                 if current_coverage < coverage_threshold:
                     self.update_progress(
@@ -4027,7 +4055,36 @@ class GenerationService:
             try:
                 # 用例检索
                 case_response = self._hybrid_retriever.retrieve(
-                    collection="historical_cases",
+                    collection="cases",
+                    query=requirement_content,
+                    top_k=top_k_cases,
+                )
+                case_results = (
+                    case_response.get("results", [])
+                    if isinstance(case_response, dict)
+                    else case_response or []
+                )
+                if case_results:
+                    rag_context += "\n\n## 召回的历史测试用例（供参考）\n"
+                    rag_context += "> 以下历史用例与当前需求相关，请借鉴其测试思路和方法，确保测试覆盖率。\n\n"
+                    for i, case in enumerate(case_results[:top_k_cases], 1):
+                        rag_context += (
+                            f"### 历史用例 {i}\n{case.get('content', '')}\n\n"
+                        )
+                    rag_stats["cases"] = len(case_results[:top_k_cases])
+
+                # 记录动态检索调整信息
+                if isinstance(case_response, dict) and case_response.get("adjustment"):
+                    rag_context_data.setdefault("adjustments", []).append(
+                        case_response["adjustment"]
+                    )
+            except Exception as e:
+                print(f"[RAG召回] 混合检索用例失败: {e}")
+
+            # 缺陷检索
+            try:
+                defect_response = self._hybrid_retriever.retrieve(
+                    collection="cases",
                     query=requirement_content,
                     top_k=top_k_cases,
                 )
