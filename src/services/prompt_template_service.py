@@ -5,13 +5,13 @@ Prompt模板服务 - 统一管理Prompt模板的加载、渲染和版本控制
 """
 
 import re
-import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 from src.database.models import PromptTemplate
+from src.utils import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # 模板类型别名映射（旧类型 -> 新类型）
 TEMPLATE_TYPE_ALIASES = {

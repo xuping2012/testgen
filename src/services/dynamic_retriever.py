@@ -11,10 +11,11 @@
 约束: 最小top_k=3, 最大top_k=20
 """
 
-import logging
 from typing import Dict, Any, List
 
-logger = logging.getLogger(__name__)
+from src.utils import get_logger
+
+logger = get_logger(__name__)
 
 # 动态检索配置
 MIN_TOP_K = 3

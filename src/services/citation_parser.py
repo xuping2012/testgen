@@ -13,24 +13,21 @@
 """
 
 import re
-import logging
 from typing import Dict, Any, List, Optional, Tuple
+from src.utils import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # 支持的来源类型前缀
 SOURCE_TYPES = {
-    '#CASE-': 'historical_case',
-    '#DEFECT-': 'defect',
-    '#REQ-': 'requirement',
-    'LLM': 'llm_generated',
+    "#CASE-": "historical_case",
+    "#DEFECT-": "defect",
+    "#REQ-": "requirement",
+    "LLM": "llm_generated",
 }
 
 # 引用标注正则（支持多种写法）
-CITATION_PATTERN = re.compile(
-    r'\[citation:\s*([^\]]+?)\s*\]',
-    re.IGNORECASE
-)
+CITATION_PATTERN = re.compile(r"\[citation:\s*([^\]]+?)\s*\]", re.IGNORECASE)
 
 
 class CitationParser:
@@ -79,21 +76,21 @@ class CitationParser:
             source_type = self._detect_source_type(source_id)
             key = source_id.upper()
             if key in citations_map:
-                citations_map[key]['count'] += 1
+                citations_map[key]["count"] += 1
             else:
                 citations_map[key] = {
-                    'source_id': source_id,
-                    'source_type': source_type,
-                    'raw_text': f'[citation: {source_id}]',
-                    'count': 1,
+                    "source_id": source_id,
+                    "source_type": source_type,
+                    "raw_text": f"[citation: {source_id}]",
+                    "count": 1,
                 }
 
         citations = list(citations_map.values())
 
         # 清除引用标注后的文本
-        cleaned_text = CITATION_PATTERN.sub('', text).strip()
+        cleaned_text = CITATION_PATTERN.sub("", text).strip()
         # 清理多余空白
-        cleaned_text = re.sub(r'\s{2,}', ' ', cleaned_text)
+        cleaned_text = re.sub(r"\s{2,}", " ", cleaned_text)
 
         return citations, cleaned_text
 
@@ -103,16 +100,15 @@ class CitationParser:
         for prefix, stype in SOURCE_TYPES.items():
             if upper.startswith(prefix.upper()):
                 return stype
-        if upper == 'LLM':
-            return 'llm_generated'
-        return 'unknown'
+        if upper == "LLM":
+            return "llm_generated"
+        return "unknown"
 
     # ------------------------------------------------------------------
     # 3.3 验证引用来源
     # ------------------------------------------------------------------
     def validate_citation_sources(
-        self,
-        citations: List[Dict[str, Any]]
+        self, citations: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """
         验证引用来源是否存在于向量库中。
@@ -127,27 +123,27 @@ class CitationParser:
         """
         if not self.vector_store:
             for cit in citations:
-                cit['validated'] = False
-                cit['exists'] = None  # 未验证
+                cit["validated"] = False
+                cit["exists"] = None  # 未验证
             return citations
 
         for cit in citations:
-            source_type = cit.get('source_type', 'unknown')
-            source_id = cit.get('source_id', '')
+            source_type = cit.get("source_type", "unknown")
+            source_id = cit.get("source_id", "")
 
-            if source_type == 'llm_generated':
-                cit['validated'] = True
-                cit['exists'] = True  # LLM生成的不需要验证
+            if source_type == "llm_generated":
+                cit["validated"] = True
+                cit["exists"] = True  # LLM生成的不需要验证
                 continue
 
             try:
                 exists = self._check_source_in_vector_store(source_id, source_type)
-                cit['validated'] = True
-                cit['exists'] = exists
+                cit["validated"] = True
+                cit["exists"] = exists
             except Exception as e:
                 logger.warning(f"验证引用来源失败 [{source_id}]: {e}")
-                cit['validated'] = False
-                cit['exists'] = None
+                cit["validated"] = False
+                cit["exists"] = None
 
         return citations
 
@@ -157,9 +153,9 @@ class CitationParser:
             return False
         try:
             collection_map = {
-                'historical_case': 'historical_cases',
-                'defect': 'defects',
-                'requirement': 'requirements',
+                "historical_case": "historical_cases",
+                "defect": "defects",
+                "requirement": "requirements",
             }
             collection = collection_map.get(source_type)
             if not collection:
@@ -174,8 +170,7 @@ class CitationParser:
     # 3.4 生成统计信息
     # ------------------------------------------------------------------
     def generate_citation_stats(
-        self,
-        citations: List[Dict[str, Any]]
+        self, citations: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """
         生成引用来源统计信息。
@@ -199,38 +194,34 @@ class CitationParser:
             }
         """
         stats: Dict[str, Any] = {
-            'total': 0,
-            'by_type': {
-                'historical_case': 0,
-                'defect': 0,
-                'requirement': 0,
-                'llm_generated': 0,
-                'unknown': 0,
+            "total": 0,
+            "by_type": {
+                "historical_case": 0,
+                "defect": 0,
+                "requirement": 0,
+                "llm_generated": 0,
+                "unknown": 0,
             },
-            'unique_sources': len(citations),
-            'has_citations': len(citations) > 0,
-            'parse_success': True,
+            "unique_sources": len(citations),
+            "has_citations": len(citations) > 0,
+            "parse_success": True,
         }
 
         for cit in citations:
-            count = cit.get('count', 1)
-            stats['total'] += count
-            stype = cit.get('source_type', 'unknown')
-            if stype in stats['by_type']:
-                stats['by_type'][stype] += count
+            count = cit.get("count", 1)
+            stats["total"] += count
+            stype = cit.get("source_type", "unknown")
+            if stype in stats["by_type"]:
+                stats["by_type"][stype] += count
             else:
-                stats['by_type']['unknown'] += count
+                stats["by_type"]["unknown"] += count
 
         return stats
 
     # ------------------------------------------------------------------
     # 3.5 处理解析失败场景
     # ------------------------------------------------------------------
-    def safe_parse(
-        self,
-        text: str,
-        case_identifier: str = ''
-    ) -> Dict[str, Any]:
+    def safe_parse(self, text: str, case_identifier: str = "") -> Dict[str, Any]:
         """
         安全解析接口：捕获所有异常，记录警告，确保始终返回有效结果。
 
@@ -254,30 +245,26 @@ class CitationParser:
             stats = self.generate_citation_stats(citations)
 
             if citations:
-                logger.debug(
-                    f"[{case_identifier}] 解析到 {len(citations)} 个引用来源"
-                )
+                logger.debug(f"[{case_identifier}] 解析到 {len(citations)} 个引用来源")
 
             return {
-                'citations': citations,
-                'stats': stats,
-                'cleaned_text': cleaned_text,
-                'parse_success': True,
-                'error': None,
-                'original_text': text,
+                "citations": citations,
+                "stats": stats,
+                "cleaned_text": cleaned_text,
+                "parse_success": True,
+                "error": None,
+                "original_text": text,
             }
 
         except Exception as e:
-            logger.warning(
-                f"[{case_identifier}] 引用标注解析失败，保存原始文本: {e}"
-            )
+            logger.warning(f"[{case_identifier}] 引用标注解析失败，保存原始文本: {e}")
             return {
-                'citations': [],
-                'stats': self.generate_citation_stats([]),
-                'cleaned_text': text,  # 解析失败时使用原始文本
-                'parse_success': False,
-                'error': str(e),
-                'original_text': text,
+                "citations": [],
+                "stats": self.generate_citation_stats([]),
+                "cleaned_text": text,  # 解析失败时使用原始文本
+                "parse_success": False,
+                "error": str(e),
+                "original_text": text,
             }
 
     def parse_all_cases(
@@ -297,30 +284,30 @@ class CitationParser:
         """
         updated_cases = []
         batch_stats = {
-            'total_cases': len(test_cases),
-            'cases_with_citations': 0,
-            'parse_failures': 0,
-            'total_citations': 0,
+            "total_cases": len(test_cases),
+            "cases_with_citations": 0,
+            "parse_failures": 0,
+            "total_citations": 0,
         }
 
         for case in test_cases:
             # 从用例名称、测试步骤、预期结果等字段拼接待解析文本
             parse_text = self._build_parse_text(case)
-            case_id = case.get('case_id', case.get('name', ''))
+            case_id = case.get("case_id", case.get("name", ""))
 
             result = self.safe_parse(parse_text, case_identifier=case_id)
 
-            if not result['parse_success']:
-                batch_stats['parse_failures'] += 1
+            if not result["parse_success"]:
+                batch_stats["parse_failures"] += 1
 
-            if result['citations']:
-                batch_stats['cases_with_citations'] += 1
-                batch_stats['total_citations'] += result['stats']['total']
+            if result["citations"]:
+                batch_stats["cases_with_citations"] += 1
+                batch_stats["total_citations"] += result["stats"]["total"]
 
             # 在用例中注入解析结果
             updated_case = dict(case)
-            updated_case['citations'] = result['citations']
-            updated_case['citation_stats'] = result['stats']
+            updated_case["citations"] = result["citations"]
+            updated_case["citation_stats"] = result["stats"]
             updated_cases.append(updated_case)
 
         return updated_cases, batch_stats
@@ -328,10 +315,10 @@ class CitationParser:
     def _build_parse_text(self, case_data: Dict[str, Any]) -> str:
         """拼接用例中需要解析引用的字段"""
         parts = [
-            case_data.get('name', ''),
-            case_data.get('test_point', ''),
-            str(case_data.get('test_steps', '')),
-            str(case_data.get('expected_results', '')),
-            case_data.get('preconditions', ''),
+            case_data.get("name", ""),
+            case_data.get("test_point", ""),
+            str(case_data.get("test_steps", "")),
+            str(case_data.get("expected_results", "")),
+            case_data.get("preconditions", ""),
         ]
-        return ' '.join(filter(None, parts))
+        return " ".join(filter(None, parts))

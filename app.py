@@ -8,6 +8,7 @@ TestGen - AI测试用例生成平台 (重构版)
 import os
 import sys
 import io
+import logging
 
 # 修复 Windows 控制台编码问题
 if sys.platform == "win32":
@@ -17,39 +18,10 @@ if sys.platform == "win32":
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# ==================== 配置日志目录 ====================
-LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
-os.makedirs(LOG_DIR, exist_ok=True)
+# ==================== 使用统一日志工具 ====================
+from src.utils import init_global_logging
 
-# 使用 logging 模块输出日志
-import logging
-from logging.handlers import RotatingFileHandler
-
-# 配置 root logger
-log_formatter = logging.Formatter(
-    "%(asctime)s [%(name)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-)
-
-# 文件 handler (轮转日志，最大 10MB，保留 5 个文件)
-file_handler = RotatingFileHandler(
-    os.path.join(LOG_DIR, "flask.log"),
-    maxBytes=10 * 1024 * 1024,  # 10MB
-    backupCount=5,
-    encoding="utf-8",
-)
-file_handler.setFormatter(log_formatter)
-file_handler.setLevel(logging.INFO)
-
-# 控制台 handler
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setFormatter(log_formatter)
-console_handler.setLevel(logging.INFO)
-
-# 配置根 logger
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.INFO)
-root_logger.addHandler(file_handler)
-root_logger.addHandler(console_handler)
+init_global_logging()
 
 from flask import Flask, send_from_directory, make_response
 from flask_cors import CORS
@@ -88,9 +60,9 @@ def create_app():
         from src.database.fts5_listeners import setup_fts5_listeners
 
         setup_fts5_listeners(engine)
-        logging.info("  FTS5监听器已设置")
+        logging.info("FTS5监听器已设置")
     except Exception as e:
-        logging.info(f"  FTS5监听器设置失败: {e}")
+        logging.info(f"FTS5监听器设置失败: {e}")
 
     # ==================== 初始化LLM管理器 ====================
     logging.info("正在初始化LLM管理器...")
@@ -114,7 +86,7 @@ def create_app():
                 is_default=bool(config.is_default),
             )
             logging.info(
-                f"  加载配置: {config.name} ({config.provider}) - {'[默认]' if config.is_default else ''}"
+                f"加载配置: {config.name} ({config.provider}) - {'[默认]' if config.is_default else ''}"
             )
 
         # 输出当前默认配置
@@ -219,25 +191,25 @@ def create_app():
     )
 
     # ==================== 初始化SocketIO ====================
-    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
-    
+    socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+
     # 存储SocketIO实例
     app.socketio = socketio
-    
+
     # ==================== 注册API蓝图 ====================
     init_services(db_session, llm_manager, vector_store, generation_service)
     app.register_blueprint(api_bp)
-    
+
     # ==================== WebSocket事件处理 ====================
-    @socketio.on('connect', namespace='/progress')
+    @socketio.on("connect", namespace="/progress")
     def handle_connect():
-        emit('connected', {'status': 'OK'})
-    
-    @socketio.on('subscribe', namespace='/progress')
+        emit("connected", {"status": "OK"})
+
+    @socketio.on("subscribe", namespace="/progress")
     def handle_subscribe(data):
-        task_id = data.get('task_id')
+        task_id = data.get("task_id")
         if task_id:
-            emit('subscribed', {'task_id': task_id, 'status': 'subscribed'})
+            emit("subscribed", {"task_id": task_id, "status": "subscribed"})
 
     # ==================== 前端路由 ====================
     @app.route("/")

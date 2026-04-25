@@ -6,9 +6,12 @@ Agent自动化评审服务
 """
 
 import json
-import logging
+import re
+from src.utils import get_logger
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
+
+logger = get_logger(__name__)
 
 
 class ReviewDecision:
@@ -51,13 +54,15 @@ class CaseReviewAgent:
         else:
             return ReviewDecision.REJECT
 
-    def review_batch(self, cases: List[Dict[str, Any]], requirement_context: Optional[str] = None) -> Dict[str, Any]:
+    def review_batch(
+        self, cases: List[Dict[str, Any]], requirement_context: Optional[str] = None
+    ) -> Dict[str, Any]:
         """评审一批测试用例"""
         if self.llm_manager:
             try:
                 return self._llm_review_batch(cases, requirement_context)
             except Exception as e:
-                logging.error(f"[CaseReviewAgent] LLM评审失败，使用规则回退: {e}")
+                logger.error(f"[CaseReviewAgent] LLM评审失败，使用规则回退: {e}")
                 return self._rule_based_review(cases)
         else:
             return self._rule_based_review(cases)
@@ -68,41 +73,63 @@ class CaseReviewAgent:
         duplicate_cases = []
         suggestions = []
 
-        placeholder_keywords = ["{{", "}}", "username", "password", "xxx", "功能正常", "显示正确", "正常工作"]
+        placeholder_keywords = [
+            "{{",
+            "}}",
+            "username",
+            "password",
+            "xxx",
+            "功能正常",
+            "显示正确",
+            "正常工作",
+        ]
         for case in cases:
             content = json.dumps(case, ensure_ascii=False)
             for kw in placeholder_keywords:
                 if kw in content:
-                    issues.append({
-                        "type": "placeholder_data",
-                        "case_id": case.get("case_id", "unknown"),
-                        "description": f"检测到可能的问题关键词: {kw}",
-                    })
+                    issues.append(
+                        {
+                            "type": "placeholder_data",
+                            "case_id": case.get("case_id", "unknown"),
+                            "description": f"检测到可能的问题关键词: {kw}",
+                        }
+                    )
                     break
 
         priorities = [c.get("priority", "P2") for c in cases]
         p0_p1_count = sum(1 for p in priorities if p in ("P0", "P1"))
         p0_p1_ratio = p0_p1_count / len(cases) if cases else 0
         if p0_p1_ratio > 0.45:
-            issues.append({
-                "type": "priority_distribution",
-                "case_id": "global",
-                "description": f"P0+P1占比{p0_p1_ratio:.0%}超过45%",
-            })
+            issues.append(
+                {
+                    "type": "priority_distribution",
+                    "case_id": "global",
+                    "description": f"P0+P1占比{p0_p1_ratio:.0%}超过45%",
+                }
+            )
 
         names = [c.get("name", "") for c in cases]
         for i, name in enumerate(names):
             for j in range(i + 1, len(names)):
                 if names[i] == names[j]:
-                    duplicate_cases.append({
-                        "case1_id": cases[i].get("case_id", f"case_{i}"),
-                        "case2_id": cases[j].get("case_id", f"case_{j}"),
-                        "reason": "用例标题完全相同",
-                    })
+                    duplicate_cases.append(
+                        {
+                            "case1_id": cases[i].get("case_id", f"case_{i}"),
+                            "case2_id": cases[j].get("case_id", f"case_{j}"),
+                            "reason": "用例标题完全相同",
+                        }
+                    )
 
-        completeness = max(60, 100 - len([i for i in issues if i["type"] == "missing_feature"]) * 10)
-        accuracy = max(60, 100 - len([i for i in issues if i["type"] == "placeholder_data"]) * 10)
-        priority = max(60, 100 - len([i for i in issues if i["type"] == "priority_distribution"]) * 15)
+        completeness = max(
+            60, 100 - len([i for i in issues if i["type"] == "missing_feature"]) * 10
+        )
+        accuracy = max(
+            60, 100 - len([i for i in issues if i["type"] == "placeholder_data"]) * 10
+        )
+        priority = max(
+            60,
+            100 - len([i for i in issues if i["type"] == "priority_distribution"]) * 15,
+        )
         duplication = max(60, 100 - len(duplicate_cases) * 10)
 
         scores = {
@@ -129,6 +156,52 @@ class CaseReviewAgent:
             "decision": decision,
             "conclusion": conclusion_map.get(decision, ""),
         }
+
+    def _llm_review_batch(
+        self, cases: List[Dict[str, Any]], requirement_context: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """使用LLM进行用例评审"""
+        if not self.llm_manager:
+            raise Exception("LLM管理器未初始化")
+
+        import json
+
+        cases_json = json.dumps(cases[:10], ensure_ascii=False)
+
+        prompt = f"""你是测试用例评审专家。请评审以下测试用例的质量：
+
+用例列表：
+{cases_json}
+
+评审维度：
+1. 完整性 - 用例是否覆盖所有测试点
+2. 准确性 - 用例步骤和预期结果是否正确
+3. 优先级 - 优先级分布是否合理
+4. 重复性 - 是否有重复用例
+
+输出JSON格式的评审结果：
+{{
+    "scores": {{"completeness": 0-100, "accuracy": 0-100, "priority": 0-100, "duplication": 0-100}},
+    "overall_score": 0-100,
+    "issues": [{{"type": "", "case_id": "", "description": ""}}],
+    "duplicate_cases": [{{"case1_id": "", "case2_id": "", "reason": ""}},
+    "decision": "AUTO_PASS/NEEDS_REVIEW/REJECT",
+    "conclusion": ""
+}}
+"""
+        try:
+            adapter = self.llm_manager.get_adapter()
+            response = adapter.generate(prompt, temperature=0.3, max_tokens=2048)
+
+            if response.success:
+                content = response.content
+                json_match = re.search(r"\{[\s\S]*\}", content)
+                if json_match:
+                    return json.loads(json_match.group())
+        except Exception as e:
+            logger.error(f"LLM评审调用失败: {e}")
+
+        raise Exception("LLM评审失败，回退到规则评审")
 
     def validate_review_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """校验并补全评审结果"""
@@ -180,7 +253,9 @@ class CaseReviewAgent:
                 "total_cases": 0,
             }
 
-        weighted_sum = sum(b.get("overall_score", 0) * b.get("case_count", 0) for b in batch_reviews)
+        weighted_sum = sum(
+            b.get("overall_score", 0) * b.get("case_count", 0) for b in batch_reviews
+        )
         overall_score = round(weighted_sum / total_cases, 1)
 
         all_issues = []

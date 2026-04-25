@@ -11,12 +11,13 @@
 """
 
 import hashlib
-import logging
 import threading
 import time
 from typing import Dict, Any, List, Optional
 
-logger = logging.getLogger(__name__)
+from src.utils import get_logger
+
+logger = get_logger(__name__)
 
 # 缓存配置
 CACHE_TTL_SECONDS = 24 * 60 * 60  # 24小时

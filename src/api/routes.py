@@ -7,7 +7,9 @@ API路由定义 - RESTful接口
 
 import os
 import sys
-import logging
+from src.utils import get_logger
+
+logger = get_logger(__name__)
 
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -189,12 +191,24 @@ def analyze_requirement(requirement_id):
     """
     分析需求 - 识别功能模块和测试点
     POST /api/requirements/{id}/analyze
+
+    日志流程：
+    1. 开始分析 - 输入需求ID和内容摘要
+    2. 加载Prompt模板 - requirement_analysis
+    3. 调用LLM分析
+    4. 解析分析结果 - 提取功能模块和测试点
+    5. 保存分析结果 - 状态更新为已分析
     """
+    from datetime import datetime
+
+    start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     try:
         from src.database.models import Requirement, RequirementStatus
 
         requirement = db_session.query(Requirement).get(requirement_id)
         if not requirement:
+            logger.info(f"[需求分析] 需求ID={requirement_id} 不存在")
             return jsonify({"error": "需求不存在"}), 404
 
         if requirement.status not in [
@@ -202,6 +216,9 @@ def analyze_requirement(requirement_id):
             RequirementStatus.COMPLETED,
             RequirementStatus.FAILED,
         ]:
+            print(
+                f"[需求分析] 需求ID={requirement_id} 状态不支持分析: {int(requirement.status)}"
+            )
             return (
                 jsonify(
                     {"error": f"当前状态 {int(requirement.status)} 不支持分析操作"}
@@ -210,56 +227,102 @@ def analyze_requirement(requirement_id):
             )
 
         if not generation_service.llm_manager:
+            print(
+                f"[需求分析] 需求ID={requirement_id} LLM管理器未初始化"
+            )
             return jsonify({"error": "LLM管理器未初始化"}), 500
 
         import json
         import re
-        import logging
 
         from src.services.prompt_template_service import PromptTemplateService
 
+        # 记录需求内容摘要
+        content_preview = (
+            requirement.content[:100].replace("\n", " ") if requirement.content else ""
+        )
+        print(
+            f"[需求分析] 开始分析 - 需求ID={requirement_id}, 内容摘要: {content_preview}..."
+        )
+
         requirement.status = RequirementStatus.ANALYZING
         db_session.commit()
+        logger.info(
+            f"[需求分析] 需求ID={requirement_id} 状态更新为: 分析中"
+        )
 
         try:
             prompt_service = PromptTemplateService(db_session)
+            logger.info(
+                f"[需求分析] 加载Prompt模板: requirement_analysis"
+            )
             render_result = prompt_service.render_template(
                 "requirement_analysis", requirement_content=requirement.content
             )
             prompt = render_result["prompt"]
-            logging.info(f"[Analyze] Prompt length: {len(prompt)}")
+            logger.info(f"[Analyze] Prompt length: {len(prompt)}")
+            print(
+                f"[需求分析] Prompt模板渲染完成, 长度={len(prompt)}字符"
+            )
         except Exception as e:
-            logging.error(f"[Analyze] Prompt render failed: {e}")
+            logger.info(f"[需求分析] Prompt模板渲染失败: {e}")
+            logger.error(f"[Analyze] Prompt render failed: {e}")
             requirement.status = RequirementStatus.PENDING_ANALYSIS
             db_session.commit()
             return jsonify({"error": f"渲染Prompt失败: {str(e)}"}), 500
 
         try:
             adapter = generation_service.llm_manager.get_adapter()
+            print(
+                f"[需求分析] 调用LLM: adapter={type(adapter).__name__}, temperature=0.3"
+            )
             response = adapter.generate(
                 prompt,
                 temperature=0.3,
                 max_tokens=4096,
                 timeout=120,
             )
+            logger.info(
+                f"[需求分析] LLM调用完成, success={response.success}"
+            )
         except Exception as e:
-            logging.error(f"[Analyze] LLM call failed: {e}")
+            logger.info(f"[需求分析] LLM调用失败: {e}")
+            logger.error(f"[Analyze] LLM call failed: {e}")
             return jsonify({"error": f"LLM调用失败: {str(e)}"}), 500
 
         if not response.success:
+            logger.info(
+                f"[需求分析] LLM返回失败: {response.error_message}"
+            )
             requirement.status = RequirementStatus.PENDING_ANALYSIS
             db_session.commit()
             return jsonify({"error": f"LLM分析失败: {response.error_message}"}), 500
 
         try:
             content = response.content
+            logger.info(
+                f"[需求分析] 解析LLM响应, 长度={len(content)}字符"
+            )
             json_match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", content)
             if json_match:
                 analysis_result = json.loads(json_match.group(1))
             else:
                 analysis_result = json.loads(content)
+            logger.info(f"[需求分析] JSON解析成功")
+
+            # 打印分析结果摘要
+            modules = analysis_result.get("modules", [])
+            points = analysis_result.get("test_points", [])
+            print(
+                f"[需求分析] 识别到 {len(modules)} 个功能模块, {len(points)} 个测试点"
+            )
+            if modules:
+                print(
+                    f"[需求分析] 功能模块: {', '.join([m.get('name', '') for m in modules[:3]])}..."
+                )
         except (json.JSONDecodeError, AttributeError) as e:
-            logging.error(f"[Analyze] JSON parse failed: {e}, content: {content[:500]}")
+            logger.info(f"[需求分析] JSON解析失败: {e}")
+            logger.error(f"[Analyze] JSON parse failed: {e}, content: {content[:500]}")
             requirement.status = RequirementStatus.PENDING_ANALYSIS
             db_session.commit()
             return (
@@ -270,9 +333,12 @@ def analyze_requirement(requirement_id):
             )
 
         requirement.analysis_data = analysis_result
-        requirement.analyzed_content = response.content  # 保存原始MD格式
+        requirement.analyzed_content = response.content
         requirement.status = RequirementStatus.ANALYZED
         db_session.commit()
+        print(
+            f"[需求分析] 分析完成 - 需求ID={requirement_id}, 状态=已分析"
+        )
 
         return (
             jsonify(
@@ -288,6 +354,7 @@ def analyze_requirement(requirement_id):
         )
 
     except Exception as e:
+        logger.info(f"[需求分析] 异常: {e}")
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
@@ -362,21 +429,21 @@ def review_requirement(requirement_id):
     审核确认功能模块和测试点，触发生成
     POST /api/requirements/{id}/review
 
-    Request Body:
-    {
-        "action": "generate" | "cancel",  # generate: 确认并生成; cancel: 取消不生成
-        "reviewed_plan": {                # 可选：用户评审后编辑的测试规划数据
-            "modules": [...],
-            "points": [...],
-            "items": [...]
-        }
-    }
+    日志流程：
+    1. 开始评审 - 输入需求ID
+    2. 获取分析结果 - 提取功能模块和测试点
+    3. 模块评审 - 验证模块完整性和合理性
+    4. 测试点评审 - 验证测试点覆盖度
+    5. 人工确认 - 确认后触发生成
+    6. 创建生成任务 - 更新状态为生成中
     """
+
     try:
         from src.database.models import Requirement, RequirementStatus
 
         requirement = db_session.query(Requirement).get(requirement_id)
         if not requirement:
+            logger.info(f"[模块评审] 需求ID={requirement_id} 不存在")
             return jsonify({"error": "需求不存在"}), 404
 
         if requirement.status not in [
@@ -393,15 +460,39 @@ def review_requirement(requirement_id):
             status_name = status_names.get(
                 requirement.status, f"状态{requirement.status}"
             )
+            logger.info(f"[模块评审] 需求ID={requirement_id} 状态不支持评审: {status_name}")
             return (
                 jsonify({"error": f"当前状态 {status_name} 不支持确认操作"}),
                 400,
+            )
+
+        # 打印当前分析结果
+        analysis_data = requirement.analysis_data or {}
+        modules = analysis_data.get("modules", [])
+        points = analysis_data.get("test_points", [])
+        logger.info(f"[模块评审] 开始评审 - 需求ID={requirement_id}")
+        logger.info(f"[模块评审] 功能模块数量: {len(modules)}, 测试点数量: {len(points)}")
+
+        if modules:
+            module_names = [m.get("name", "") for m in modules[:5]]
+            logger.info(
+                f"[模块评审] 模块列表: {', '.join(module_names)}"
+            )
+        if points:
+            point_names = [
+                p.get("name", "") or p.get("test_point", "") for p in points[:5]
+            ]
+            logger.info(
+                f"[模块评审] 测试点列表: {', '.join(point_names)}"
             )
 
         data = request.json or {}
         action = data.get("action", "cancel")
 
         if action == "cancel":
+            logger.info(
+                f"[模块评审] 用户取消生成 - 需求ID={requirement_id}"
+            )
             return (
                 jsonify(
                     {
@@ -413,19 +504,26 @@ def review_requirement(requirement_id):
                 200,
             )
 
+        # 记录模块评审结果
+        logger.info(f"[模块评审] 模块评审通过 - 需求ID={requirement_id}")
+
+        # 创建生成任务
         task_id = generation_service.create_task(requirement_id)
         requirement.status = RequirementStatus.GENERATING
         db_session.commit()
+        logger.info(f"[模块评审] 创建生成任务, task_id={task_id}")
 
         # 使用用户评审后的数据，或回退到数据库中的原始数据
         reviewed_plan = data.get("reviewed_plan")
-        print(
-            f"[API] reviewed_plan: {reviewed_plan is not None}, keys: {list(reviewed_plan.keys()) if reviewed_plan else None}"
-        )
+        logger.info(f"[模块评审] 使用数据: {'用户编辑后' if reviewed_plan else '原始分析'}")
         generation_data = reviewed_plan if reviewed_plan else requirement.analysis_data
 
         generation_service.start_task(task_id)
+        logger.info(f"[模块评审] 启动生成任务, task_id={task_id}")
+
+        # 异步执行
         generation_service.execute_phase2_generation(task_id, generation_data)
+        logger.info(f"[模块评审] 触发异步生成完成 - task_id={task_id}")
 
         return (
             jsonify(
@@ -440,6 +538,7 @@ def review_requirement(requirement_id):
         )
 
     except Exception as e:
+        logger.info(f"[模块评审] 异常: {e}")
         db_session.rollback()
         return jsonify({"error": str(e)}), 500
 
@@ -814,32 +913,32 @@ def continue_generation():
     }
     """
     try:
-        logging.info("[调试][API] /api/generate/continue 被调用")
+        logger.info("[调试][API] /api/generate/continue 被调用")
         data = request.json
-        logging.info(
+        logger.info(
             "[调试][API] request.json keys: %s", list(data.keys()) if data else "None"
         )
 
         if not data or "task_id" not in data:
-            logging.info("[调试][API] 缺少task_id字段")
+            logger.info("[调试][API] 缺少task_id字段")
             return jsonify({"error": "缺少必要字段: task_id"}), 400
 
         task_id = data["task_id"]
         if not task_id:
-            logging.info("[调试][API] task_id为空值: %s", task_id)
+            logger.info("[调试][API] task_id为空值: %s", task_id)
             return jsonify({"error": "task_id不能为空"}), 400
 
         reviewed_plan = data.get("reviewed_plan")  # 用户可能编辑过的规划
-        logging.info("[调试][API] task_id: %s", task_id)
-        logging.info(
+        logger.info("[调试][API] task_id: %s", task_id)
+        logger.info(
             "[调试][API] reviewed_plan keys: %s",
             list(reviewed_plan.keys()) if reviewed_plan else "None",
         )
         if reviewed_plan:
             items = reviewed_plan.get("items", [])
-            logging.info("[调试][API] reviewed_plan.items 数量: %d", len(items))
+            logger.info("[调试][API] reviewed_plan.items 数量: %d", len(items))
             if items:
-                logging.info(
+                logger.info(
                     "[调试][API] 第一个item title: %s",
                     items[0].get("title", items[0].get("name", "N/A")),
                 )
@@ -1738,7 +1837,7 @@ def rag_import_from_db():
                     vector_store.add_case(case_doc_id, case_content, metadata)
                     imported_count += 1
                 except Exception as e:
-                    print(f"导入用例 {case.id} 失败: {e}")
+                    logger.info(f"导入用例 {case.id} 失败: {e}")
                     continue
 
         elif item_type == "requirements":
@@ -1772,7 +1871,7 @@ def rag_import_from_db():
                     vector_store.add_requirement(req_doc_id, req_content, metadata)
                     imported_count += 1
                 except Exception as e:
-                    print(f"导入需求 {req.id} 失败: {e}")
+                    logger.info(f"导入需求 {req.id} 失败: {e}")
                     continue
         else:
             return jsonify({"error": f"不支持的类型: {item_type}"}), 400
@@ -2242,7 +2341,7 @@ def _extract_title_from_content(content: str, file_ext: str) -> str:
 
         return ""
     except Exception as e:
-        print(f"[提取标题] 异常: {str(e)}")
+        logger.info(f"[提取标题] 异常: {str(e)}")
         return ""
 
 
@@ -2262,8 +2361,8 @@ def import_requirements():
             return jsonify({"error": "没有上传文件"}), 400
 
         file = request.files["file"]
-        print(f"[导入需求] file对象: {file}")
-        print(f"[导入需求] file.filename: {repr(file.filename)}")
+        logger.info(f"[导入需求] file对象: {file}")
+        logger.info(f"[导入需求] file.filename: {repr(file.filename)}")
 
         if file.filename == "":
             print("[导入需求] 错误: 文件名为空")
@@ -2280,17 +2379,17 @@ def import_requirements():
             if len(parts) == 2 and parts[1]:
                 file_ext = "." + parts[1].lower()
 
-        print(f"[导入需求] 原始文件名: {original_filename}")
-        print(f"[导入需求] 提取的扩展名: '{file_ext}'")
-        print(f"[导入需求] 扩展名repr: {repr(file_ext)}")
-        print(f"[导入需求] 扩展名长度: {len(file_ext)}")
+        logger.info(f"[导入需求] 原始文件名: {original_filename}")
+        logger.info(f"[导入需求] 提取的扩展名: '{file_ext}'")
+        logger.info(f"[导入需求] 扩展名repr: {repr(file_ext)}")
+        logger.info(f"[导入需求] 扩展名长度: {len(file_ext)}")
 
         # 如果提取的扩展名为空，给一个默认值
         if not file_ext:
             print("[导入需求] 警告: 扩展名为空，使用默认值 .txt")
             file_ext = ".txt"
 
-        print(f"[导入需求] 最终使用的扩展名: '{file_ext}'")
+        logger.info(f"[导入需求] 最终使用的扩展名: '{file_ext}'")
 
         # 支持的文件格式
         supported_extensions = [
@@ -2336,8 +2435,8 @@ def import_requirements():
 
         file.save(filepath)
 
-        print(f"[导入需求] 保存路径: {filepath}")
-        print(f"[导入需求] 文件扩展名验证: {os.path.splitext(filepath)[1]}")
+        logger.info(f"[导入需求] 保存路径: {filepath}")
+        logger.info(f"[导入需求] 文件扩展名验证: {os.path.splitext(filepath)[1]}")
 
         # 解析文件内容并创建需求记录
         from src.database.models import Requirement, RequirementStatus
@@ -2413,13 +2512,13 @@ def import_requirements():
 
         db_session.commit()
 
-        print(f"[导入需求] 导入成功，数量: {imported_count}")
+        logger.info(f"[导入需求] 导入成功，数量: {imported_count}")
 
         return jsonify({"message": "导入成功", "imported_count": imported_count})
 
     except Exception as e:
         db_session.rollback()
-        print(f"[导入需求] 异常: {str(e)}")
+        logger.info(f"[导入需求] 异常: {str(e)}")
         import traceback
 
         traceback.print_exc()
@@ -2628,10 +2727,10 @@ def test_llm_config():
         adapter = temp_llm.get_adapter("test")
 
         # 打印请求信息以便调试
-        print(f"[测试连接] 提供商: {data['provider']}")
-        print(f"[测试连接] Base URL: {data.get('base_url', '')}")
-        print(f"[测试连接] Model ID: {data['model_id']}")
-        print(f"[测试连接] Timeout: {data.get('timeout', 30)}秒")
+        logger.info(f"[测试连接] 提供商: {data['provider']}")
+        logger.info(f"[测试连接] Base URL: {data.get('base_url', '')}")
+        logger.info(f"[测试连接] Model ID: {data['model_id']}")
+        logger.info(f"[测试连接] Timeout: {data.get('timeout', 30)}秒")
 
         # 发起真实的测试请求
         response = adapter.generate(
@@ -2644,7 +2743,7 @@ def test_llm_config():
 
         # 验证响应
         if not response.success:
-            print(f"[测试连接] 失败: {response.error_message}")
+            logger.info(f"[测试连接] 失败: {response.error_message}")
             return (
                 jsonify(
                     {
@@ -2658,7 +2757,7 @@ def test_llm_config():
 
         # 验证响应内容是否为空
         if not response.content or len(response.content.strip()) == 0:
-            print(f"[测试连接] 失败: 响应为空")
+            logger.info(f"[测试连接] 失败: 响应为空")
             return (
                 jsonify(
                     {
@@ -2670,7 +2769,7 @@ def test_llm_config():
                 500,
             )
 
-        print(f"[测试连接] 成功，响应: {response.content[:100]}...")
+        logger.info(f"[测试连接] 成功，响应: {response.content[:100]}...")
 
         return jsonify(
             {
@@ -2683,7 +2782,7 @@ def test_llm_config():
         )
 
     except Exception as e:
-        print(f"[测试连接] 异常: {str(e)}")
+        logger.info(f"[测试连接] 异常: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
@@ -3411,7 +3510,7 @@ def batch_delete_tasks():
                         db_session.delete(task_model)
                         deleted_count += 1
             except Exception as e:
-                print(f"删除任务 {task_id} 失败: {e}")
+                logger.info(f"删除任务 {task_id} 失败: {e}")
                 continue
 
         db_session.commit()

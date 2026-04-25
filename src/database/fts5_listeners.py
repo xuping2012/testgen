@@ -11,7 +11,9 @@ import logging
 from sqlalchemy import event, text
 from sqlalchemy.orm import Session
 
-logger = logging.getLogger(__name__)
+from src.utils import get_logger
+
+logger = get_logger(__name__)
 
 # FTS5表映射
 FTS5_TABLES = {
@@ -132,20 +134,19 @@ def _update_fts5_for_table(engine, table_name, operations):
     fts_config = FTS5_TABLES[table_name]
     fts_table = fts_config["fts_table"]
 
-    max_retries = 3
+    max_retries = 5
     for attempt in range(max_retries):
         try:
             with engine.connect() as conn:
-                # INSERT操作
+                conn.execute(text("PRAGMA busy_timeout=5000"))
+
                 for obj in operations.get("insert", []):
                     _insert_fts5_row(conn, fts_table, fts_config, obj)
 
-                # UPDATE操作（先删后插）
                 for obj in operations.get("update", []):
                     _delete_fts5_row(conn, fts_table, obj)
                     _insert_fts5_row(conn, fts_table, fts_config, obj)
 
-                # DELETE操作
                 for obj in operations.get("delete", []):
                     _delete_fts5_row(conn, fts_table, obj)
 
@@ -153,7 +154,7 @@ def _update_fts5_for_table(engine, table_name, operations):
             return
         except Exception as e:
             if "database is locked" in str(e) and attempt < max_retries - 1:
-                wait_time = 0.2 * (attempt + 1)
+                wait_time = 0.3 * (attempt + 1)
                 logger.warning(
                     f"FTS5更新失败 (attempt {attempt + 1}), {wait_time}秒后重试: {e}"
                 )
@@ -198,7 +199,7 @@ def _insert_fts5_row(conn, fts_table, fts_config, obj):
     """向FTS5表插入一行（带重试）"""
     import time
 
-    for attempt in range(3):
+    for attempt in range(5):
         try:
             _ensure_fts5_table_exists(conn, fts_config)
 
@@ -210,15 +211,15 @@ def _insert_fts5_row(conn, fts_table, fts_config, obj):
             columns_str = ", ".join(fts_config["columns"])
             placeholders = ", ".join([f":{col}" for col in fts_config["columns"]])
 
-            sql = f"INSERT INTO {fts_table}(rowid, {columns_str}) VALUES (:rowid, {placeholders})"
-            values["rowid"] = row_id
+            sql = f"INSERT INTO {fts_table}(rowid, {columns_str}) VALUES (:row_id, {placeholders})"
+            values["row_id"] = row_id
 
             conn.execute(text(sql), values)
             logger.debug(f"FTS5插入: {fts_table} rowid={row_id}")
             return
         except Exception as e:
-            if "locked" in str(e).lower() and attempt < 2:
-                time.sleep(0.1 * (attempt + 1))
+            if "locked" in str(e).lower() and attempt < 4:
+                time.sleep(0.2 * (attempt + 1))
                 continue
             logger.warning(f"FTS5插入失败 (rowid={obj.id}): {e}")
             return

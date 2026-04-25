@@ -9,11 +9,11 @@
 3. 历史检索效果统计查询
 """
 
-import logging
 from typing import Dict, Any, List
 from datetime import datetime
+from src.utils import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class RetrievalEvaluator:

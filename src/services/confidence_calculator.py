@@ -17,24 +17,24 @@
 
 import re
 import math
-import logging
 from typing import Dict, Any, List, Optional, Tuple
+from src.utils import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # 权重配置（可通过子类或配置文件覆盖）
 DEFAULT_WEIGHTS = {
-    'semantic_similarity': 0.35,
-    'keyword_coverage': 0.25,
-    'rag_support': 0.25,
-    'structure_completeness': 0.15,
+    "semantic_similarity": 0.35,
+    "keyword_coverage": 0.25,
+    "rag_support": 0.25,
+    "structure_completeness": 0.15,
 }
 
 # 等级阈值配置
 LEVEL_THRESHOLDS = {
-    'A': 0.85,
-    'B': 0.70,
-    'C': 0.50,
+    "A": 0.85,
+    "B": 0.70,
+    "C": 0.50,
 }
 
 
@@ -46,8 +46,11 @@ class ConfidenceCalculator:
     计算综合置信度分数和等级。
     """
 
-    def __init__(self, weights: Optional[Dict[str, float]] = None,
-                 level_thresholds: Optional[Dict[str, float]] = None):
+    def __init__(
+        self,
+        weights: Optional[Dict[str, float]] = None,
+        level_thresholds: Optional[Dict[str, float]] = None,
+    ):
         self.weights = weights or DEFAULT_WEIGHTS.copy()
         self.level_thresholds = level_thresholds or LEVEL_THRESHOLDS.copy()
 
@@ -55,9 +58,7 @@ class ConfidenceCalculator:
     # 2.2 语义相似度计算（使用简单词向量余弦相似度近似）
     # ------------------------------------------------------------------
     def calculate_semantic_similarity(
-        self,
-        case_text: str,
-        requirement_content: str
+        self, case_text: str, requirement_content: str
     ) -> float:
         """
         计算测试用例文本与需求内容之间的语义相似度。
@@ -87,17 +88,17 @@ class ConfidenceCalculator:
     def _build_term_vector(self, text: str) -> Dict[str, int]:
         """构建词频向量（中英文分词，去除停用词）"""
         # 简单分词：按空白/标点拆分
-        tokens = re.findall(r'[\u4e00-\u9fff]+|[a-zA-Z0-9]+', text.lower())
+        tokens = re.findall(r"[\u4e00-\u9fff]+|[a-zA-Z0-9]+", text.lower())
         # 中文字符级 unigram（简单近似）
         expanded = []
         for t in tokens:
-            if re.match(r'^[\u4e00-\u9fff]+$', t):
+            if re.match(r"^[\u4e00-\u9fff]+$", t):
                 expanded.extend(list(t))  # 每个汉字为一个词元
             else:
                 expanded.append(t)
         vector: Dict[str, int] = {}
         for token in expanded:
-            if len(token) > 1 or not re.match(r'[a-z0-9]', token):
+            if len(token) > 1 or not re.match(r"[a-z0-9]", token):
                 vector[token] = vector.get(token, 0) + 1
         return vector
 
@@ -117,10 +118,7 @@ class ConfidenceCalculator:
     # 2.3 关键词覆盖率计算
     # ------------------------------------------------------------------
     def calculate_keyword_coverage(
-        self,
-        case_text: str,
-        requirement_content: str,
-        min_keyword_len: int = 2
+        self, case_text: str, requirement_content: str, min_keyword_len: int = 2
     ) -> float:
         """
         计算需求关键词在测试用例中的覆盖比例。
@@ -155,25 +153,65 @@ class ConfidenceCalculator:
         4. 去除停用词，按词频排序取 top-30
         """
         stop_words = {
-            '的', '了', '是', '在', '有', '和', '与', '或', '等', '及',
-            '为', '以', '对', '被', '也', '都', '但', '则', '进行',
-            'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been',
-            'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
-            'to', 'of', 'in', 'on', 'at', 'by', 'for', 'with', 'from',
+            "的",
+            "了",
+            "是",
+            "在",
+            "有",
+            "和",
+            "与",
+            "或",
+            "等",
+            "及",
+            "为",
+            "以",
+            "对",
+            "被",
+            "也",
+            "都",
+            "但",
+            "则",
+            "进行",
+            "the",
+            "a",
+            "an",
+            "is",
+            "are",
+            "was",
+            "were",
+            "be",
+            "been",
+            "have",
+            "has",
+            "had",
+            "do",
+            "does",
+            "did",
+            "will",
+            "would",
+            "to",
+            "of",
+            "in",
+            "on",
+            "at",
+            "by",
+            "for",
+            "with",
+            "from",
         }
         freq: Dict[str, int] = {}
 
         # 中文段：生成 2~4 字 n-gram
-        chinese_segs = re.findall(r'[\u4e00-\u9fff]+', text)
+        chinese_segs = re.findall(r"[\u4e00-\u9fff]+", text)
         for seg in chinese_segs:
             for n in (2, 3, 4):
                 for i in range(len(seg) - n + 1):
-                    gram = seg[i:i + n]
+                    gram = seg[i : i + n]
                     if gram not in stop_words:
                         freq[gram] = freq.get(gram, 0) + 1
 
         # 英文词：按空白分词
-        english_tokens = re.findall(r'[a-zA-Z]{%d,}' % min_len, text.lower())
+        english_tokens = re.findall(r"[a-zA-Z]{%d,}" % min_len, text.lower())
         for t in english_tokens:
             if t not in stop_words:
                 freq[t] = freq.get(t, 0) + 1
@@ -185,10 +223,7 @@ class ConfidenceCalculator:
     # ------------------------------------------------------------------
     # 2.4 RAG支持度计算
     # ------------------------------------------------------------------
-    def calculate_rag_support(
-        self,
-        rag_results: Optional[Dict[str, Any]]
-    ) -> float:
+    def calculate_rag_support(self, rag_results: Optional[Dict[str, Any]]) -> float:
         """
         计算RAG召回结果对生成用例的支持度。
 
@@ -210,9 +245,9 @@ class ConfidenceCalculator:
             return 0.1  # 无RAG召回时给低分
 
         total_docs = (
-            rag_results.get('cases', 0) +
-            rag_results.get('defects', 0) +
-            rag_results.get('requirements', 0)
+            rag_results.get("cases", 0)
+            + rag_results.get("defects", 0)
+            + rag_results.get("requirements", 0)
         )
 
         if total_docs == 0:
@@ -222,16 +257,16 @@ class ConfidenceCalculator:
         quantity_score = min(total_docs / 11.0, 1.0)
 
         # 质量分（基于相似度得分，如果有）
-        scores = rag_results.get('scores', [])
+        scores = rag_results.get("scores", [])
         if scores:
             avg_score = sum(scores) / len(scores)
             quality_score = min(avg_score, 1.0)
         else:
             # 无具体分数时，按文档类型加权估算
             # 历史用例权重最高（最直接相关）
-            cases_score = min(rag_results.get('cases', 0) / 5.0, 1.0) * 0.5
-            defects_score = min(rag_results.get('defects', 0) / 3.0, 1.0) * 0.3
-            reqs_score = min(rag_results.get('requirements', 0) / 3.0, 1.0) * 0.2
+            cases_score = min(rag_results.get("cases", 0) / 5.0, 1.0) * 0.5
+            defects_score = min(rag_results.get("defects", 0) / 3.0, 1.0) * 0.3
+            reqs_score = min(rag_results.get("requirements", 0) / 3.0, 1.0) * 0.2
             quality_score = cases_score + defects_score + reqs_score
 
         return 0.4 * quantity_score + 0.6 * quality_score
@@ -239,10 +274,7 @@ class ConfidenceCalculator:
     # ------------------------------------------------------------------
     # 2.5 结构完整性计算
     # ------------------------------------------------------------------
-    def calculate_structure_completeness(
-        self,
-        case_data: Dict[str, Any]
-    ) -> float:
+    def calculate_structure_completeness(self, case_data: Dict[str, Any]) -> float:
         """
         计算测试用例结构完整性分数。
 
@@ -258,17 +290,31 @@ class ConfidenceCalculator:
 
         # 必要字段检查（每项权重）
         checks = [
-            ('preconditions', 0.15, lambda v: bool(v and str(v).strip())),
-            ('test_steps', 0.35, lambda v: bool(v and (
-                (isinstance(v, list) and len(v) >= 1) or
-                (isinstance(v, str) and v.strip())
-            ))),
-            ('expected_results', 0.30, lambda v: bool(v and (
-                (isinstance(v, list) and len(v) >= 1) or
-                (isinstance(v, str) and v.strip())
-            ))),
-            ('module', 0.10, lambda v: bool(v and str(v).strip())),
-            ('priority', 0.10, lambda v: bool(v and str(v).strip())),
+            ("preconditions", 0.15, lambda v: bool(v and str(v).strip())),
+            (
+                "test_steps",
+                0.35,
+                lambda v: bool(
+                    v
+                    and (
+                        (isinstance(v, list) and len(v) >= 1)
+                        or (isinstance(v, str) and v.strip())
+                    )
+                ),
+            ),
+            (
+                "expected_results",
+                0.30,
+                lambda v: bool(
+                    v
+                    and (
+                        (isinstance(v, list) and len(v) >= 1)
+                        or (isinstance(v, str) and v.strip())
+                    )
+                ),
+            ),
+            ("module", 0.10, lambda v: bool(v and str(v).strip())),
+            ("priority", 0.10, lambda v: bool(v and str(v).strip())),
         ]
 
         for field, weight, checker in checks:
@@ -277,7 +323,7 @@ class ConfidenceCalculator:
                 score += weight
 
         # 步骤数量奖励：步骤>=3条额外加分
-        steps = case_data.get('test_steps', [])
+        steps = case_data.get("test_steps", [])
         if isinstance(steps, list) and len(steps) >= 3:
             score = min(score + 0.05, 1.0)
 
@@ -318,27 +364,25 @@ class ConfidenceCalculator:
                 case_text, requirement_content
             )
 
-        keyword_score = self.calculate_keyword_coverage(
-            case_text, requirement_content
-        )
+        keyword_score = self.calculate_keyword_coverage(case_text, requirement_content)
         rag_score = self.calculate_rag_support(rag_results)
         structure_score = self.calculate_structure_completeness(case_data)
 
         # 加权综合
         w = self.weights
         total = (
-            semantic_score * w['semantic_similarity'] +
-            keyword_score * w['keyword_coverage'] +
-            rag_score * w['rag_support'] +
-            structure_score * w['structure_completeness']
+            semantic_score * w["semantic_similarity"]
+            + keyword_score * w["keyword_coverage"]
+            + rag_score * w["rag_support"]
+            + structure_score * w["structure_completeness"]
         )
         total = round(min(max(total, 0.0), 1.0), 4)
 
         breakdown = {
-            'semantic_similarity': round(semantic_score, 4),
-            'keyword_coverage': round(keyword_score, 4),
-            'rag_support': round(rag_score, 4),
-            'structure_completeness': round(structure_score, 4),
+            "semantic_similarity": round(semantic_score, 4),
+            "keyword_coverage": round(keyword_score, 4),
+            "rag_support": round(rag_score, 4),
+            "structure_completeness": round(structure_score, 4),
         }
 
         return total, breakdown
@@ -346,15 +390,21 @@ class ConfidenceCalculator:
     def _build_case_text(self, case_data: Dict[str, Any]) -> str:
         """将测试用例各字段拼接为文本用于相似度计算"""
         parts = [
-            case_data.get('name', ''),
-            case_data.get('test_point', ''),
-            case_data.get('preconditions', ''),
-            ' '.join(case_data.get('test_steps', []) if isinstance(case_data.get('test_steps'), list)
-                     else [str(case_data.get('test_steps', ''))]),
-            ' '.join(case_data.get('expected_results', []) if isinstance(case_data.get('expected_results'), list)
-                     else [str(case_data.get('expected_results', ''))]),
+            case_data.get("name", ""),
+            case_data.get("test_point", ""),
+            case_data.get("preconditions", ""),
+            " ".join(
+                case_data.get("test_steps", [])
+                if isinstance(case_data.get("test_steps"), list)
+                else [str(case_data.get("test_steps", ""))]
+            ),
+            " ".join(
+                case_data.get("expected_results", [])
+                if isinstance(case_data.get("expected_results"), list)
+                else [str(case_data.get("expected_results", ""))]
+            ),
         ]
-        return ' '.join(filter(None, parts))
+        return " ".join(filter(None, parts))
 
     # ------------------------------------------------------------------
     # 2.7 等级划分
@@ -374,14 +424,14 @@ class ConfidenceCalculator:
         Returns:
             str: 等级 'A' | 'B' | 'C' | 'D'
         """
-        if score >= self.level_thresholds['A']:
-            return 'A'
-        elif score >= self.level_thresholds['B']:
-            return 'B'
-        elif score >= self.level_thresholds['C']:
-            return 'C'
+        if score >= self.level_thresholds["A"]:
+            return "A"
+        elif score >= self.level_thresholds["B"]:
+            return "B"
+        elif score >= self.level_thresholds["C"]:
+            return "C"
         else:
-            return 'D'
+            return "D"
 
     def calculate(
         self,
@@ -412,17 +462,17 @@ class ConfidenceCalculator:
             )
             level = self.assign_confidence_level(score)
             return {
-                'confidence_score': score,
-                'confidence_level': level,
-                'breakdown': breakdown,
-                'requires_human_review': level in ('C', 'D'),
+                "confidence_score": score,
+                "confidence_level": level,
+                "breakdown": breakdown,
+                "requires_human_review": level in ("C", "D"),
             }
         except Exception as e:
             logger.error(f"置信度计算失败: {e}")
             return {
-                'confidence_score': None,
-                'confidence_level': None,
-                'breakdown': {},
-                'requires_human_review': True,  # 计算失败时默认需要人工审核
-                'error': str(e),
+                "confidence_score": None,
+                "confidence_level": None,
+                "breakdown": {},
+                "requires_human_review": True,  # 计算失败时默认需要人工审核
+                "error": str(e),
             }

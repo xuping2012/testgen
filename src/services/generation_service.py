@@ -6,13 +6,15 @@
 
 import uuid
 import json
-import logging
 import threading
 from typing import Dict, Any, Optional, Callable, List
 from datetime import datetime
 from dataclasses import dataclass, asdict
 
+from src.utils import get_logger
 from src.database.models import TaskStatus, RequirementStatus
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -75,7 +77,7 @@ class GenerationService:
 
                 self.case_review_agent = CaseReviewAgent(llm_manager=llm_manager)
             except Exception as e:
-                logging.warning(f"[GenerationService] CaseReviewAgent 初始化失败: {e}")
+                logger.warning(f"[GenerationService] CaseReviewAgent 初始化失败: {e}")
 
         # 检索模式配置
         self.retrieval_mode = "hybrid"  # vector_only / keyword_only / hybrid
@@ -90,7 +92,9 @@ class GenerationService:
             print(
                 f"[GenerationService] LLM适配器列表: {list(llm_manager.adapters.keys())}"
             )
-            print(f"[GenerationService] 默认适配器: {llm_manager.default_adapter}")
+            print(
+                f"[GenerationService] 默认适配器: {llm_manager.default_adapter}"
+            )
 
         # 从数据库加载未完成的任务
         self._load_pending_tasks_from_db()
@@ -822,7 +826,7 @@ class GenerationService:
         """检查任务是否已被取消"""
         task = self.get_task(task_id)
         if task and task.status == int(TaskStatus.CANCELLED):
-            logging.info("[GenerationService] 任务 %s 已被取消，停止后续处理", task_id)
+            logger.info("[GenerationService] 任务 %s 已被取消，停止后续处理", task_id)
             return True
         return False
 
@@ -924,7 +928,7 @@ class GenerationService:
                         req.status = RequirementStatus.FAILED
                         self.db_session.commit()
                 except Exception as e:
-                    logging.error(f"[fail_task] 更新需求状态失败: {e}")
+                    logger.error(f"[fail_task] 更新需求状态失败: {e}")
 
     def cancel_task(self, task_id: str) -> Dict[str, Any]:
         """取消生成任务
@@ -958,9 +962,9 @@ class GenerationService:
                         req.status = RequirementStatus.CANCELLED_GENERATION
                         self.db_session.commit()
                 except Exception as e:
-                    logging.error(f"[cancel_task] 更新需求状态失败: {e}")
+                    logger.error(f"[cancel_task] 更新需求状态失败: {e}")
 
-        logging.info(f"[GenerationService] 任务已取消: {task_id}")
+        logger.info(f"[GenerationService] 任务已取消: {task_id}")
         return {"cancelled": True, "task_id": task_id}
 
     def aggregate_batch_reviews(
@@ -1066,10 +1070,10 @@ class GenerationService:
                 self.db_session.add(record)
 
             self.db_session.commit()
-            logging.info(f"[GenerationService] 评审记录已保存: {task_id}")
+            logger.info(f"[GenerationService] 评审记录已保存: {task_id}")
             return True
         except Exception as e:
-            logging.error(f"[GenerationService] 保存评审记录失败: {e}")
+            logger.error(f"[GenerationService] 保存评审记录失败: {e}")
             try:
                 self.db_session.rollback()
             except:
@@ -1459,8 +1463,11 @@ class GenerationService:
                 f.write("========== PROMPT START ==========\n")
                 f.write(prompt)
                 f.write("\n========== PROMPT END ==========\n")
-            print(f"[调试][generate_item_cases] Prompt已保存到: {prompt_log_path}")
+            print(f"[用例生成] Prompt已保存: {prompt_log_path}")
 
+            print(
+                f"[用例生成] 调用LLM - adapter={type(adapter).__name__}, temperature=0.7"
+            )
             response = adapter.generate(
                 prompt,
                 temperature=0.7,
@@ -1470,28 +1477,28 @@ class GenerationService:
                 retry_delay=3,
             )
 
-            # [调试] 打印LLM响应
-            print(f"[调试][generate_item_cases] LLM响应 - success: {response.success}")
+            # 打印LLM响应结果
             if response.success:
                 print(
-                    f"[调试][generate_item_cases]   - 响应长度: {len(response.content) if response.content else 0} 字符"
+                    f"[用例生成] LLM响应成功 - 响应长度: {len(response.content) if response.content else 0}字符"
                 )
             else:
-                print(f"[调试][generate_item_cases]   - 错误: {response.error_message}")
+                print(f"[用例生成] LLM响应失败: {response.error_message}")
 
             if not response.success:
                 raise Exception(f"LLM生成失败: {response.error_message}")
 
-            # 3. 解析生成的用例
+            # 解析生成的用例
             test_cases = self._parse_generated_cases(response.content)
+            print(f"[用例生成] 解析用例完成 - 生成 {len(test_cases)} 条用例")
 
-            # 4. 附加元数据到每个用例
+            # 附加元数据到每个用例
             for case in test_cases:
                 case["item_id"] = item.get("id", "")
                 case["item_title"] = item_title
                 case["item_priority"] = item_priority
 
-            print(f"[分批生成] 模块 '{item_title}' 生成 {len(test_cases)} 条用例")
+            print(f"[用例生成] 模块 '{item_title}' 完成 - 共 {len(test_cases)} 条用例")
             return test_cases
 
         except Exception as e:
@@ -1634,8 +1641,13 @@ class GenerationService:
                 item_title = item.get("title", item.get("name", "未命名模块"))
                 points = item.get("points", [])
                 for point in points:
-                    point_id = point.get("id", point.get("name", ""))
-                    point_title = point.get("title", point.get("name", ""))
+                    # 支持两种格式：字符串和字典
+                    if isinstance(point, dict):
+                        point_id = point.get("id", point.get("name", ""))
+                        point_title = point.get("title", point.get("name", ""))
+                    else:
+                        point_id = str(point)
+                        point_title = str(point)
                     all_points.append(
                         {
                             "item_id": item_id,
@@ -2077,29 +2089,29 @@ class GenerationService:
             reviewed_plan: 用户评审后可能编辑过的测试规划
             generation_strategy: 生成策略配置（可选）
         """
-        logging.info(
+        logger.info(
             "[调试][execute_phase2_generation] 方法被调用 - task_id: %s", task_id
         )
-        logging.info(
+        logger.info(
             "[调试][execute_phase2_generation] reviewed_plan: %s",
             "provided" if reviewed_plan else "None",
         )
 
         def run_phase2_batch():
-            logging.info("[调试][run_phase2_batch] ===== 后台线程开始执行 =====")
-            logging.info("[调试][run_phase2_batch] task_id: %s", task_id)
-            logging.info(
+            logger.info("[调试][run_phase2_batch] ===== 后台线程开始执行 =====")
+            logger.info("[调试][run_phase2_batch] task_id: %s", task_id)
+            logger.info(
                 "[调试][run_phase2_batch] reviewed_plan: %s",
                 "provided" if reviewed_plan else "None",
             )
             try:
                 task_obj = self.get_task(task_id)
-                logging.info(
+                logger.info(
                     "[调试][run_phase2_batch] task_obj: %s",
                     "found" if task_obj else "NOT FOUND",
                 )
                 if not task_obj:
-                    logging.info("[调试][run_phase2_batch] 任务不存在，退出")
+                    logger.info("[调试][run_phase2_batch] 任务不存在，退出")
                     return
 
                 # 立即更新状态为running，避免显示为待评审
@@ -2162,10 +2174,13 @@ class GenerationService:
 
                 # ========== 步骤1: 准备全局上下文（执行一次）==========
                 self.update_progress(task_id, 30.0, "📋 正在准备生成上下文...")
+                print(f"[阶段2生成] ===== 开始生成任务 task_id={task_id} =====")
+                print(f"[阶段2生成] 需求内容摘要: {requirement.content[:80]}...")
 
                 global_context = self.prepare_generation_context(
                     requirement, test_plan_data, generation_strategy
                 )
+                print(f"[阶段2生成] 全局上下文准备完成")
 
                 # 执行RAG召回（全局一次）
                 rag_context = ""
@@ -2175,6 +2190,9 @@ class GenerationService:
                     try:
                         self.update_progress(
                             task_id, 32.0, "🔎 正在召回相似历史用例..."
+                        )
+                        print(
+                            f"[RAG召回] 开始召回 - 查询需求内容长度: {len(global_context.get('requirement_content', ''))}"
                         )
 
                         rag_context, rag_stats, rag_context_data = (
@@ -2187,19 +2205,32 @@ class GenerationService:
                             )
                         )
 
-                        recall_summary = f"✅ RAG召回完成 - "
+                        recall_summary = "✅ RAG召回完成 - "
                         if rag_stats["cases"] > 0:
                             recall_summary += f"用例:{rag_stats['cases']}条 "
+                            print(f"[RAG召回] 召回相似用例: {rag_stats['cases']}条")
                         if rag_stats["defects"] > 0:
                             recall_summary += f"缺陷:{rag_stats['defects']}条 "
+                            print(f"[RAG召回] 召回历史缺陷: {rag_stats['defects']}条")
                         if rag_stats["requirements"] > 0:
                             recall_summary += f"需求:{rag_stats['requirements']}条"
+                            print(
+                                f"[RAG召回] 召回相似需求: {rag_stats['requirements']}条"
+                            )
+
+                        if (
+                            rag_stats["cases"] == 0
+                            and rag_stats["defects"] == 0
+                            and rag_stats["requirements"] == 0
+                        ):
+                            print(f"[RAG召回] 未召回任何相关内容")
 
                         self.update_progress(task_id, 35.0, recall_summary)
                     except Exception as e:
-                        print(f"RAG召回失败: {e}")
+                        print(f"[RAG召回] 召回失败: {e}")
                         self.update_progress(task_id, 35.0, "⚠️ RAG召回失败，继续生成")
                 else:
+                    print(f"[RAG召回] 向量库未初始化，跳过RAG召回")
                     self.update_progress(task_id, 35.0, "⚠️ 向量库未初始化，跳过RAG召回")
 
                 # 检查任务是否已取消
@@ -2207,17 +2238,20 @@ class GenerationService:
                     return
 
                 # ========== 步骤2: 按ITEM分批生成 ==========
+                print(f"[用例生成] 开始按模块生成 - 共 {total_items} 个模块")
                 for idx, item in enumerate(items, 1):
                     # 每个ITEM生成前检查取消状态
                     if self._check_task_cancelled(task_id):
+                        print(f"[用例生成] 任务已取消: task_id={task_id}")
                         return
                     item_title = item.get("title", item.get("name", f"模块{idx}"))
                     item_points = item.get("points", [])
 
-                    # [调试] 打印当前ITEM信息
-                    print(f"[调试] 正在处理 ITEM {idx}/{total_items}: {item_title}")
-                    print(f"[调试]   - item keys: {list(item.keys())}")
-                    print(f"[调试]   - points 数量: {len(item_points)}")
+                    # 打印当前模块信息
+                    point_names = [str(p) for p in item_points]
+                    print(
+                        f"[用例生成] 处理模块 {idx}/{total_items}: {item_title}, 测试点: {', '.join(point_names[:3])}"
+                    )
 
                     # 更新进度: 30% + (idx / total_items) * 50%
                     progress = 30.0 + (idx / total_items) * 50.0
@@ -2231,8 +2265,9 @@ class GenerationService:
                         # 获取最近5条用例（保持风格连贯）
                         recent_cases = all_generated_cases[-5:]
 
-                        # [调试] 准备调用 generate_item_cases
-                        print(f"[调试] 调用 generate_item_cases for: {item_title}")
+                        print(
+                            f"[用例生成] 调用 generate_item_cases - 模块={item_title}, 测试点数={len(item_points)}"
+                        )
 
                         # 为当前ITEM生成用例（传递RAG上下文）
                         item_cases = self.generate_item_cases(
@@ -2240,10 +2275,9 @@ class GenerationService:
                             global_context=global_context,
                             recent_cases=recent_cases,
                             task_id=task_id,
-                            rag_context=rag_context,  # 传递RAG召回的上下文
+                            rag_context=rag_context,
                         )
 
-                        # [调试] 打印生成结果
                         print(
                             f"[调试] generate_item_cases 返回 {len(item_cases) if item_cases else 0} 条用例"
                         )
@@ -2329,14 +2363,82 @@ class GenerationService:
                 if self._check_task_cancelled(task_id):
                     return
 
+                # ========== 步骤3.5: Case Review Agent 评审 ==========
+                self.update_progress(
+                    task_id,
+                    88.0,
+                    "🔍 正在执行AI评审...",
+                )
+                print(f"[用例评审] 开始评审 - 用例总数: {len(all_generated_cases)}")
+
+                review_result = None
+                review_passed = False
+                requirement_context = global_context.get("requirement_content", "")
+
+                if self.case_review_agent and all_generated_cases:
+                    try:
+                        print(f"[用例评审] 调用CaseReviewAgent评审...")
+                        review_result = self.case_review_agent.review_batch(
+                            cases=all_generated_cases,
+                            requirement_context=requirement_context,
+                        )
+                        print(
+                            f"[用例评审] 评审结果: {review_result.get('decision', 'N/A')}"
+                        )
+                        print(
+                            f"[用例评审] 综合得分: {review_result.get('overall_score', 0)}"
+                        )
+
+                        decision = review_result.get("decision", "")
+                        if decision == "AUTO_PASS":
+                            review_passed = True
+                            print("[用例评审] AI评审通过")
+                        elif decision == "NEEDS_REVIEW":
+                            review_passed = False
+                            print("[用例评审] 需要人工复核")
+                        else:
+                            review_passed = False
+                            print("[用例评审] 评审不通过")
+
+                        # 打印评审问题摘要
+                        issues = review_result.get("issues", [])
+                        if issues:
+                            print(f"[用例评审] 发现 {len(issues)} 个问题")
+                            for issue in issues[:3]:
+                                print(
+                                    f"  - {issue.get('type')}: {issue.get('description', '')[:50]}"
+                                )
+                    except Exception as e:
+                        print(f"[用例评审] 评审失败: {e}，跳过评审直接保存")
+                else:
+                    print("[用例评审] 跳过评审（无review agent或无用例）")
+
+                # 标记需要人工复核的用例
+                if not review_passed and all_generated_cases:
+                    for case in all_generated_cases:
+                        case["requires_human_review"] = True
+                    print(
+                        f"[用例评审] 标记 {len(all_generated_cases)} 条用例需要人工复核"
+                    )
+
+                self.update_progress(
+                    task_id,
+                    89.0,
+                    f"✅ AI评审完成 - {'通过' if review_passed else '需复核'}",
+                )
+
+                # 保存用例
                 if all_generated_cases:
                     try:
+                        print(
+                            f"[用例保存] 开始保存用例 - 需求ID={requirement_id}, 用例数={len(all_generated_cases)}"
+                        )
                         self._save_test_cases(requirement_id, all_generated_cases)
                         print(
-                            f"[分批生成] 所有用例保存完成，共 {len(all_generated_cases)} 条"
+                            f"[用例保存] 保存完成 - 共 {len(all_generated_cases)} 条用例, 需要人工复核: {len([c for c in all_generated_cases if c.get('requires_human_review')])}"
                         )
                     except Exception as save_error:
-                        print(f"[分批生成] 用例保存失败: {save_error}")
+                        print(f"[用例保存] 保存失败: {save_error}")
 
                 self.update_progress(
                     task_id,
@@ -2365,16 +2467,21 @@ class GenerationService:
                     result_data["warning"] = (
                         f"以下模块生成失败: {', '.join(failed_titles)}"
                     )
+                    print(f"[任务完成] 失败模块: {', '.join(failed_titles)}")
 
                 # 完成任务
                 if total_cases > 0:
                     self.update_progress(task_id, 100.0, "✅ 分批生成完成")
                     self.complete_task(task_id, result_data)
+                    print(
+                        f"[任务完成] task_id={task_id}, 生成用例数={total_cases}, 状态=成功"
+                    )
                 else:
                     error_msg = "未生成任何用例"
                     if failed_items:
                         error_msg += f"，失败模块: {', '.join([f['title'] for f in failed_items])}"
                     self.fail_task(task_id, error_msg)
+                    print(f"[任务完成] task_id={task_id}, 状态=失败, 原因={error_msg}")
 
                 # 更新需求状态（使用线程安全的session）
                 bg_session = self._get_db_session()
@@ -2399,23 +2506,23 @@ class GenerationService:
                         print(f"更新需求状态失败: {e}")
 
             except Exception as e:
-                logging.info("[调试][run_phase2_batch] ===== 捕获到异常 =====")
-                logging.info("[调试][run_phase2_batch] 异常类型: %s", type(e).__name__)
-                logging.info("[调试][run_phase2_batch] 异常信息: %s", str(e))
+                logger.info("[调试][run_phase2_batch] ===== 捕获到异常 =====")
+                logger.info("[调试][run_phase2_batch] 异常类型: %s", type(e).__name__)
+                logger.info("[调试][run_phase2_batch] 异常信息: %s", str(e))
                 import traceback
 
-                logging.info(
+                logger.info(
                     "[调试][run_phase2_batch] 堆栈跟踪:\n%s", traceback.format_exc()
                 )
                 self.fail_task(task_id, str(e))
-                logging.info("[调试][run_phase2_batch] 任务已标记为失败")
+                logger.info("[调试][run_phase2_batch] 任务已标记为失败")
 
         # 在后台线程执行
-        logging.info("[调试][execute_phase2_generation] 正在启动后台线程...")
+        logger.info("[调试][execute_phase2_generation] 正在启动后台线程...")
         thread = threading.Thread(target=run_phase2_batch)
         thread.daemon = True
         thread.start()
-        logging.info(
+        logger.info(
             "[调试][execute_phase2_generation] 后台线程已启动 - thread name: %s",
             thread.name,
         )
@@ -4084,39 +4191,23 @@ class GenerationService:
             # 缺陷检索
             try:
                 defect_response = self._hybrid_retriever.retrieve(
-                    collection="cases",
-                    query=requirement_content,
-                    top_k=top_k_cases,
-                )
-                case_results = (
-                    case_response.get("results", [])
-                    if isinstance(case_response, dict)
-                    else case_response or []
-                )
-                if case_results:
-                    rag_context += "\n\n## 召回的历史测试用例（供参考）\n"
-                    rag_context += "> 以下历史用例与当前需求相关，请借鉴其测试思路和方法，确保测试覆盖率。\n\n"
-                    for i, case in enumerate(case_results[:top_k_cases], 1):
-                        rag_context += (
-                            f"### 历史用例 {i}\n{case.get('content', '')}\n\n"
-                        )
-                    rag_stats["cases"] = len(case_results[:top_k_cases])
-
-                # 记录动态检索调整信息
-                if isinstance(case_response, dict) and case_response.get("adjustment"):
-                    rag_context_data.setdefault("adjustments", []).append(
-                        case_response["adjustment"]
-                    )
-            except Exception as e:
-                print(f"[RAG召回] 混合检索用例失败: {e}")
-
-            # 缺陷检索
-            try:
-                defect_response = self._hybrid_retriever.retrieve(
                     collection="defects",
                     query=requirement_content,
                     top_k=top_k_defects,
                 )
+                defect_results = (
+                    defect_response.get("results", [])
+                    if isinstance(defect_response, dict)
+                    else defect_response or []
+                )
+                if defect_results:
+                    rag_context += "\n## 召回的历史缺陷场景（必须覆盖）\n"
+                    rag_context += "> 以下缺陷在历史项目中出现过，请在新用例设计中重点覆盖这些场景，避免重复问题。\n\n"
+                    for i, defect in enumerate(defect_results[:top_k_defects], 1):
+                        rag_context += (
+                            f"### 历史缺陷 {i}\n{defect.get('content', '')}\n\n"
+                        )
+                    rag_stats["defects"] = len(defect_results[:top_k_defects])
                 defect_results = (
                     defect_response.get("results", [])
                     if isinstance(defect_response, dict)

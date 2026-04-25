@@ -352,6 +352,7 @@ def init_database(db_path="data/testgen.db"):
     # 启用WAL模式减少锁冲突
     with engine.connect() as conn:
         conn.execute(text("PRAGMA journal_mode=WAL"))
+        conn.execute(text("PRAGMA busy_timeout=5000"))
         conn.commit()
 
     Base.metadata.create_all(engine)

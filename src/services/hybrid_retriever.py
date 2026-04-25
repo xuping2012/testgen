@@ -14,11 +14,11 @@ RRF融合公式: score = sum(1 / (k + rank))
 
 import re
 import sqlite3
-import logging
-from typing import Dict, Any, List, Tuple
 from collections import defaultdict
+from typing import List, Dict, Any, Optional
+from src.utils import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # 默认RRF融合参数
 DEFAULT_RRF_K = 60
