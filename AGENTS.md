@@ -38,6 +38,17 @@ python -m pytest tests/test_api.py -v -s --tb=long  # Verbose with full tracebac
 ```bash
 black .      # Format code
 flake8 .    # Lint
+ruff check .  # Alternative linter (faster)
+```
+
+### Logging Patterns
+```python
+import logging
+logger = logging.getLogger(__name__)
+
+logger.info("Starting requirement analysis for %s", requirement_id)
+logger.warning("RAG recall failed, falling back to keyword search")
+logger.error("Generation failed: %s", str(e), exc_info=True)
 ```
 
 ## Code Style Guidelines
@@ -101,25 +112,37 @@ except Exception as e:
 ### Directory Structure
 ```
 src/
-  api/routes.py            # REST API endpoints (Blueprint: /api/*)
-  database/models.py      # SQLAlchemy ORM models + enum definitions
-  llm/adapter.py         # Multi-provider LLM (OpenAI/Qwen/DeepSeek/KIMI/智谱/Minimax/iFlow/UniAIX)
-  vectorstore/chroma_store.py  # ChromaDB wrapper
+  api/routes.py              # REST API endpoints (Blueprint: /api/*)
+  database/models.py         # SQLAlchemy ORM models + enum definitions
+  database/fts5_listeners.py # FTS5 full-text search incremental updates
+  llm/adapter.py             # Multi-provider LLM (OpenAI/Qwen/DeepSeek/KIMI/智谱/Minimax/iFlow/UniAIX)
+  vectorstore/chroma_store.py # ChromaDB wrapper
   services/
-    generation_service.py  # Two-phase pipeline + async task management
-    hybrid_retriever.py   # Vector + keyword search with RRF fusion
-    ...                  # Other RAG components
+    generation_service.py    # Two-phase pipeline + async task management
+    hybrid_retriever.py      # Vector + keyword search with RRF fusion
+    dynamic_retriever.py     # Adaptive retrieval strategy
+    query_optimizer.py       # LLM-based query enhancement
+    confidence_calculator.py # Relevance scoring
+    citation_parser.py       # Source attribution
+    document_chunker.py      # Document chunking for RAG
+    case_review_agent.py     # Self-review and evolution
+    defect_knowledge_base.py # Defect data management
+    retrieval_evaluator.py   # RAG retrieval quality evaluation
+    prompt_template_service.py # Template versioning and rollback
+    requirement_review_service.py # Requirement analysis review
   document_parser/parser.py  # Multi-format parser (docx/pdf/txt/image/markdown)
   case_generator/exporter.py  # Export to Excel/XMind/JSON
-tests/                   # Test files (pytest)
-data/                    # Runtime data (gitignored): testgen.db, chroma_db/, uploads/, exports/
+tests/                       # Test files (pytest)
+data/                        # Runtime data (gitignored): testgen.db, chroma_db/, uploads/, exports/
 ```
 
 ### Key Enums
 ```
-RequirementStatus: 1=待分析, 2=分析中, 3=已分析, 4=生成中, 5=已完成, 6=已取消, 7=失败
+RequirementStatus: 1=待分析, 2=分析中, 3=已分析, 4=生成中, 5=已完成, 6=失败, 7=已取消
 CaseStatus: 1=草稿, 2=待评审, 3=已通过, 4=已拒绝
 TaskStatus: 1=生成中, 2=已完成, 3=失败, 4=已取消
+GenerationPhase: 1=RAG检索, 2=用例生成, 3=数据保存
+AnalysisItemStatus: 1=待评审, 2=已通过, 3=已拒绝, 4=已修改
 Priority: P0, P1, P2, P3
 ```
 
@@ -130,13 +153,36 @@ generation_service = GenerationService(db_session, llm_manager, vector_store)
 # RAG components lazily initialized in GenerationService._init_rag_components()
 ```
 
+### API Response Patterns
+```python
+# Success response
+return jsonify({"data": {"id": 1, "name": "test"}}), 200
+
+# Created response
+return jsonify({"data": result, "message": "创建成功"}), 201
+
+# Error response (validation)
+return jsonify({"error": "参数错误", "details": {"field": "name"}}), 400
+
+# Error response (not found)
+return jsonify({"error": "需求不存在"}), 404
+
+# Error response (server)
+return jsonify({"error": "服务器错误"}), 500
+```
+
 ## Important Notes
 
 - Run `python init_db.py` before first use
 - Configure at least one LLM via `/api/llm-configs` before generation
-- Phase 2 generates stashed cases; user must commit via `POST /api/tasks/{id}/cases/commit`
+- Phase 1 completes synchronously and opens a review modal; user must confirm before Phase 2 starts
+- Phase 2 generates stashed cases in memory; user must commit via `POST /api/tasks/{id}/cases/commit` to persist
+- Task dual-storage: in-memory `self._tasks` dict for async workers + `GenerationTask` DB rows for persistence
+- Thread-safe sessions: main thread uses original `db_session`, background threads use `scoped_session()`
 - Tests use temporary databases - ensure cleanup in `finally` blocks
 - Windows console encoding fix in `app.py` (sys.stdout wrapper)
 - Max file upload size: 16MB (`app.config['MAX_CONTENT_LENGTH']`)
 - If ChromaDB search fails, use `fix_chroma_rebuild.py` to rebuild hnsw index
 - Database migrations in `src/database/migrations/`
+- WebSocket events via Flask-SocketIO for real-time progress; UI also polls REST API as fallback
+- RAG recall uses hybrid search (vector + keyword with RRF fusion)

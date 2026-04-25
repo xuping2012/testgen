@@ -38,6 +38,9 @@ python -m pytest tests/test_api.py::TestRequirementAPI::test_create_requirement 
 
 # Run with pattern matching
 python -m pytest tests/ -k "test_create" -v
+
+# Verbose with full traceback
+python -m pytest tests/test_api.py -v -s --tb=long
 ```
 
 ### Code Quality
@@ -47,6 +50,9 @@ black .
 
 # Lint code
 flake8 .
+
+# Alternative faster linter
+ruff check .
 ```
 
 ## Code Style Guidelines
@@ -88,7 +94,53 @@ except Exception as e:
 - Use `threading.Lock()` for thread-safe operations
 - Wrap critical sections with `with self._lock:`
 
+### Logging Patterns
+```python
+import logging
+logger = logging.getLogger(__name__)
+
+logger.info("Starting requirement analysis for %s", requirement_id)
+logger.warning("RAG recall failed, falling back to keyword search")
+logger.error("Generation failed: %s", str(e), exc_info=True)
+```
+
+### API Response Patterns
+```python
+# Success response
+return jsonify({"data": {"id": 1, "name": "test"}}), 200
+
+# Created response
+return jsonify({"data": result, "message": "创建成功"}), 201
+
+# Error response (validation)
+return jsonify({"error": "参数错误", "details": {"field": "name"}}), 400
+
+# Error response (not found)
+return jsonify({"error": "需求不存在"}), 404
+
+# Error response (server)
+return jsonify({"error": "服务器错误"}), 500
+```
+
 ## High-Level Architecture
+
+### Directory Structure
+```
+src/
+  api/routes.py              # REST API endpoints (Blueprint: /api/*)
+  database/models.py         # SQLAlchemy ORM models + enum definitions
+  database/fts5_listeners.py # FTS5 full-text search incremental updates
+  llm/adapter.py             # Multi-provider LLM unified interface
+  vectorstore/chroma_store.py # ChromaDB wrapper for RAG
+  services/
+    generation_service.py    # Two-phase pipeline + async task management
+    hybrid_retriever.py      # Vector + keyword search with RRF fusion
+    ...                      # Other RAG components
+  document_parser/parser.py  # Multi-format parser (docx/pdf/txt/image/markdown)
+  case_generator/exporter.py # Export to Excel/XMind/JSON
+tests/                       # Test files (pytest)
+data/                        # Runtime data (gitignored): testgen.db, chroma_db/, uploads/, exports/
+```
 
 ### Two-Phase Generation Pipeline
 
@@ -182,7 +234,9 @@ Callers of this method: `POST /api/generate/continue` and `POST /api/generate/re
 
 1. **Relational Database** (`data/testgen.db`):
    - Core models: `Requirement`, `TestCase`, `GenerationTask`, `LLMConfig`, `PromptTemplate`
+   - Additional models: `RequirementAnalysis` (stores ITEM/POINT structures), `HistoricalCase` (few-shot learning), `CaseReviewRecord` (agent review scores)
    - FTS5 full-text search with incremental update listeners (`src/database/fts5_listeners.py`)
+   - Migrations located in `src/database/migrations/`
 
 2. **Vector Store** (`data/chroma_db`):
    - ChromaDB with sentence-transformers embeddings
@@ -242,8 +296,10 @@ Endpoints critical to the Two-Phase pipeline and case lifecycle:
 - **No Comments Policy**: Do not add comments unless explicitly requested (per AGENTS.md)
 - **Chinese API Responses**: Error messages should be in Chinese
 - **SocketIO**: `app.py` initializes `SocketIO` with namespace `/progress` for real-time progress push, but the UI also polls the REST API as a fallback
+- **Max Upload Size**: 16MB (`app.config['MAX_CONTENT_LENGTH']`)
 - **Status Enums** (defined in `src/database/models.py`):
   - `RequirementStatus`: PENDING_ANALYSIS=1, ANALYZING=2, ANALYZED=3, GENERATING=4, COMPLETED=5, FAILED=6, CANCELLED_GENERATION=7
   - `CaseStatus`: DRAFT=1, PENDING_REVIEW=2, APPROVED=3, REJECTED=4
   - `TaskStatus`: RUNNING=1, COMPLETED=2, FAILED=3, CANCELLED=4
   - `GenerationPhase`: RAG=1, GENERATION=2, SAVING=3
+  - `AnalysisItemStatus`: PENDING_REVIEW=1, APPROVED=2, REJECTED=3, MODIFIED=4

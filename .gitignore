@@ -7,7 +7,6 @@ __pycache__/
 # Data
 /data/
 /testcase-generator/
-/docs/
 !/docs/superpowers/specs/
 /openspec/
 

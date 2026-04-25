@@ -721,6 +721,7 @@ def batch_delete_requirements():
         return jsonify({"error": str(e)}), 500
 
 
+# [UNUSED] 前端未调用
 @api_bp.route("/requirements/list-all", methods=["GET"])
 def list_all_requirements():
     """
@@ -756,6 +757,7 @@ def list_all_requirements():
 # ==================== 缺陷管理接口 ====================
 
 
+# [UNUSED] 前端未调用此接口 - 可能用于未来功能
 @api_bp.route("/defects", methods=["GET"])
 def list_defects():
     """
@@ -1089,6 +1091,7 @@ def retry_generation():
         return jsonify({"error": str(e)}), 500
 
 
+# [UNUSED] 使用WebSocket替代
 @api_bp.route("/generate/progress/<task_id>", methods=["GET"])
 def get_generation_progress(task_id):
     """
@@ -1140,6 +1143,7 @@ def get_generation_progress(task_id):
         return jsonify({"error": str(e)}), 500
 
 
+# [UNUSED] 使用WebSocket替代
 @api_bp.route("/generate/<task_id>", methods=["GET"])
 def get_generation_status(task_id):
     """
@@ -1404,6 +1408,7 @@ def get_case(case_id):
         return jsonify({"error": f"加载失败: {str(e)}"}), 500
 
 
+# [UNUSED] 前端未调用
 @api_bp.route("/cases/<int:case_id>/confidence", methods=["GET"])
 def get_case_confidence(case_id):
     """
@@ -1443,6 +1448,7 @@ def get_case_confidence(case_id):
         return jsonify({"error": str(e)}), 500
 
 
+# [UNUSED] 前端未调用
 @api_bp.route("/cases/<int:case_id>/citations", methods=["GET"])
 def get_case_citations(case_id):
     """
@@ -2029,6 +2035,7 @@ def rag_list():
         return jsonify({"error": str(e)}), 500
 
 
+# [UNUSED] 前端未调用
 @api_bp.route("/fts5/rebuild", methods=["POST"])
 def rebuild_fts5():
     """
@@ -2050,6 +2057,7 @@ def rebuild_fts5():
 # ==================== 导出接口 ====================
 
 
+# [UNUSED] 前端未调用
 @api_bp.route("/export", methods=["GET"])
 def export_cases():
     """
@@ -3068,6 +3076,7 @@ def delete_prompt(prompt_id):
         return jsonify({"error": str(e)}), 500
 
 
+# [UNUSED] 前端未调用
 @api_bp.route("/prompts/<int:prompt_id>/versions", methods=["GET"])
 def get_prompt_versions(prompt_id):
     """
@@ -3120,6 +3129,7 @@ def get_prompt_versions(prompt_id):
         return jsonify({"error": str(e)}), 500
 
 
+# [UNUSED] 前端未调用
 @api_bp.route("/prompts/<int:prompt_id>/rollback", methods=["POST"])
 def rollback_prompt_version(prompt_id):
     """
@@ -3541,6 +3551,7 @@ def batch_delete_tasks():
 
 
 # ==================== RAG增强: 溯源面板API ====================
+# [UNUSED] 前端未调用
 
 
 @api_bp.route("/cases/<int:case_id>/traceability", methods=["GET"])
@@ -3594,6 +3605,7 @@ def get_case_traceability(case_id):
         return jsonify({"error": str(e)}), 500
 
 
+# [UNUSED] 前端未调用
 @api_bp.route("/tasks/<task_id>/rag-history", methods=["GET"])
 def get_task_rag_history(task_id):
     """
@@ -3625,6 +3637,7 @@ def get_task_rag_history(task_id):
         return jsonify({"error": str(e)}), 500
 
 
+# [UNUSED] 前端未调用
 @api_bp.route("/tasks/<task_id>/reasoning-trace", methods=["GET"])
 def get_task_reasoning_trace(task_id):
     """
@@ -3664,6 +3677,7 @@ def get_task_reasoning_trace(task_id):
 
 
 # ==================== RAG增强: 检索效果评估API ====================
+# [UNUSED] 前端未调用
 
 
 @api_bp.route("/rag/evaluation/summary", methods=["GET"])
@@ -3866,6 +3880,7 @@ def chat_with_llm():
 # ==================== RAG增强工作流 - 缺陷管理接口 ====================
 
 
+# [UNUSED] 前端未调用
 @api_bp.route("/rag/entries", methods=["POST"])
 def create_defect_entry():
     """
@@ -3909,6 +3924,7 @@ def create_defect_entry():
         return jsonify({"error": str(e)}), 500
 
 
+# [UNUSED] 前端未调用
 @api_bp.route("/rag/entries", methods=["GET"])
 def list_defect_entries():
     """
@@ -3941,6 +3957,7 @@ def list_defect_entries():
         return jsonify({"error": str(e)}), 500
 
 
+# [UNUSED] 前端未调用
 @api_bp.route("/rag/import", methods=["POST"])
 def import_defects():
     """
@@ -3976,6 +3993,7 @@ def import_defects():
 
 
 # ==================== RAG增强工作流 - 分析审核接口 ====================
+# [UNUSED] 前端未调用
 
 
 @api_bp.route("/requirements/<int:requirement_id>/analysis-items", methods=["PUT"])
@@ -4011,6 +4029,7 @@ def update_analysis_items(requirement_id):
         return jsonify({"error": str(e)}), 500
 
 
+# [UNUSED] 前端使用 /review 接口替代
 @api_bp.route("/requirements/<int:requirement_id>/analyze/confirm", methods=["POST"])
 def confirm_analysis(requirement_id):
     """
@@ -4085,6 +4104,7 @@ def regenerate_requirement(requirement_id):
         return jsonify({"error": str(e)}), 500
 
 
+# [UNUSED] 前端未调用
 @api_bp.route("/tasks/<task_id>/review", methods=["GET"])
 def get_task_review_results(task_id):
     """

@@ -41,7 +41,9 @@
       "Bash(python -m pytest tests/test_api.py -v -x --tb=short 2>&1 | head -80)",
       "Bash(python -m pytest tests/test_api_rag_enhanced.py tests/test_integration_two_phase.py -v -x --tb=short 2>&1 | head -60)",
       "Bash(python -m py_compile src/api/routes.py 2>&1 || echo \"Python syntax error\")",
-      "Bash(python -m py_compile src/api/routes.py src/services/generation_service.py)"
+      "Bash(python -m py_compile src/api/routes.py src/services/generation_service.py)",
+      "Bash(ls -1 C:/pythonworkspace/auto_generator_testcase/*.md 2>/dev/null || echo \"No root md files\")",
+      "Bash(ls -1 C:/pythonworkspace/auto_generator_testcase/.cursor* C:/pythonworkspace/auto_generator_testcase/.cursorrules C:/pythonworkspace/auto_generator_testcase/.github/copilot-instructions.md 2>/dev/null || echo \"No cursor/copilot rules found\")"
     ]
   }
 }
