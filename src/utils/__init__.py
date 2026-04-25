@@ -2,14 +2,16 @@
 # -*- coding: utf-8 -*-
 """
 统一日志工具 - 为所有模块提供logging功能
-单一日志文件，统一格式
+单一日志文件，统一格式，带行号
 """
 
 import logging
 import sys
 import os
+import inspect
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
+from linecache import getline
 
 
 LOG_DIR = os.path.join(
@@ -19,8 +21,17 @@ os.makedirs(LOG_DIR, exist_ok=True)
 
 LOG_FILE = os.path.join(LOG_DIR, "app.log")
 
-LOG_FORMATTER = logging.Formatter(
-    "%(asctime)s [%(levelname)s] [%(name)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+
+class LineNumberFormatter(logging.Formatter):
+    def format(self, record):
+        record.filename = os.path.basename(record.filename)
+        record.lineno = record.lineno or 0
+        return super().format(record)
+
+
+LOG_FORMATTER = LineNumberFormatter(
+    "%(asctime)s [%(levelname)s] [%(name)s:%(lineno)d] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 
 
@@ -88,7 +99,19 @@ def init_global_logging():
 
             def logged_print(*args, **kwargs):
                 msg = " ".join(str(a) for a in args)
-                logging.getLogger("print").info(msg)
+                frame = inspect.currentframe()
+                if frame:
+                    caller_frame = frame.f_back
+                    if caller_frame:
+                        caller_module = caller_frame.f_globals.get(
+                            "__name__", "unknown"
+                        )
+                        caller_module = caller_module.split(".")[-1]
+                    else:
+                        caller_module = "unknown"
+                else:
+                    caller_module = "unknown"
+                logging.getLogger(caller_module).info(msg)
 
             builtins.print = logged_print
 

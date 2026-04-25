@@ -122,46 +122,26 @@ def setup_fts5_listeners(engine):
 
 def _update_fts5_for_table(engine, table_name, operations):
     """
-    为单个表执行FTS5增量更新
-
-    Args:
-        engine: SQLAlchemy引擎
-        table_name: 源表名
-        operations: {"insert": [...], "update": [...], "delete": [...]}
+    为单个表执行FTS5增量更新（失败则放弃）
     """
-    import time
-
     fts_config = FTS5_TABLES[table_name]
     fts_table = fts_config["fts_table"]
 
-    max_retries = 5
-    for attempt in range(max_retries):
-        try:
-            with engine.connect() as conn:
-                conn.execute(text("PRAGMA busy_timeout=5000"))
+    try:
+        with engine.connect() as conn:
+            for obj in operations.get("insert", []):
+                _insert_fts5_row(conn, fts_table, fts_config, obj)
 
-                for obj in operations.get("insert", []):
-                    _insert_fts5_row(conn, fts_table, fts_config, obj)
+            for obj in operations.get("update", []):
+                _delete_fts5_row(conn, fts_table, obj)
+                _insert_fts5_row(conn, fts_table, fts_config, obj)
 
-                for obj in operations.get("update", []):
-                    _delete_fts5_row(conn, fts_table, obj)
-                    _insert_fts5_row(conn, fts_table, fts_config, obj)
+            for obj in operations.get("delete", []):
+                _delete_fts5_row(conn, fts_table, obj)
 
-                for obj in operations.get("delete", []):
-                    _delete_fts5_row(conn, fts_table, obj)
-
-                conn.commit()
-            return
-        except Exception as e:
-            if "database is locked" in str(e) and attempt < max_retries - 1:
-                wait_time = 0.3 * (attempt + 1)
-                logger.warning(
-                    f"FTS5更新失败 (attempt {attempt + 1}), {wait_time}秒后重试: {e}"
-                )
-                time.sleep(wait_time)
-            else:
-                logger.warning(f"FTS5更新失败 (已重试{max_retries}次): {e}")
-                return
+            conn.commit()
+    except Exception as e:
+        logger.debug(f"FTS5更新跳过: {str(e)[:50]}")
 
 
 def _ensure_fts5_table_exists(conn, fts_config):
@@ -196,33 +176,25 @@ def _ensure_fts5_table_exists(conn, fts_config):
 
 
 def _insert_fts5_row(conn, fts_table, fts_config, obj):
-    """向FTS5表插入一行（带重试）"""
-    import time
+    """向FTS5表插入一行（失败则放弃）"""
+    try:
+        _ensure_fts5_table_exists(conn, fts_config)
 
-    for attempt in range(5):
-        try:
-            _ensure_fts5_table_exists(conn, fts_config)
+        row_id = obj.id
+        values = {}
+        for col in fts_config["columns"]:
+            values[col] = getattr(obj, col, "") or ""
 
-            row_id = obj.id
-            values = {}
-            for col in fts_config["columns"]:
-                values[col] = getattr(obj, col, "") or ""
+        columns_str = ", ".join(fts_config["columns"])
+        placeholders = ", ".join([f":{col}" for col in fts_config["columns"]])
 
-            columns_str = ", ".join(fts_config["columns"])
-            placeholders = ", ".join([f":{col}" for col in fts_config["columns"]])
+        sql = f"INSERT INTO {fts_table}(rowid, {columns_str}) VALUES (:row_id, {placeholders})"
+        values["row_id"] = row_id
 
-            sql = f"INSERT INTO {fts_table}(rowid, {columns_str}) VALUES (:row_id, {placeholders})"
-            values["row_id"] = row_id
-
-            conn.execute(text(sql), values)
-            logger.debug(f"FTS5插入: {fts_table} rowid={row_id}")
-            return
-        except Exception as e:
-            if "locked" in str(e).lower() and attempt < 4:
-                time.sleep(0.2 * (attempt + 1))
-                continue
-            logger.warning(f"FTS5插入失败 (rowid={obj.id}): {e}")
-            return
+        conn.execute(text(sql), values)
+        logger.debug(f"FTS5插入: {fts_table} rowid={row_id}")
+    except Exception as e:
+        logger.debug(f"FTS5插入跳过 (rowid={obj.id}): {str(e)[:50]}")
 
 
 def _delete_fts5_row(conn, fts_table, obj):

@@ -1,399 +1,181 @@
-2026-04-25 16:36:21 [INFO] [print] [需求分析] 开始分析 - 需求ID=8, 内容摘要: 1. 支持用户名和密码登录 2. 用户名必须是6-20位字符 3. 密码必须是8-20位字符，包含字母和数字 4. 登录成功后跳转到首页 5. 登录失败显示错误提示 6. 支持记住密码功能...
-2026-04-25 16:36:21 [INFO] [src.api.routes] [需求分析] 需求ID=8 状态更新为: 分析中
-2026-04-25 16:36:21 [INFO] [src.api.routes] [需求分析] 加载Prompt模板: requirement_analysis
-2026-04-25 16:36:21 [INFO] [src.services.prompt_template_service] [Prompt加载] 类型: requirement_analysis, 模板: default_analyze
-2026-04-25 16:36:21 [INFO] [src.api.routes] [Analyze] Prompt length: 1090
-2026-04-25 16:36:21 [INFO] [print] [需求分析] Prompt模板渲染完成, 长度=1090字符
-2026-04-25 16:36:21 [INFO] [print] [需求分析] 调用LLM: adapter=DeepSeekAdapter, temperature=0.3
-2026-04-25 16:36:51 [INFO] [src.api.routes] [需求分析] LLM调用完成, success=True
-2026-04-25 16:36:51 [INFO] [src.api.routes] [需求分析] 解析LLM响应, 长度=2589字符
-2026-04-25 16:36:51 [INFO] [src.api.routes] [需求分析] JSON解析成功
-2026-04-25 16:36:51 [INFO] [print] [需求分析] 识别到 2 个功能模块, 11 个测试点
-2026-04-25 16:36:51 [INFO] [print] [需求分析] 功能模块: 用户认证, 密码管理...
-2026-04-25 16:36:51 [INFO] [print] [需求分析] 分析完成 - 需求ID=8, 状态=已分析
-2026-04-25 16:36:51 [INFO] [werkzeug] 127.0.0.1 - - [25/Apr/2026 16:36:51] "POST /api/requirements/8/analyze HTTP/1.1" 200 -
-2026-04-25 16:36:51 [INFO] [werkzeug] 127.0.0.1 - - [25/Apr/2026 16:36:51] "GET /api/requirements?page=1&limit=10 HTTP/1.1" 200 -
-2026-04-25 16:36:51 [INFO] [werkzeug] 127.0.0.1 - - [25/Apr/2026 16:36:51] "GET /api/tasks?status=1 HTTP/1.1" 200 -
-2026-04-25 16:36:55 [INFO] [src.api.routes] [模块评审] 开始评审 - 需求ID=8
-2026-04-25 16:36:55 [INFO] [src.api.routes] [模块评审] 功能模块数量: 2, 测试点数量: 11
-2026-04-25 16:36:55 [INFO] [src.api.routes] [模块评审] 模块列表: 用户认证, 密码管理
-2026-04-25 16:36:55 [INFO] [src.api.routes] [模块评审] 测试点列表: 输入6-20位有效用户名, 输入5位用户名, 输入21位用户名, 输入8-20位有效密码, 输入7位密码
-2026-04-25 16:36:55 [INFO] [src.api.routes] [模块评审] 模块评审通过 - 需求ID=8
-2026-04-25 16:36:55 [INFO] [src.api.routes] [模块评审] 创建生成任务, task_id=task_c593098d2ebf
-2026-04-25 16:36:55 [INFO] [src.api.routes] [模块评审] 使用数据: 用户编辑后
-2026-04-25 16:36:55 [INFO] [src.api.routes] [模块评审] 启动生成任务, task_id=task_c593098d2ebf
-2026-04-25 16:36:55 [INFO] [src.services.generation_service] [调试][execute_phase2_generation] 方法被调用 - task_id: task_c593098d2ebf
-2026-04-25 16:36:55 [INFO] [src.services.generation_service] [调试][execute_phase2_generation] reviewed_plan: provided
-2026-04-25 16:36:55 [INFO] [src.services.generation_service] [调试][execute_phase2_generation] 正在启动后台线程...
-2026-04-25 16:36:55 [INFO] [src.services.generation_service] [调试][run_phase2_batch] ===== 后台线程开始执行 =====
-2026-04-25 16:36:55 [INFO] [src.services.generation_service] [调试][execute_phase2_generation] 后台线程已启动 - thread name: Thread-21 (run_phase2_batch)
-2026-04-25 16:36:55 [INFO] [src.services.generation_service] [调试][run_phase2_batch] task_id: task_c593098d2ebf
-2026-04-25 16:36:55 [INFO] [src.api.routes] [模块评审] 触发异步生成完成 - task_id=task_c593098d2ebf
-2026-04-25 16:36:55 [INFO] [src.services.generation_service] [调试][run_phase2_batch] reviewed_plan: provided
-2026-04-25 16:36:55 [INFO] [werkzeug] 127.0.0.1 - - [25/Apr/2026 16:36:55] "POST /api/requirements/8/review HTTP/1.1" 202 -
-2026-04-25 16:36:55 [INFO] [src.services.generation_service] [调试][run_phase2_batch] task_obj: found
-2026-04-25 16:36:55 [INFO] [print] [执行阶段2] reviewed_plan is not None: True
-2026-04-25 16:36:55 [INFO] [werkzeug] 127.0.0.1 - - [25/Apr/2026 16:36:55] "GET /api/requirements?page=1&limit=10 HTTP/1.1" 200 -
-2026-04-25 16:36:55 [INFO] [print] [执行阶段2] test_plan_data: {'modules': '1. 用户认证 - 处理用户登录认证相关功能\n2. 密码管理 - 处理密码的存储和验证', 'points': '1. [用户认证] 输入6-20位有效用户名\n2. [用户认证] 输入5位用户名\n3. [用户认证] 输入21位用户名\n4. [密码管理] 输入8-20位有效密码\n5. [密码管理] 输入7位密码\n6. [密码管理] 输入21位密码\n7. [密码管理] 输入不含数字的密码\n8. [密码管理] 输入不含字母的密码\n9. [用户认证] 验证登录成功跳转首页\n10. [用户认证] 验证登 录失败显示错误提示\n11. [密码管理] 验证记住密码功能', 'items': [{'title': '用户认证', 'name': '用户认证', 'description': '', 'priority': 'P1', 'risk_level': 'medium', 'points': ['[用户认证] 输入6-20位有效用户名', '[用户认证] 输入5位用户 名', '[用户认证] 输入21位用户名', '[用户认证] 验证登录成功跳转首页', '[用户认证] 验证登录失败显示错误提示']}, {'title': '密码管理', 'name': '密码管理', 'description': '', 'priority': 'P1', 'risk_level': 'medium', 'points': ['[密码管理]  输入8-20位有效密码', '[密码管理] 输入7位密码', '[密码管理] 输入21位密码', '[密码管理] 输入不含数字的密码', '[密码管理] 输入不含字母的密码', '[密码管理] 验证记住密码功能']}]}
-2026-04-25 16:36:55 [INFO] [print] [执行阶段2] test_plan_data keys: ['modules', 'points', 'items']
-2026-04-25 16:36:55 [INFO] [print] [执行阶段2] items count: 2
-2026-04-25 16:36:55 [INFO] [print] [执行阶段2] first item: {'title': '用户认证', 'name': '用户认证', 'description': '', 'priority': 'P1', 'risk_level': 'medium', 'points': ['[用户认证] 输入6-20位有效用户名', '[用户认证] 输入5位用户名', '[用户认证] 输入21位用户名', '[用户认证] 验证登录成功跳转首页', '[用户认证] 验证登录失败显示错误提示']}
-2026-04-25 16:36:55 [INFO] [print] [调试] 开始分批生成 - 总共 2 个ITEM
-2026-04-25 16:36:55 [INFO] [werkzeug] 127.0.0.1 - - [25/Apr/2026 16:36:55] "GET /api/tasks?status=1 HTTP/1.1" 200 -
-2026-04-25 16:36:55 [INFO] [print] [阶段2生成] ===== 开始生成任务 task_id=task_c593098d2ebf =====
-2026-04-25 16:36:55 [INFO] [print] [阶段2生成] 需求内容摘要: 1. 支持用户名和密码登录
+2026-04-25 16:50:45 [INFO] [print:101] [需求分析] 开始分析 - 需求ID=9, 内容摘要: 1. 支持用户名和密码登录 2. 用户名必须是6-20位字符 3. 密码必须是8-20位字符，包含字母和数字 4. 登录成功后跳转到首页 5. 登录失败显示错误提示 6. 支持记住密码功 能...
+2026-04-25 16:50:45 [INFO] [src.api.routes:250] [需求分析] 需求ID=9 状态更新为: 分析中
+2026-04-25 16:50:45 [INFO] [src.api.routes:256] [需求分析] 加载Prompt模板: requirement_analysis
+2026-04-25 16:50:45 [INFO] [src.services.prompt_template_service:68] [Prompt加载] 类型: requirement_analysis, 模板: default_analyze
+2026-04-25 16:50:45 [INFO] [src.api.routes:263] [Analyze] Prompt length: 1090
+2026-04-25 16:50:45 [INFO] [print:101] [需求分析] Prompt模板渲染完成, 长度=1090字符
+2026-04-25 16:50:45 [INFO] [print:101] [需求分析] 调用LLM: adapter=DeepSeekAdapter, temperature=0.3
+2026-04-25 16:51:07 [INFO] [src.api.routes:285] [需求分析] LLM调用完成, success=True
+2026-04-25 16:51:07 [INFO] [src.api.routes:303] [需求分析] 解析LLM响应, 长度=1978字符
+2026-04-25 16:51:07 [INFO] [src.api.routes:311] [需求分析] JSON解析成功
+2026-04-25 16:51:07 [INFO] [print:101] [需求分析] 识别到 2 个功能模块, 5 个测试点
+2026-04-25 16:51:07 [INFO] [print:101] [需求分析] 功能模块: 用户认证, 密码管理...
+2026-04-25 16:51:07 [INFO] [print:101] [需求分析] 分析完成 - 需求ID=9, 状态=已分析
+2026-04-25 16:51:07 [INFO] [werkzeug:97] 127.0.0.1 - - [25/Apr/2026 16:51:07] "POST /api/requirements/9/analyze HTTP/1.1" 200 -
+2026-04-25 16:51:07 [INFO] [werkzeug:97] 127.0.0.1 - - [25/Apr/2026 16:51:07] "GET /api/requirements?page=1&limit=10 HTTP/1.1" 200 -
+2026-04-25 16:51:07 [INFO] [werkzeug:97] 127.0.0.1 - - [25/Apr/2026 16:51:07] "GET /api/tasks?status=1 HTTP/1.1" 200 -
+2026-04-25 16:51:25 [INFO] [src.api.routes:473] [模块评审] 开始评审 - 需求ID=9
+2026-04-25 16:51:25 [INFO] [src.api.routes:474] [模块评审] 功能模块数量: 2, 测试点数量: 5
+2026-04-25 16:51:25 [INFO] [src.api.routes:478] [模块评审] 模块列表: 用户认证, 密码管理
+2026-04-25 16:51:25 [INFO] [src.api.routes:485] [模块评审] 测试点列表: 输入6-20位有效用户名, 输入8-20位包含字母和数字的密码, 验证登录成功后跳转到首页, 验证登录失败显示错误提示, 验证记住密码功能是否生效
+2026-04-25 16:51:25 [INFO] [src.api.routes:508] [模块评审] 模块评审通过 - 需求ID=9
+2026-04-25 16:51:25 [INFO] [src.api.routes:514] [模块评审] 创建生成任务, task_id=task_6c42c22b0b2b
+2026-04-25 16:51:25 [INFO] [src.api.routes:518] [模块评审] 使用数据: 用户编辑后
+2026-04-25 16:51:25 [INFO] [src.api.routes:522] [模块评审] 启动生成任务, task_id=task_6c42c22b0b2b
+2026-04-25 16:51:25 [INFO] [src.services.generation_service:2092] [调试][execute_phase2_generation] 方法被调用 - task_id: task_6c42c22b0b2b
+2026-04-25 16:51:25 [INFO] [src.services.generation_service:2095] [调试][execute_phase2_generation] reviewed_plan: provided
+2026-04-25 16:51:25 [INFO] [src.services.generation_service:2521] [调试][execute_phase2_generation] 正在启动后台线程...
+2026-04-25 16:51:25 [INFO] [src.services.generation_service:2101] [调试][run_phase2_batch] ===== 后台线程开始执行 =====
+2026-04-25 16:51:25 [INFO] [src.services.generation_service:2525] [调试][execute_phase2_generation] 后台线程已启动 - thread name: Thread-9 (run_phase2_batch)
+2026-04-25 16:51:25 [INFO] [src.services.generation_service:2102] [调试][run_phase2_batch] task_id: task_6c42c22b0b2b
+2026-04-25 16:51:25 [INFO] [src.api.routes:526] [模块评审] 触发异步生成完成 - task_id=task_6c42c22b0b2b
+2026-04-25 16:51:25 [INFO] [src.services.generation_service:2103] [调试][run_phase2_batch] reviewed_plan: provided
+2026-04-25 16:51:25 [INFO] [werkzeug:97] 127.0.0.1 - - [25/Apr/2026 16:51:25] "POST /api/requirements/9/review HTTP/1.1" 202 -
+2026-04-25 16:51:25 [INFO] [src.services.generation_service:2109] [调试][run_phase2_batch] task_obj: found
+2026-04-25 16:51:25 [INFO] [print:101] [执行阶段2] reviewed_plan is not None: True
+2026-04-25 16:51:25 [INFO] [print:101] [执行阶段2] test_plan_data: {'modules': '1. 用户认证 - 处理用户登录认证相关功能\n2. 密码管理 - 处理密码的存储和验证', 'points': '1. [用户认证] 输入6-20位有效用户名\n2. [密码管理] 输入8-20位包含字母 和数字的密码\n3. [用户认证] 验证登录成功后跳转到首页\n4. [用户认证] 验证登录失败显示错误提示\n5. [密码管理] 验证记住密码功能是否生效', 'items': [{'title': '用户认证', 'name': '用户认证', 'description': '', 'priority': 'P1', 'risk_level': 'medium', 'points': ['[用户认证] 输入6-20位有效用户名', '[用户认证] 验证登录成功后跳转到首页', '[用户认证] 验证登录失败显示错误提示']}, {'title': '密码管理', 'name': '密码管理', 'description': '', 'priority': 'P1', 'risk_level': 'medium', 'points': ['[密码管理] 输入8-20位包含字母和数字的密码', '[密码管理] 验证记住密码功能是否生效']}]}
+2026-04-25 16:51:25 [INFO] [print:101] [执行阶段2] test_plan_data keys: ['modules', 'points', 'items']
+2026-04-25 16:51:25 [INFO] [print:101] [执行阶段2] items count: 2
+2026-04-25 16:51:25 [INFO] [werkzeug:97] 127.0.0.1 - - [25/Apr/2026 16:51:25] "GET /api/requirements?page=1&limit=10 HTTP/1.1" 200 -
+2026-04-25 16:51:25 [INFO] [print:101] [执行阶段2] first item: {'title': '用户认证', 'name': '用户认证', 'description': '', 'priority': 'P1', 'risk_level': 'medium', 'points': ['[用户认证] 输入6-20位有效用户名', '[用户认证] 验证登录成功 后跳转到首页', '[用户认证] 验证登录失败显示错误提示']}
+2026-04-25 16:51:25 [INFO] [print:101] [调试] 开始分批生成 - 总共 2 个ITEM
+2026-04-25 16:51:25 [INFO] [print:101] [阶段2生成] ===== 开始生成任务 task_id=task_6c42c22b0b2b =====
+2026-04-25 16:51:25 [INFO] [print:101] [阶段2生成] 需求内容摘要: 1. 支持用户名和密码登录
 2. 用户名必须是6-20位字符
 3. 密码必须是8-20位字符，包含字母和数字
 4. 登录成功后跳转到首页
 5. 登录失败显示错误...
-2026-04-25 16:36:55 [INFO] [print] [阶段2生成] 全局上下文准备完成
-2026-04-25 16:36:55 [INFO] [print] [RAG召回] 开始召回 - 查询需求内容长度: 94
-2026-04-25 16:36:55 [INFO] [print] [RAG组件] DynamicRetriever 初始化完成
-2026-04-25 16:36:55 [INFO] [print] [RAG组件] HybridRetriever 初始化完成
-2026-04-25 16:36:55 [INFO] [print] [RAG组件] QueryOptimizer 初始化完成
-2026-04-25 16:36:55 [INFO] [print] [RAG组件] ConfidenceCalculator 初始化完成
-2026-04-25 16:36:55 [INFO] [print] [RAG组件] CitationParser 初始化完成
-2026-04-25 16:36:55 [INFO] [print] [RAG组件] RetrievalEvaluator 初始化完成
-2026-04-25 16:36:56 [INFO] [src.services.hybrid_retriever] 动态检索调整: expand (k=5->10)
-2026-04-25 16:36:56 [INFO] [src.services.hybrid_retriever] 动态检索调整: keep (k=3->3)
-2026-04-25 16:36:57 [INFO] [src.services.hybrid_retriever] 动态检索调整: expand (k=3->6)
-2026-04-25 16:36:57 [INFO] [print] [RAG召回] 召回相似用例: 5条
-2026-04-25 16:36:57 [INFO] [print] [RAG召回] 召回历史缺陷: 1条
-2026-04-25 16:36:57 [INFO] [print] [RAG召回] 召回相似需求: 3条
-2026-04-25 16:36:57 [INFO] [print] [用例生成] 开始按模块生成 - 共 2 个模块
-2026-04-25 16:36:57 [INFO] [print] [用例生成] 处理模块 1/2: 用户认证, 测试点: [用户认证] 输入6-20位有效用户名, [用户认证] 输入5位用户名, [用户认证] 输入21位用户名
-2026-04-25 16:36:57 [INFO] [print] [用例生成] 调用 generate_item_cases - 模块=用户认证, 测试点数=5
-2026-04-25 16:36:57 [INFO] [print] [调试][generate_item_cases] 开始生成 - title: 用户认证
-2026-04-25 16:36:57 [INFO] [print] [调试][generate_item_cases]   - item keys: ['title', 'name', 'description', 'priority', 'risk_level', 'points']
-2026-04-25 16:36:57 [INFO] [print] [调试][generate_item_cases]   - points: 5
-2026-04-25 16:36:57 [INFO] [print] [调试][generate_item_cases]   - priority: P1
-2026-04-25 16:36:57 [INFO] [src.services.prompt_template_service] [Prompt加载] 类型: case_generation, 模板: default_case_generation
-2026-04-25 16:36:57 [WARNING] [src.services.prompt_template_service] [Prompt渲染] 模板 case_generation 缺少变量: ['username', 'xxx', 'password']
-2026-04-25 16:36:57 [INFO] [print] [generate_item_cases] 模板缺少变量: ['xxx', 'password', 'username']
-2026-04-25 16:36:57 [INFO] [print] [调试][generate_item_cases] 调用LLM - adapter: DeepSeekAdapter
-2026-04-25 16:36:57 [INFO] [print] [调试][generate_item_cases]   - prompt长度: 3233 字符
-2026-04-25 16:36:57 [INFO] [print] [调试][generate_item_cases]   - temperature: 0.7, max_tokens: 4096, timeout: 120
-2026-04-25 16:36:57 [INFO] [print] [用例生成] Prompt已保存: C:\pythonworkspace\auto_generator_testcase\src\logs\prompt_20260425_163657.txt
-2026-04-25 16:36:57 [INFO] [print] [用例生成] 调用LLM - adapter=DeepSeekAdapter, temperature=0.7
-2026-04-25 16:37:55 [INFO] [print] [用例生成] LLM响应成功 - 响应长度: 4890字符
-2026-04-25 16:37:55 [INFO] [print] LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
-2026-04-25 16:37:55 [INFO] [print] 直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
-2026-04-25 16:37:55 [INFO] [print] 找到 1 个JSON代码块
-2026-04-25 16:37:55 [INFO] [print] 尝试解析第 1 个JSON代码块 (长度: 4878字符)
-2026-04-25 16:37:55 [INFO] [print] 从JSON代码块解析到 11 条用例
-2026-04-25 16:37:55 [INFO] [print] [用例生成] 解析用例完成 - 生成 11 条用例
-2026-04-25 16:37:55 [INFO] [print] [用例生成] 模块 '用户认证' 完成 - 共 11 条用例
-2026-04-25 16:37:55 [INFO] [print] [调试] generate_item_cases 返回 11 条用例
-2026-04-25 16:37:55 [INFO] [print] [分批生成] 模块 '用户认证' 生成 11 条用例
-2026-04-25 16:37:55 [INFO] [print] [用例生成] 处理模块 2/2: 密码管理, 测试点: [密码管理] 输入8-20位有效密码, [密码管理] 输入7位密码, [密码管理] 输入21位密码
-2026-04-25 16:37:55 [INFO] [print] [用例生成] 调用 generate_item_cases - 模块=密码管理, 测试点数=6
-2026-04-25 16:37:55 [INFO] [print] [调试][generate_item_cases] 开始生成 - title: 密码管理
-2026-04-25 16:37:55 [INFO] [print] [调试][generate_item_cases]   - item keys: ['title', 'name', 'description', 'priority', 'risk_level', 'points']
-2026-04-25 16:37:55 [INFO] [print] [调试][generate_item_cases]   - points: 6
-2026-04-25 16:37:55 [INFO] [print] [调试][generate_item_cases]   - priority: P1
-2026-04-25 16:37:55 [INFO] [src.services.prompt_template_service] [Prompt加载] 类型: case_generation, 模板: default_case_generation
-2026-04-25 16:37:55 [WARNING] [src.services.prompt_template_service] [Prompt渲染] 模板 case_generation 缺少变量: ['username', 'xxx', 'password']
-2026-04-25 16:37:55 [INFO] [print] [generate_item_cases] 模板缺少变量: ['xxx', 'password', 'username']
-2026-04-25 16:37:55 [INFO] [print] [调试][generate_item_cases] 调用LLM - adapter: DeepSeekAdapter
-2026-04-25 16:37:55 [INFO] [print] [调试][generate_item_cases]   - prompt长度: 4101 字符
-2026-04-25 16:37:55 [INFO] [print] [调试][generate_item_cases]   - temperature: 0.7, max_tokens: 4096, timeout: 120
-2026-04-25 16:37:55 [INFO] [print] [用例生成] Prompt已保存: C:\pythonworkspace\auto_generator_testcase\src\logs\prompt_20260425_163755.txt
-2026-04-25 16:37:55 [INFO] [print] [用例生成] 调用LLM - adapter=DeepSeekAdapter, temperature=0.7
-2026-04-25 16:38:44 [INFO] [print] [用例生成] LLM响应成功 - 响应长度: 4113字符
-2026-04-25 16:38:44 [INFO] [print] LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
-2026-04-25 16:38:44 [INFO] [print] 直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
-2026-04-25 16:38:44 [INFO] [print] 找到 1 个JSON代码块
-2026-04-25 16:38:44 [INFO] [print] 尝试解析第 1 个JSON代码块 (长度: 4101字符)
-2026-04-25 16:38:44 [INFO] [print] 从JSON代码块解析到 9 条用例
-2026-04-25 16:38:44 [INFO] [print] [用例生成] 解析用例完成 - 生成 9 条用例
-2026-04-25 16:38:44 [INFO] [print] [用例生成] 模块 '密码管理' 完成 - 共 9 条用例
-2026-04-25 16:38:44 [INFO] [print] [调试] generate_item_cases 返回 9 条用例
-2026-04-25 16:38:44 [INFO] [print] [分批生成] 模块 '密码管理' 生成 9 条用例
-2026-04-25 16:38:44 [INFO] [print] [质检] 开始执行质量检查...
-2026-04-25 16:38:44 [INFO] [print] [质检] Step 1: 重复检测...
-2026-04-25 16:38:46 [INFO] [print] [质检] 重复检测完成 - 发现 6 对重复用例
-2026-04-25 16:38:46 [INFO] [print] [质检] Step 2: 覆盖度检查...
-2026-04-25 16:38:46 [INFO] [print] [质检] 覆盖度检查完成 - 0/11 (0.00%)
-2026-04-25 16:38:46 [INFO] [print] [质检] Step 3: 质量评分...
-2026-04-25 16:38:46 [INFO] [print] [质检] 质量评分完成 - 平均分: 92.0, 高质量: 20, 低质量: 0
-2026-04-25 16:38:46 [INFO] [print] [质检] 质量检查完成 - 生成 2 条建议
-2026-04-25 16:38:46 [INFO] [print] [补充生成] 为测试点 '[用户认证] 输入6-20位有效用户名' 补充生成用例...
-2026-04-25 16:39:00 [INFO] [print] LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
-2026-04-25 16:39:00 [INFO] [print] 直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
-2026-04-25 16:39:00 [INFO] [print] 找到 1 个JSON代码块
-2026-04-25 16:39:00 [INFO] [print] 尝试解析第 1 个JSON代码块 (长度: 937字符)
-2026-04-25 16:39:00 [INFO] [print] 从JSON代码块解析到 2 条用例
-2026-04-25 16:39:00 [INFO] [print] [补充生成] 测试点 '[用户认证] 输入6-20位有效用户名' 生成 2 条用例
-2026-04-25 16:39:00 [INFO] [print] [补充生成] 为测试点 '[用户认证] 输入5位用户名' 补充生成用例...
-2026-04-25 16:39:16 [INFO] [print] LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
-2026-04-25 16:39:16 [INFO] [print] 直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
-2026-04-25 16:39:16 [INFO] [print] 找到 1 个JSON代码块
-2026-04-25 16:39:16 [INFO] [print] 尝试解析第 1 个JSON代码块 (长度: 1092字符)
-2026-04-25 16:39:16 [INFO] [print] 从JSON代码块解析到 2 条用例
-2026-04-25 16:39:17 [INFO] [print] [补充生成] 测试点 '[用户认证] 输入5位用户名' 生成 2 条用例
-2026-04-25 16:39:17 [INFO] [print] [补充生成] 为测试点 '[用户认证] 输入21位用户名' 补充生成用例...
-2026-04-25 16:39:29 [INFO] [print] LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
-2026-04-25 16:39:29 [INFO] [print] 直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
-2026-04-25 16:39:29 [INFO] [print] 找到 1 个JSON代码块
-2026-04-25 16:39:29 [INFO] [print] 尝试解析第 1 个JSON代码块 (长度: 931字符)
-2026-04-25 16:39:29 [INFO] [print] 从JSON代码块解析到 2 条用例
-2026-04-25 16:39:29 [INFO] [print] [补充生成] 测试点 '[用户认证] 输入21位用户名' 生成 2 条用例
-2026-04-25 16:39:29 [INFO] [print] [补充生成] 为测试点 '[用户认证] 验证登录成功跳转首页' 补充生成用例...
-2026-04-25 16:39:43 [INFO] [print] LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
-2026-04-25 16:39:43 [INFO] [print] 直接解析成功，返回 2 条用例
-2026-04-25 16:39:43 [INFO] [print] [补充生成] 测试点 '[用户认证] 验证登录成功跳转首页' 生成 2 条用例
-2026-04-25 16:39:43 [INFO] [print] [补充生成] 为测试点 '[用户认证] 验证登录失败显示错误提示' 补充生成用例...
-2026-04-25 16:39:55 [INFO] [print] LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
-2026-04-25 16:39:55 [INFO] [print] 直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
-2026-04-25 16:39:55 [INFO] [print] 找到 1 个JSON代码块
-2026-04-25 16:39:55 [INFO] [print] 尝试解析第 1 个JSON代码块 (长度: 978字符)
-2026-04-25 16:39:55 [INFO] [print] 从JSON代码块解析到 2 条用例
-2026-04-25 16:39:55 [INFO] [print] [补充生成] 测试点 '[用户认证] 验证登录失败显示错误提示' 生成 2 条用例
-2026-04-25 16:39:55 [INFO] [print] [补充生成] 为测试点 '[密码管理] 输入8-20位有效密码' 补充生成用例...
-2026-04-25 16:40:10 [INFO] [print] LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
-2026-04-25 16:40:10 [INFO] [print] 直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
-2026-04-25 16:40:10 [INFO] [print] 找到 1 个JSON代码块
-2026-04-25 16:40:10 [INFO] [print] 尝试解析第 1 个JSON代码块 (长度: 1019字符)
-2026-04-25 16:40:10 [INFO] [print] 从JSON代码块解析到 2 条用例
-2026-04-25 16:40:10 [INFO] [print] [补充生成] 测试点 '[密码管理] 输入8-20位有效密码' 生成 2 条用例
-2026-04-25 16:40:10 [INFO] [print] [补充生成] 为测试点 '[密码管理] 输入7位密码' 补充生成用例...
-2026-04-25 16:40:24 [INFO] [print] LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
-2026-04-25 16:40:24 [INFO] [print] 直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
-2026-04-25 16:40:24 [INFO] [print] 找到 1 个JSON代码块
-2026-04-25 16:40:24 [INFO] [print] 尝试解析第 1 个JSON代码块 (长度: 1020字符)
-2026-04-25 16:40:24 [INFO] [print] 从JSON代码块解析到 2 条用例
-2026-04-25 16:40:24 [INFO] [print] [补充生成] 测试点 '[密码管理] 输入7位密码' 生成 2 条用例
-2026-04-25 16:40:24 [INFO] [print] [补充生成] 为测试点 '[密码管理] 输入21位密码' 补充生成用例...
-2026-04-25 16:40:38 [INFO] [print] LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
-2026-04-25 16:40:38 [INFO] [print] 直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
-2026-04-25 16:40:38 [INFO] [print] 找到 1 个JSON代码块
-2026-04-25 16:40:38 [INFO] [print] 尝试解析第 1 个JSON代码块 (长度: 1048字符)
-2026-04-25 16:40:38 [INFO] [print] 从JSON代码块解析到 2 条用例
-2026-04-25 16:40:38 [INFO] [print] [补充生成] 测试点 '[密码管理] 输入21位密码' 生成 2 条用例
-2026-04-25 16:40:38 [INFO] [print] [补充生成] 为测试点 '[密码管理] 输入不含数字的密码' 补充生成用例...
-2026-04-25 16:40:51 [INFO] [print] LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
-2026-04-25 16:40:51 [INFO] [print] 直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
-2026-04-25 16:40:51 [INFO] [print] 找到 1 个JSON代码块
-2026-04-25 16:40:51 [INFO] [print] 尝试解析第 1 个JSON代码块 (长度: 978字符)
-2026-04-25 16:40:51 [INFO] [print] 从JSON代码块解析到 2 条用例
-2026-04-25 16:40:51 [INFO] [print] [补充生成] 测试点 '[密码管理] 输入不含数字的密码' 生成 2 条用例
-2026-04-25 16:40:51 [INFO] [print] [补充生成] 为测试点 '[密码管理] 输入不含字母的密码' 补充生成用例...
-2026-04-25 16:41:04 [INFO] [print] LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
-2026-04-25 16:41:04 [INFO] [print] 直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
-2026-04-25 16:41:04 [INFO] [print] 找到 1 个JSON代码块
-2026-04-25 16:41:04 [INFO] [print] 尝试解析第 1 个JSON代码块 (长度: 1018字符)
-2026-04-25 16:41:04 [INFO] [print] 从JSON代码块解析到 2 条用例
-2026-04-25 16:41:04 [INFO] [print] [补充生成] 测试点 '[密码管理] 输入不含字母的密码' 生成 2 条用例
-2026-04-25 16:41:04 [INFO] [print] [补充生成] 为测试点 '[密码管理] 验证记住密码功能' 补充生成用例...
-2026-04-25 16:41:20 [INFO] [print] LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
-2026-04-25 16:41:20 [INFO] [print] 直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
-2026-04-25 16:41:20 [INFO] [print] 找到 1 个JSON代码块
-2026-04-25 16:41:20 [INFO] [print] 尝试解析第 1 个JSON代码块 (长度: 1094字符)
-2026-04-25 16:41:20 [INFO] [print] 从JSON代码块解析到 2 条用例
-2026-04-25 16:41:20 [INFO] [print] [补充生成] 测试点 '[密码管理] 验证记住密码功能' 生成 2 条用例
-2026-04-25 16:41:20 [INFO] [print] [补充生成] 补充生成完成 - 共生成 22 条用例
-2026-04-25 16:41:20 [INFO] [print] [分批生成] 补充生成 22 条用例
-2026-04-25 16:41:20 [INFO] [print] [质检] 开始执行质量检查...
-2026-04-25 16:41:20 [INFO] [print] [质检] Step 1: 重复检测...
-2026-04-25 16:41:20 [INFO] [print] [质检] 重复检测完成 - 发现 7 对重复用例
-2026-04-25 16:41:20 [INFO] [print] [质检] Step 2: 覆盖度检查...
-2026-04-25 16:41:20 [INFO] [print] [质检] 覆盖度检查完成 - 11/11 (100.00%)
-2026-04-25 16:41:20 [INFO] [print] [质检] Step 3: 质量评分...
-2026-04-25 16:41:20 [INFO] [print] [质检] 质量评分完成 - 平均分: 90.5, 高质量: 42, 低质量: 0
-2026-04-25 16:41:20 [INFO] [print] [质检] 质量检查完成 - 生成 1 条建议
-2026-04-25 16:41:20 [INFO] [print] [用例评审] 开始评审 - 用例总数: 42
-2026-04-25 16:41:20 [INFO] [print] [用例评审] 调用CaseReviewAgent评审...
-2026-04-25 16:41:30 [INFO] [print] [用例评审] 评审结果: AUTO_PASS
-2026-04-25 16:41:30 [INFO] [print] [用例评审] 综合得分: 92
-2026-04-25 16:41:30 [INFO] [print] [用例评审] AI评审通过
-2026-04-25 16:41:30 [INFO] [print] [用例评审] 发现 3 个问题
-2026-04-25 16:41:30 [INFO] [print]   - completeness: 缺少验证首页跳转后用户会话状态的检查
-2026-04-25 16:41:30 [INFO] [print]   - accuracy: 预期结果应明确说明自动填充的密码是否以掩码形式显示
-2026-04-25 16:41:30 [INFO] [print]   - priority: 密码格式验证的优先级P2可能偏低，建议提升至P1
-2026-04-25 16:41:30 [INFO] [print] [用例保存] 开始保存用例 - 需求ID=8, 用例数=42
-2026-04-25 16:41:30 [INFO] [print] 开始保存用例，需求ID: 8, 用例数: 42
-2026-04-25 16:41:30 [INFO] [print] 第一个用例数据: {'case_id': 'TC_000001', 'module': '用户认证', 'test_point': '输入6-20位有效用户名', 'name': '用户输入6位有效用户名和正确密码登录成功', 'preconditions': '1. 用户已注册 2. 用户名长度为6位 3. 密码符合要求', 'test_steps': ['1. 打开登录页面', '2. 输入6位用户名（如：user12）和正确密码（如：pass1234）', '3. 点击登录按钮'], 'expected_results': ['1. 登录成功', '2. 跳转到首页'], 'priority': 'P0', 'requirement_clause': '1,4', 'case_type': '功能', 'item_id': '', 'item_title': '用户认证', 'item_priority': 'P1'}
-2026-04-25 16:41:37 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=1): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (1, '用户输入6位有效用户名和正确密码登录成功', '输入6-20位有效用户名', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:41:39 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=2): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (2, '用户输入20位有效用户名和正确密码登录成功', '输入6-20位有效用户名', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:41:41 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=3): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (3, '用户输入5位用户名登录失败', '输入5位用户名', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:41:43 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=4): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (4, '用户输入21位用户名登录失败', '输入21位用户名', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:41:45 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=5): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (5, '用户输入正确用户名和密码登录成功跳转首页', '验证登录成功跳转首页', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:41:47 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=6): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (6, '用户输入错误密码登录失败显示错误提示', '验证登录失败显示错误提示', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:41:49 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=7): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (7, '用户输入不存在的用户名登录失败显示错误提示', '验证登录失败显示错误提示', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:41:51 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=8): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (8, '用户输入仅包含字母的密码登录失败', '验证密码必须包含字母和数字', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:41:53 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=9): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (9, '用户输入仅包含数字的密码登录失败', '验证密码必须包含字母和数字', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:41:55 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=10): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (10, '用户勾选记住密码后下次自动填充密码', '验证记住密码功能', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:41:57 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=11): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (11, '用户连续输入错误密码5次后账户被锁定', '验证密码错误次数限制', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:41:59 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=12): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (12, '用户输入8位包含字母和数字的密码登录成功', '输入8-20位有效密码', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:01 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=13): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (13, '用户输入20位包含字母和数字的密码登录成功', '输入8-20位有效密码', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:03 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=14): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (14, '用户输入7位密码登录失败显示错误提示', '输入7位密码', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:05 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=15): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (15, '用户输入21位密码登录失败显示错误提示', '输入21位密码', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:07 [INFO] [werkzeug] 127.0.0.1 - - [25/Apr/2026 16:42:07] "GET /api/tasks?page=1&limit=20 HTTP/1.1" 200 -
-2026-04-25 16:42:07 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=16): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (16, '用户输入仅包含字母的密码登录失败显示错误提示', '输入不含数字的密码', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:08 [INFO] [werkzeug] 127.0.0.1 - - [25/Apr/2026 16:42:08] "GET /api/generate/task_c593098d2ebf HTTP/1.1" 200 -
-2026-04-25 16:42:09 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=17): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (17, '用户输入仅包含数字的密码登录失败显示错误提示', '输入不含字母的密码', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:11 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=18): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (18, '用户勾选记住密码后下次自动填充密码', '验证记住密码功能', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:13 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=19): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (19, '用户未勾选记住密码后下次不自动填充密码', '验证记住密码功能', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:15 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=20): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (20, '用户连续输入错误密码5次后账户被锁定', '输入8-20位有效密码', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:17 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=21): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (21, '输入15位有效用户名登录成功', '[用户认证] 输入6-20位有效用户名', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:19 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=22): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (22, '输入5位用户名显示格式错误', '[用户认证] 输入6-20位有效用户名', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:20 [INFO] [werkzeug] 127.0.0.1 - - [25/Apr/2026 16:42:20] "GET /requirements.html HTTP/1.1" 304 -
-2026-04-25 16:42:20 [INFO] [werkzeug] 127.0.0.1 - - [25/Apr/2026 16:42:20] "GET /api/requirements?page=1&limit=10 HTTP/1.1" 200 -
-2026-04-25 16:42:20 [INFO] [werkzeug] 127.0.0.1 - - [25/Apr/2026 16:42:20] "GET /api/tasks?status=1 HTTP/1.1" 200 -
-2026-04-25 16:42:21 [INFO] [werkzeug] 127.0.0.1 - - [25/Apr/2026 16:42:21] "GET /api/tasks?page=1&limit=20 HTTP/1.1" 200 -
-2026-04-25 16:42:21 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=23): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (23, '输入5位有效用户名登录成功', '[用户认证] 输入5位用户名', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:23 [INFO] [werkzeug] 127.0.0.1 - - [25/Apr/2026 16:42:23] "GET /api/generate/task_c593098d2ebf HTTP/1.1" 200 -
-2026-04-25 16:42:23 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=24): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (24, '输入5位无效用户名登录失败', '[用户认证] 输入5位用户名', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:25 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=25): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (25, '输入20位有效用户名登录成功', '[用户认证] 输入21位用户名', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:27 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=26): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (26, '输入21位用户名触发长度校验', '[用户认证] 输入21位用户名', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:29 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=27): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (27, '正确用户名密码登录跳转首页', '[用户认证] 验证登录成功跳转首页', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:30 [INFO] [werkzeug] 127.0.0.1 - - [25/Apr/2026 16:42:30] "GET /cases.html HTTP/1.1" 304 -
-2026-04-25 16:42:31 [INFO] [werkzeug] 127.0.0.1 - - [25/Apr/2026 16:42:31] "GET /api/cases/stats HTTP/1.1" 200 -
-2026-04-25 16:42:31 [INFO] [werkzeug] 127.0.0.1 - - [25/Apr/2026 16:42:31] "GET /api/requirements?limit=100 HTTP/1.1" 200 -
-2026-04-25 16:42:31 [INFO] [werkzeug] 127.0.0.1 - - [25/Apr/2026 16:42:31] "GET /api/cases?page=1&limit=10 HTTP/1.1" 200 -
-2026-04-25 16:42:32 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=28): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (28, '记住密码后自动登录跳转首页', '[用户认证] 验证登录成功跳转首页', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:33 [INFO] [werkzeug] 127.0.0.1 - - [25/Apr/2026 16:42:33] "GET /api/cases?page=1&limit=10 HTTP/1.1" 200 -
-2026-04-25 16:42:34 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=29): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (29, '输入错误密码时显示错误提示', '[用户认证] 验证登录失败显示错误提示', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:36 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=30): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (30, '输入不存在的用户名时显示错误提示', '[用户认证] 验证登录失败显示错误提示', '用户认证')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:38 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=31): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (31, '输入8位含字母数字密码登录成功', '[密码管理] 输入8-20位有效密码', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:40 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=32): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (32, '输入7位纯数字密码登录失败', '[密码管理] 输入8-20位有效密码', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:42 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=33): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (33, '输入7位合法密码登录成功', '[密码管理] 输入7位密码', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:44 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=34): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (34, '输入7位纯数字密码登录失败', '[密码管理] 输入7位密码', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:46 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=35): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (35, '输入21位有效密码验证登录成功', '[密码管理] 输入21位密码', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:48 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=36): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (36, '输入21位无效密码验证登录失败', '[密码管理] 输入21位密码', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:50 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=37): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (37, '输入含字母数字的密码成功登录', '[密码管理] 输入不含数字的密码', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:52 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=38): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (38, '输入纯字母密码提示格式错误', '[密码管理] 输入不含数字的密码', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:54 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=39): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (39, '输入纯数字密码验证登录失败', '[密码管理] 输入不含字母的密码', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:56 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=40): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (40, '输入特殊字符密码验证登录失败', '[密码管理] 输入不含字母的密码', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:42:58 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=41): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (41, '记住密码后自动填充登录信息', '[密码管理] 验证记住密码功能', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:43:00 [WARNING] [src.database.fts5_listeners] FTS5插入失败 (rowid=42): (sqlite3.OperationalError) database is locked
-[SQL: INSERT INTO test_cases_fts(rowid, name, test_point, module) VALUES (?, ?, ?, ?)]
-[parameters: (42, '清除浏览器缓存后密码不保存', '[密码管理] 验证记住密码功能', '密码管理')]
-(Background on this error at: https://sqlalche.me/e/20/e3q8)
-2026-04-25 16:43:00 [INFO] [print] 成功保存 42 条测试用例
-2026-04-25 16:43:00 [INFO] [print] [用例保存] 保存完成 - 共 42 条用例, 需要人工复核: 0
-2026-04-25 16:43:00 [INFO] [print] [任务完成] task_id=task_c593098d2ebf, 生成用例数=42, 状态=成功
-2026-04-25 16:43:00 [INFO] [print] 需求状态已更新为: 5
+2026-04-25 16:51:25 [INFO] [werkzeug:97] 127.0.0.1 - - [25/Apr/2026 16:51:25] "GET /api/tasks?status=1 HTTP/1.1" 200 -
+2026-04-25 16:51:25 [INFO] [print:101] [阶段2生成] 全局上下文准备完成
+2026-04-25 16:51:25 [INFO] [print:101] [RAG召回] 开始召回 - 查询需求内容长度: 94
+2026-04-25 16:51:25 [INFO] [print:101] [RAG组件] DynamicRetriever 初始化完成
+2026-04-25 16:51:25 [INFO] [print:101] [RAG组件] HybridRetriever 初始化完成
+2026-04-25 16:51:25 [INFO] [print:101] [RAG组件] QueryOptimizer 初始化完成
+2026-04-25 16:51:25 [INFO] [print:101] [RAG组件] ConfidenceCalculator 初始化完成
+2026-04-25 16:51:25 [INFO] [print:101] [RAG组件] CitationParser 初始化完成
+2026-04-25 16:51:25 [INFO] [print:101] [RAG组件] RetrievalEvaluator 初始化完成
+2026-04-25 16:51:26 [INFO] [src.services.hybrid_retriever:210] 动态检索调整: expand (k=5->10)
+2026-04-25 16:51:26 [INFO] [src.services.hybrid_retriever:210] 动态检索调整: keep (k=3->3)
+2026-04-25 16:51:27 [INFO] [src.services.hybrid_retriever:210] 动态检索调整: expand (k=3->6)
+2026-04-25 16:51:27 [INFO] [print:101] [RAG召回] 召回相似用例: 5条
+2026-04-25 16:51:27 [INFO] [print:101] [RAG召回] 召回历史缺陷: 1条
+2026-04-25 16:51:27 [INFO] [print:101] [RAG召回] 召回相似需求: 3条
+2026-04-25 16:51:27 [INFO] [print:101] [用例生成] 开始按模块生成 - 共 2 个模块
+2026-04-25 16:51:27 [INFO] [print:101] [用例生成] 处理模块 1/2: 用户认证, 测试点: [用户认证] 输入6-20位有效用户名, [用户认证] 验证登录成功后跳转到首页, [用户认证] 验证登录失败显示错误提示
+2026-04-25 16:51:27 [INFO] [print:101] [用例生成] 调用 generate_item_cases - 模块=用户认证, 测试点数=3
+2026-04-25 16:51:27 [INFO] [print:101] [调试][generate_item_cases] 开始生成 - title: 用户认证
+2026-04-25 16:51:27 [INFO] [print:101] [调试][generate_item_cases]   - item keys: ['title', 'name', 'description', 'priority', 'risk_level', 'points']
+2026-04-25 16:51:27 [INFO] [print:101] [调试][generate_item_cases]   - points: 3
+2026-04-25 16:51:27 [INFO] [print:101] [调试][generate_item_cases]   - priority: P1
+2026-04-25 16:51:27 [INFO] [src.services.prompt_template_service:68] [Prompt加载] 类型: case_generation, 模板: default_case_generation
+2026-04-25 16:51:27 [WARNING] [src.services.prompt_template_service:130] [Prompt渲染] 模板 case_generation 缺少变量: ['username', 'xxx', 'password']
+2026-04-25 16:51:27 [INFO] [print:101] [generate_item_cases] 模板缺少变量: ['xxx', 'username', 'password']
+2026-04-25 16:51:27 [INFO] [print:101] [调试][generate_item_cases] 调用LLM - adapter: DeepSeekAdapter
+2026-04-25 16:51:27 [INFO] [print:101] [调试][generate_item_cases]   - prompt长度: 3197 字符
+2026-04-25 16:51:27 [INFO] [print:101] [调试][generate_item_cases]   - temperature: 0.7, max_tokens: 4096, timeout: 120
+2026-04-25 16:51:27 [INFO] [print:101] [用例生成] Prompt已保存: C:\pythonworkspace\auto_generator_testcase\src\logs\prompt_20260425_165127.txt
+2026-04-25 16:51:27 [INFO] [print:101] [用例生成] 调用LLM - adapter=DeepSeekAdapter, temperature=0.7
+2026-04-25 16:52:29 [INFO] [print:101] [用例生成] LLM响应成功 - 响应长度: 4922字符
+2026-04-25 16:52:29 [INFO] [print:101] LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
+2026-04-25 16:52:29 [INFO] [print:101] 直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
+2026-04-25 16:52:29 [INFO] [print:101] 找到 1 个JSON代码块
+2026-04-25 16:52:29 [INFO] [print:101] 尝试解析第 1 个JSON代码块 (长度: 4910字符)
+2026-04-25 16:52:29 [INFO] [print:101] 从JSON代码块解析到 11 条用例
+2026-04-25 16:52:29 [INFO] [print:101] [用例生成] 解析用例完成 - 生成 11 条用例
+2026-04-25 16:52:29 [INFO] [print:101] [用例生成] 模块 '用户认证' 完成 - 共 11 条用例
+2026-04-25 16:52:29 [INFO] [print:101] [调试] generate_item_cases 返回 11 条用例
+2026-04-25 16:52:29 [INFO] [print:101] [分批生成] 模块 '用户认证' 生成 11 条用例
+2026-04-25 16:52:29 [INFO] [print:101] [用例生成] 处理模块 2/2: 密码管理, 测试点: [密码管理] 输入8-20位包含字母和数字的密码, [密码管理] 验证记住密码功能是否生效
+2026-04-25 16:52:29 [INFO] [print:101] [用例生成] 调用 generate_item_cases - 模块=密码管理, 测试点数=2
+2026-04-25 16:52:29 [INFO] [print:101] [调试][generate_item_cases] 开始生成 - title: 密码管理
+2026-04-25 16:52:29 [INFO] [print:101] [调试][generate_item_cases]   - item keys: ['title', 'name', 'description', 'priority', 'risk_level', 'points']
+2026-04-25 16:52:29 [INFO] [print:101] [调试][generate_item_cases]   - points: 2
+2026-04-25 16:52:29 [INFO] [print:101] [调试][generate_item_cases]   - priority: P1
+2026-04-25 16:52:29 [INFO] [src.services.prompt_template_service:68] [Prompt加载] 类型: case_generation, 模板: default_case_generation
+2026-04-25 16:52:29 [WARNING] [src.services.prompt_template_service:130] [Prompt渲染] 模板 case_generation 缺少变量: ['username', 'xxx', 'password']
+2026-04-25 16:52:29 [INFO] [print:101] [generate_item_cases] 模板缺少变量: ['xxx', 'username', 'password']
+2026-04-25 16:52:29 [INFO] [print:101] [调试][generate_item_cases] 调用LLM - adapter: DeepSeekAdapter
+2026-04-25 16:52:29 [INFO] [print:101] [调试][generate_item_cases]   - prompt长度: 4045 字符
+2026-04-25 16:52:29 [INFO] [print:101] [调试][generate_item_cases]   - temperature: 0.7, max_tokens: 4096, timeout: 120
+2026-04-25 16:52:29 [INFO] [print:101] [用例生成] Prompt已保存: C:\pythonworkspace\auto_generator_testcase\src\logs\prompt_20260425_165229.txt
+2026-04-25 16:52:29 [INFO] [print:101] [用例生成] 调用LLM - adapter=DeepSeekAdapter, temperature=0.7
+2026-04-25 16:53:17 [INFO] [print:101] [用例生成] LLM响应成功 - 响应长度: 3770字符
+2026-04-25 16:53:17 [INFO] [print:101] LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
+2026-04-25 16:53:17 [INFO] [print:101] 直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
+2026-04-25 16:53:17 [INFO] [print:101] 找到 1 个JSON代码块
+2026-04-25 16:53:17 [INFO] [print:101] 尝试解析第 1 个JSON代码块 (长度: 3758字符)
+2026-04-25 16:53:17 [INFO] [print:101] 从JSON代码块解析到 8 条用例
+2026-04-25 16:53:17 [INFO] [print:101] [用例生成] 解析用例完成 - 生成 8 条用例
+2026-04-25 16:53:17 [INFO] [print:101] [用例生成] 模块 '密码管理' 完成 - 共 8 条用例
+2026-04-25 16:53:17 [INFO] [print:101] [调试] generate_item_cases 返回 8 条用例
+2026-04-25 16:53:17 [INFO] [print:101] [分批生成] 模块 '密码管理' 生成 8 条用例
+2026-04-25 16:53:17 [INFO] [print:101] [质检] 开始执行质量检查...
+2026-04-25 16:53:17 [INFO] [print:101] [质检] Step 1: 重复检测...
+2026-04-25 16:53:19 [INFO] [print:101] [质检] 重复检测完成 - 发现 3 对重复用例
+2026-04-25 16:53:19 [INFO] [print:101] [质检] Step 2: 覆盖度检查...
+2026-04-25 16:53:19 [INFO] [print:101] [质检] 覆盖度检查完成 - 0/5 (0.00%)
+2026-04-25 16:53:19 [INFO] [print:101] [质检] Step 3: 质量评分...
+2026-04-25 16:53:19 [INFO] [print:101] [质检] 质量评分完成 - 平均分: 91.6, 高质量: 19, 低质量: 0
+2026-04-25 16:53:19 [INFO] [print:101] [质检] 质量检查完成 - 生成 2 条建议
+2026-04-25 16:53:19 [INFO] [print:101] [补充生成] 为测试点 '[用户认证] 输入6-20位有效用户名' 补充生成用例...
+2026-04-25 16:53:33 [INFO] [print:101] LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
+2026-04-25 16:53:33 [INFO] [print:101] 直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
+2026-04-25 16:53:33 [INFO] [print:101] 找到 1 个JSON代码块
+2026-04-25 16:53:33 [INFO] [print:101] 尝试解析第 1 个JSON代码块 (长度: 947字符)
+2026-04-25 16:53:33 [INFO] [print:101] 从JSON代码块解析到 2 条用例
+2026-04-25 16:53:33 [INFO] [print:101] [补充生成] 测试点 '[用户认证] 输入6-20位有效用户名' 生成 2 条用例
+2026-04-25 16:53:33 [INFO] [print:101] [补充生成] 为测试点 '[用户认证] 验证登录成功后跳转到首页' 补充生成用例...
+2026-04-25 16:53:47 [INFO] [print:101] LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
+2026-04-25 16:53:47 [INFO] [print:101] 直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
+2026-04-25 16:53:47 [INFO] [print:101] 找到 1 个JSON代码块
+2026-04-25 16:53:47 [INFO] [print:101] 尝试解析第 1 个JSON代码块 (长度: 985字符)
+2026-04-25 16:53:48 [INFO] [print:101] 从JSON代码块解析到 2 条用例
+2026-04-25 16:53:48 [INFO] [print:101] [补充生成] 测试点 '[用户认证] 验证登录成功后跳转到首页' 生成 2 条用例
+2026-04-25 16:53:48 [INFO] [print:101] [补充生成] 为测试点 '[用户认证] 验证登录失败显示错误提示' 补充生成用例...
+2026-04-25 16:54:02 [INFO] [print:101] LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
+2026-04-25 16:54:02 [INFO] [print:101] 直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
+2026-04-25 16:54:02 [INFO] [print:101] 找到 1 个JSON代码块
+2026-04-25 16:54:02 [INFO] [print:101] 尝试解析第 1 个JSON代码块 (长度: 1037字符)
+2026-04-25 16:54:02 [INFO] [print:101] 从JSON代码块解析到 2 条用例
+2026-04-25 16:54:02 [INFO] [print:101] [补充生成] 测试点 '[用户认证] 验证登录失败显示错误提示' 生成 2 条用例
+2026-04-25 16:54:02 [INFO] [print:101] [补充生成] 为测试点 '[密码管理] 输入8-20位包含字母和数字的密码' 补充生成用例...
+2026-04-25 16:54:16 [INFO] [print:101] LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
+2026-04-25 16:54:16 [INFO] [print:101] 直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
+2026-04-25 16:54:16 [INFO] [print:101] 找到 1 个JSON代码块
+2026-04-25 16:54:16 [INFO] [print:101] 尝试解析第 1 个JSON代码块 (长度: 971字符)
+2026-04-25 16:54:16 [INFO] [print:101] 从JSON代码块解析到 2 条用例
+2026-04-25 16:54:16 [INFO] [print:101] [补充生成] 测试点 '[密码管理] 输入8-20位包含字母和数字的密码' 生成 2 条用例
+2026-04-25 16:54:16 [INFO] [print:101] [补充生成] 为测试点 '[密码管理] 验证记住密码功能是否生效' 补充生成用例...
+2026-04-25 16:54:33 [INFO] [print:101] LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
+2026-04-25 16:54:33 [INFO] [print:101] 直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
+2026-04-25 16:54:33 [INFO] [print:101] 找到 1 个JSON代码块
+2026-04-25 16:54:33 [INFO] [print:101] 尝试解析第 1 个JSON代码块 (长度: 1271字符)
+2026-04-25 16:54:33 [INFO] [print:101] 从JSON代码块解析到 2 条用例
+2026-04-25 16:54:33 [INFO] [print:101] [补充生成] 测试点 '[密码管理] 验证记住密码功能是否生效' 生成 2 条用例
+2026-04-25 16:54:33 [INFO] [print:101] [补充生成] 补充生成完成 - 共生成 10 条用例
+2026-04-25 16:54:33 [INFO] [print:101] [分批生成] 补充生成 10 条用例
+2026-04-25 16:54:33 [INFO] [print:101] [质检] 开始执行质量检查...
+2026-04-25 16:54:33 [INFO] [print:101] [质检] Step 1: 重复检测...
+2026-04-25 16:54:33 [INFO] [print:101] [质检] 重复检测完成 - 发现 1 对重复用例
+2026-04-25 16:54:33 [INFO] [print:101] [质检] Step 2: 覆盖度检查...
+2026-04-25 16:54:33 [INFO] [print:101] [质检] 覆盖度检查完成 - 5/5 (100.00%)
+2026-04-25 16:54:33 [INFO] [print:101] [质检] Step 3: 质量评分...
+2026-04-25 16:54:33 [INFO] [print:101] [质检] 质量评分完成 - 平均分: 90.3, 高质量: 29, 低质量: 0
+2026-04-25 16:54:33 [INFO] [print:101] [质检] 质量检查完成 - 生成 2 条建议
+2026-04-25 16:54:33 [INFO] [print:101] [用例评审] 开始评审 - 用例总数: 29
+2026-04-25 16:54:33 [INFO] [print:101] [用例评审] 调用CaseReviewAgent评审...
+2026-04-25 16:54:46 [INFO] [print:101] [用例评审] 评审结果: NEEDS_REVIEW
+2026-04-25 16:54:46 [INFO] [print:101] [用例评审] 综合得分: 88
+2026-04-25 16:54:46 [INFO] [print:101] [用例评审] 需要人工复核
+2026-04-25 16:54:46 [INFO] [print:101] [用例评审] 发现 3 个问题
+2026-04-25 16:54:46 [INFO] [print:101]   - completeness: 密码仅包含字母的测试用例未明确说明密码长度是否符合要求
+2026-04-25 16:54:46 [INFO] [print:101]   - completeness: 密码仅包含数字的测试用例未明确说明密码长度是否符合要求
+2026-04-25 16:54:46 [INFO] [print:101]   - priority: 账户锁定功能优先级为P2，建议提升至P1，因涉及安全功能
+2026-04-25 16:54:46 [INFO] [print:101] [用例评审] 标记 29 条用例需要人工复核
+2026-04-25 16:54:46 [INFO] [print:101] [用例保存] 开始保存用例 - 需求ID=9, 用例数=29
+2026-04-25 16:54:46 [INFO] [print:101] 开始保存用例，需求ID: 9, 用例数: 29
+2026-04-25 16:54:46 [INFO] [print:101] 第一个用例数据: {'case_id': 'TC_000001', 'module': '用户认证', 'test_point': '输入6-20位有效用户名', 'name': '用户输入6位有效用户名和正确密码登录成功', 'preconditions': '1. 用户已注册 2. 用户名长度 为6位 3. 密码符合要求', 'test_steps': ['1. 打开登录页面', '2. 输入6位用户名（如：user12）和正确密码（如：pass1234）', '3. 点击登录按钮'], 'expected_results': ['1. 登录成功', '2. 跳转到首页'], 'priority': 'P0', 'requirement_clause': '1,4', 'case_type': '功能', 'item_id': '', 'item_title': '用户认证', 'item_priority': 'P1', 'requires_human_review': True}
+2026-04-25 16:55:19 [INFO] [print:101] 成功保存 29 条测试用例
+2026-04-25 16:55:19 [INFO] [print:101] [用例保存] 保存完成 - 共 29 条用例, 需要人工复核: 29
+2026-04-25 16:55:19 [INFO] [print:101] [任务完成] task_id=task_6c42c22b0b2b, 生成用例数=29, 状态=成功
+2026-04-25 16:55:19 [INFO] [print:101] 需求状态已更新为: 5

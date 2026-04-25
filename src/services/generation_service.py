@@ -87,14 +87,12 @@ class GenerationService:
         if llm_manager:
             default_info = llm_manager.get_config_info()
             print(
-                f"[GenerationService] 初始化完成，LLM默认配置: {default_info.get('name', '无')} ({default_info.get('provider', '未知')})"
+                f"初始化完成，LLM默认配置: {default_info.get('name', '无')} ({default_info.get('provider', '未知')})"
             )
             print(
-                f"[GenerationService] LLM适配器列表: {list(llm_manager.adapters.keys())}"
+                f"LLM适配器列表: {list(llm_manager.adapters.keys())}"
             )
-            print(
-                f"[GenerationService] 默认适配器: {llm_manager.default_adapter}"
-            )
+            print(f"默认适配器: {llm_manager.default_adapter}")
 
         # 从数据库加载未完成的任务
         self._load_pending_tasks_from_db()
@@ -2430,10 +2428,13 @@ class GenerationService:
                 # 保存用例
                 if all_generated_cases:
                     try:
+                        rag_influenced = 1 if rag_stats.get("cases", 0) > 0 else 0
                         print(
-                            f"[用例保存] 开始保存用例 - 需求ID={requirement_id}, 用例数={len(all_generated_cases)}"
+                            f"[用例保存] 开始保存用例 - 需求ID={requirement_id}, 用例数={len(all_generated_cases)}, RAG影响={rag_influenced}"
                         )
-                        self._save_test_cases(requirement_id, all_generated_cases)
+                        self._save_test_cases(
+                            requirement_id, all_generated_cases, rag_influenced
+                        )
                         print(
                             f"[用例保存] 保存完成 - 共 {len(all_generated_cases)} 条用例, 需要人工复核: {len([c for c in all_generated_cases if c.get('requires_human_review')])}"
                         )
@@ -2728,7 +2729,9 @@ class GenerationService:
                     if test_cases:
                         task_obj = self.get_task(task_id)
                         if task_obj:
-                            self._save_test_cases(task_obj.requirement_id, test_cases)
+                            self._save_test_cases(
+                                task_obj.requirement_id, test_cases, 0
+                            )
                             print(
                                 f"[直接保存] 成功保存 {len(test_cases)} 条用例到数据库"
                             )
@@ -3058,7 +3061,7 @@ class GenerationService:
                         print(
                             f"开始保存用例，需求ID: {task_obj.requirement_id}, 用例数: {len(test_cases)}"
                         )
-                        self._save_test_cases(task_obj.requirement_id, test_cases)
+                        self._save_test_cases(task_obj.requirement_id, test_cases, 0)
                         print(f"用例保存完成")
 
                         self.update_progress(
@@ -3282,7 +3285,9 @@ class GenerationService:
                 primary_adapter, prompt, task_id, max_retries
             )
 
-    def _save_test_cases(self, requirement_id: int, test_cases: list):
+    def _save_test_cases(
+        self, requirement_id: int, test_cases: list, rag_influenced: int = 0
+    ):
         """保存测试用例到数据库 - 先删除旧用例再保存新用例"""
         if not test_cases:
             print("警告: 没有需要保存的测试用例")
@@ -3432,6 +3437,7 @@ class GenerationService:
                     confidence_score=case_data.get("confidence_score"),
                     confidence_level=case_data.get("confidence_level"),
                     citations=case_data.get("citations"),
+                    rag_influenced=rag_influenced,
                 )
                 session.add(test_case)
                 saved_count += 1

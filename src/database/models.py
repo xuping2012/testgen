@@ -146,6 +146,7 @@ class TestCase(Base):
     confidence_score = Column(Float, default=None)  # 综合置信度分数 (0.0 ~ 1.0)
     confidence_level = Column(String(10), default=None)  # 置信度等级 (A/B/C/D)
     citations = Column(JSON, default=None)  # 引用来源列表
+    rag_influenced = Column(Integer, default=0)  # RAG影响标识 (0=未影响, 1=受影响)
 
     # 追溯信息
     requirement_clause = Column(String(100))  # 关联需求条款编号
