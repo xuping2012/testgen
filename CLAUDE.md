@@ -241,7 +241,7 @@ Callers of this method: `POST /api/generate/continue` and `POST /api/generate/re
 2. **Vector Store** (`data/chroma_db`):
    - ChromaDB with sentence-transformers embeddings
    - HNSW index for similarity search
-   - If search fails, index may be corrupted - use `fix_chroma_rebuild.py`
+   - If search fails, index may be corrupted - delete `data/chroma_db/` and restart
 
 #### Startup Auto-Migrations
 

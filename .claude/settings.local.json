@@ -43,7 +43,10 @@
       "Bash(python -m py_compile src/api/routes.py 2>&1 || echo \"Python syntax error\")",
       "Bash(python -m py_compile src/api/routes.py src/services/generation_service.py)",
       "Bash(ls -1 C:/pythonworkspace/auto_generator_testcase/*.md 2>/dev/null || echo \"No root md files\")",
-      "Bash(ls -1 C:/pythonworkspace/auto_generator_testcase/.cursor* C:/pythonworkspace/auto_generator_testcase/.cursorrules C:/pythonworkspace/auto_generator_testcase/.github/copilot-instructions.md 2>/dev/null || echo \"No cursor/copilot rules found\")"
+      "Bash(ls -1 C:/pythonworkspace/auto_generator_testcase/.cursor* C:/pythonworkspace/auto_generator_testcase/.cursorrules C:/pythonworkspace/auto_generator_testcase/.github/copilot-instructions.md 2>/dev/null || echo \"No cursor/copilot rules found\")",
+      "Bash(find C:/pythonworkspace/auto_generator_testcase/docs -type f -name \"*.md\" 2>/dev/null | head -20)",
+      "Bash(ls -1 C:/pythonworkspace/auto_generator_testcase/.env* C:/pythonworkspace/auto_generator_testcase/*.env 2>/dev/null || echo \"No env files found\")",
+      "Bash(ls -1 C:/pythonworkspace/auto_generator_testcase/LICENSE* C:/pythonworkspace/auto_generator_testcase/CHANGELOG* C:/pythonworkspace/auto_generator_testcase/CONTRIBUTING* 2>/dev/null || echo \"No additional standard docs found\")"
     ]
   }
 }

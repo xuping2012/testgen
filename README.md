@@ -49,7 +49,19 @@ python init_db.py
 python app.py
 ```
 
+Windows 用户也可以直接双击 `start.bat` 启动。
+
 访问地址：`http://localhost:5000`
+
+## 环境要求
+
+- **Python**: 3.10 或更高版本
+- **Tesseract OCR**: 如需解析图片中的文字，需安装 Tesseract 并添加到系统 PATH
+  - Windows: 下载安装包并安装，确保 `tesseract` 命令可在命令行使用
+  - macOS: `brew install tesseract`
+  - Linux: `sudo apt-get install tesseract-ocr`
+- **内存**: 建议至少 4GB 可用内存（向量数据库和 LLM 推理需要）
+- **磁盘**: 至少 1GB 可用空间（用于 SQLite 数据库和 ChromaDB 向量索引）
 
 ## 功能模块
 
@@ -134,6 +146,65 @@ python app.py
 ![自主评审自我进化](PNG/自主评审自我进化.png)
 
 系统支持测试用例的自主评审和自我进化，不断提高生成质量。
+
+## 项目目录结构
+
+```
+auto_generator_testcase/
+├── app.py                          # Flask 应用入口
+├── init_db.py                      # 数据库初始化脚本
+├── requirements.txt                # Python 依赖
+├── start.bat                       # Windows 启动脚本
+├── src/                            # 后端源码
+│   ├── api/
+│   │   └── routes.py               # REST API 路由
+│   ├── case_generator/
+│   │   └── exporter.py             # 用例导出（Excel/XMind/JSON）
+│   ├── database/
+│   │   ├── models.py               # SQLAlchemy ORM 模型
+│   │   ├── fts5_listeners.py       # FTS5 全文搜索监听器
+│   │   └── migrations/             # 数据库迁移脚本
+│   ├── document_parser/
+│   │   └── parser.py               # 多格式文档解析器
+│   ├── llm/
+│   │   └── adapter.py              # 多提供商 LLM 适配器
+│   ├── services/                   # 核心业务服务
+│   │   ├── generation_service.py   # 两阶段生成管道
+│   │   ├── hybrid_retriever.py     # 混合检索（向量+关键词）
+│   │   ├── dynamic_retriever.py    # 自适应检索策略
+│   │   ├── query_optimizer.py      # 查询优化
+│   │   ├── confidence_calculator.py# 置信度计算
+│   │   ├── citation_parser.py      # 引用解析
+│   │   ├── document_chunker.py     # 文档分块
+│   │   ├── case_review_agent.py    # 用例评审 Agent
+│   │   ├── defect_knowledge_base.py# 缺陷知识库
+│   │   ├── retrieval_evaluator.py  # 检索评估
+│   │   ├── prompt_template_service.py # 提示模板管理
+│   │   └── requirement_review_service.py # 需求评审
+│   ├── utils/
+│   │   └── __init__.py
+│   ├── ui/                         # 前端页面（纯 HTML/JS）
+│   │   ├── index.html
+│   │   ├── requirements.html
+│   │   ├── cases.html
+│   │   ├── config.html
+│   │   ├── prompts.html
+│   │   ├── rag.html
+│   │   └── chat.html
+│   └── vectorstore/
+│       └── chroma_store.py         # ChromaDB 向量存储
+├── testgen_frontend/               # 前端页面备用目录
+├── tests/                          # 测试用例（pytest）
+├── data/                           # 运行时数据（gitignored）
+│   ├── testgen.db                  # SQLite 数据库
+│   ├── chroma_db/                  # ChromaDB 向量索引
+│   ├── uploads/                    # 上传的文档
+│   └── exports/                    # 导出的文件
+├── Technical/                      # 技术文档
+├── docs/                           # 项目文档
+├── openspec/                       # 变更规格记录
+└── PNG/                            # 截图资源
+```
 
 ## 架构说明
 
@@ -317,11 +388,11 @@ Phase 2 生成的用例保存在内存中，用户需调用 `POST /api/tasks/{ta
 - **暂存机制**：Phase 2 生成结果先保存在内存中，需显式调用入库接口才能持久化
 - **异步任务**：生成在后台线程运行，通过 WebSocket 或轮询查询进度
 - **线程安全**：后台线程使用 `scoped_session()` 避免 SQLite 锁冲突
-- **ChromaDB 索引**：如果搜索失败，索引可能损坏，使用 `fix_chroma_rebuild.py` 重建
+- **ChromaDB 索引**：如果搜索失败，索引可能损坏，可删除 `data/chroma_db/` 目录后重启应用自动重建
 - **提示模板**：默认模板在首次运行时初始化，可通过 `/prompts` UI 管理
 - **图片解析**：需要 Tesseract OCR 安装并在系统 PATH 中
 - **状态枚举**：所有状态字段使用整数枚举存储，前端自动映射为中文显示
-- **数据库迁移**：如果从旧版本升级，运行 `python fix_status_column_type.py` 修复 status 列类型
+- **数据库迁移**：迁移脚本位于 `src/database/migrations/`，按版本号顺序执行
 
 ## 状态枚举定义
 
@@ -372,10 +443,18 @@ Phase 2 生成的用例保存在内存中，用户需调用 `POST /api/tasks/{ta
 | 3 | 已拒绝 | 分析项已拒绝 |
 | 4 | 已修改 | 分析项已修改 |
 
-## 数据库迁移工具
+## 数据库迁移
 
-- `migrate_status_enum.py` - 将状态值从字符串迁移到整数枚举
-- `fix_status_column_type.py` - 修复 SQLite 列类型从 VARCHAR 到 INTEGER
+迁移脚本位于 `src/database/migrations/`，按版本号顺序执行：
+
+| 脚本 | 说明 |
+|------|------|
+| `v2_backup.py` | v2 升级前的数据备份 |
+| `v2_add_confidence_fields.py` | 添加置信度相关字段 |
+| `v2_citation_prompt.py` | 添加引用来源和提示模板字段 |
+| `v2_rollback.py` | v2 升级失败后的回滚 |
+| `v3_requirement_workflow.py` | 需求工作流相关表结构更新 |
+| `v4_fix_prompt_templates.py` | 修复提示模板表结构 |
 
 ## 测试
 
@@ -399,3 +478,54 @@ python -m pytest tests/test_api.py -v -s --tb=long
 black .
 flake8 .
 ```
+
+## 开发指南
+
+### 调试模式
+
+Flask 内置调试模式可在代码变更时自动重载：
+
+```bash
+# 在 app.py 中设置，或设置环境变量
+set FLASK_ENV=development  # Windows
+export FLASK_ENV=development  # Linux/macOS
+```
+
+### 数据库调试
+
+```bash
+# 直接查看 SQLite 数据库
+sqlite3 data/testgen.db
+
+# 查看表结构
+.schema
+
+# 查看生成任务
+SELECT task_id, status, progress, phase FROM generation_tasks;
+```
+
+### 常见问题排查
+
+| 问题 | 解决方案 |
+|------|----------|
+| `database is locked` | SQLite WAL 模式已启用，如仍出现请检查是否有其他进程占用数据库 |
+| ChromaDB 搜索失败 | 删除 `data/chroma_db/` 目录后重启应用，系统将自动重建索引 |
+| 图片解析失败 | 检查 Tesseract 是否安装并添加到 PATH |
+| Phase 2 进度卡住 | 查看 `logs/` 目录下的应用日志，检查 LLM 配置是否正常 |
+| 状态显示不正确 | 检查数据库 `status` 列类型是否为 INTEGER，参考 `src/database/migrations/` 脚本修复 |
+
+### 添加新的 LLM 提供商
+
+在 `src/llm/adapter.py` 中的 `LLMManager` 类里新增提供商适配逻辑，统一实现 `chat_completion()` 接口。然后在 `src/api/routes.py` 中确保配置校验支持新的提供商名称。
+
+### 扩展导出格式
+
+在 `src/case_generator/exporter.py` 中新增导出函数，接收 `List[TestCase]` 参数，返回文件路径。然后在 `src/api/routes.py` 的导出路由中注册新的格式类型。
+
+## 相关文档
+
+| 文档 | 说明 |
+|------|------|
+| [CLAUDE.md](CLAUDE.md) | Claude Code 开发指南：架构细节、服务注入模式、线程安全策略、关键 API 端点 |
+| [AGENTS.md](AGENTS.md) | 编码代理规范：代码风格、命名约定、错误处理模板、导入分组规则 |
+| [Technical/README.md](Technical/README.md) | 技术文档索引：架构设计、方案对比、RAG 增强方案、Prompt 模板分析 |

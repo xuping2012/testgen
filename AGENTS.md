@@ -182,7 +182,7 @@ return jsonify({"error": "服务器错误"}), 500
 - Tests use temporary databases - ensure cleanup in `finally` blocks
 - Windows console encoding fix in `app.py` (sys.stdout wrapper)
 - Max file upload size: 16MB (`app.config['MAX_CONTENT_LENGTH']`)
-- If ChromaDB search fails, use `fix_chroma_rebuild.py` to rebuild hnsw index
+- If ChromaDB search fails, delete `data/chroma_db/` and restart to rebuild the index
 - Database migrations in `src/database/migrations/`
 - WebSocket events via Flask-SocketIO for real-time progress; UI also polls REST API as fallback
 - RAG recall uses hybrid search (vector + keyword with RRF fusion)
