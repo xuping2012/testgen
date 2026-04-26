@@ -61,6 +61,26 @@ class RetrievalEvaluator:
             "low": sum(1 for s in scores if s < 0.50),
         }
 
+        high_ratio = distribution["high"] / len(scores) if scores else 0.0
+
+        source_ids_in_results = set()
+        requirement_sections = set()
+        for r in fused_results or []:
+            meta = r.get("metadata", {})
+            if meta.get("requirement_id"):
+                source_ids_in_results.add(str(meta["requirement_id"]))
+            if meta.get("section_title"):
+                requirement_sections.add(meta["section_title"])
+            content = r.get("content", r.get("document", ""))
+            if content:
+                import re as _re
+
+                for m in _re.finditer(
+                    r"(?:§|第[一二三四五六七八九十\d]+[章节条款])\s*[\d.]+", content
+                ):
+                    requirement_sections.add(m.group(0))
+        coverage = len(requirement_sections)
+
         # 多样性指数
         diversity = self.calculate_diversity_index(fused_results)
 
@@ -76,6 +96,8 @@ class RetrievalEvaluator:
             "keyword_count": keyword_count,
             "fused_count": fused_count,
             "avg_similarity": round(avg_similarity, 4),
+            "high_ratio": round(high_ratio, 4),
+            "coverage": coverage,
             "similarity_distribution": distribution,
             "diversity_index": round(diversity, 4),
             "quality_alert": quality_alert,

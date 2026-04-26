@@ -29,6 +29,10 @@ SOURCE_TYPES = {
 # 引用标注正则（支持多种写法）
 CITATION_PATTERN = re.compile(r"\[citation:\s*([^\]]+?)\s*\]", re.IGNORECASE)
 
+SECTION_PATTERN = re.compile(
+    r"(?:§|第[一二三四五六七八九十\d]+[章节条款])\s*([\d]+(?:\.[\d]+)*)"
+)
+
 
 class CitationParser:
     """
@@ -86,6 +90,24 @@ class CitationParser:
                 }
 
         citations = list(citations_map.values())
+
+        for cit in citations:
+            cit["section_info"] = None
+            raw_id = cit.get("source_id", "")
+            section_match = SECTION_PATTERN.search(raw_id)
+            if not section_match:
+                context_text = (
+                    text[
+                        max(0, text.find(raw_id) - 50) : text.find(raw_id)
+                        + len(raw_id)
+                        + 50
+                    ]
+                    if raw_id in text
+                    else ""
+                )
+                section_match = SECTION_PATTERN.search(context_text)
+            if section_match:
+                cit["section_info"] = section_match.group(0)
 
         # 清除引用标注后的文本
         cleaned_text = CITATION_PATTERN.sub("", text).strip()
@@ -202,6 +224,11 @@ class CitationParser:
                 "llm_generated": 0,
                 "unknown": 0,
             },
+            "by_source": {
+                "historical_case": 0,
+                "defect": 0,
+                "requirement": 0,
+            },
             "unique_sources": len(citations),
             "has_citations": len(citations) > 0,
             "parse_success": True,
@@ -215,6 +242,8 @@ class CitationParser:
                 stats["by_type"][stype] += count
             else:
                 stats["by_type"]["unknown"] += count
+            if stype in stats["by_source"]:
+                stats["by_source"][stype] += count
 
         return stats
 
@@ -241,7 +270,13 @@ class CitationParser:
         """
         try:
             citations, cleaned_text = self.parse_citations(text)
-            citations = self.validate_citation_sources(citations)
+            try:
+                citations = self.validate_citation_sources(citations)
+            except Exception as ve:
+                logger.warning(f"[{case_identifier}] 引用来源验证失败，跳过验证: {ve}")
+                for cit in citations:
+                    cit["validated"] = False
+                    cit["exists"] = None
             stats = self.generate_citation_stats(citations)
 
             if citations:

@@ -1221,6 +1221,7 @@
                             <th>模块</th>
                             <th>用例标题</th>
                             <th>优先级</th>
+                            <th>RAG增强</th>
                             <th>状态</th>
                             <th>关联需求</th>
                             <th>操作</th>
@@ -1228,7 +1229,7 @@
                     </thead>
                     <tbody id="caseList">
                         <tr>
-                            <td colspan="8" class="empty-state">
+                            <td colspan="9" class="empty-state">
                                 <div class="empty-state-icon">◆</div>
                                 <p>暂无测试用例</p>
                             </td>
@@ -1308,6 +1309,9 @@
                     </div>
                     <div class="confidence-breakdown" id="modalConfidenceBreakdown"></div>
                 </div>
+
+                <!-- RAG增强信息卡片 -->
+                <div id="ragEnhancementCard" style="display:none; margin-top:16px; padding:14px 18px; background:rgba(0,245,255,0.04); border:1px solid rgba(0,245,255,0.15); border-radius:10px;"></div>
 
                 <!-- 引用来源面板 -->
                 <div id="citationsPanel" style="margin-top:16px;">
@@ -1461,7 +1465,7 @@
             if (cases.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="8" class="empty-state">
+                        <td colspan="9" class="empty-state">
                             <div class="empty-state-icon">◆</div>
                             <p>暂无测试用例</p>
                         </td>
@@ -1474,6 +1478,7 @@
                 const isLowConf = c.confidence_level === 'C' || c.confidence_level === 'D';
                 const rowClass = c.confidence_level ? `row-confidence-${c.confidence_level}` : '';
                 const confBadge = renderConfidenceBadge(c.confidence_level, c.confidence_score);
+                const ragBadge = renderRagBadge(c.rag_influenced, c.confidence_level);
                 const lowConfTag = c.confidence_level === 'C'
                     ? `<span style="font-size:10px;color:#ffee00;margin-left:4px;">待确认</span>`
                     : c.confidence_level === 'D'
@@ -1488,6 +1493,7 @@
                     <td>${c.module}</td>
                     <td>${c.name}${lowConfTag}</td>
                     <td><span class="priority-badge priority-${c.priority}">${c.priority}</span></td>
+                    <td>${ragBadge}</td>
                     <td><span class="status-badge status-${statusStr}">${getStatusText(c.status)}</span></td>
                     <td>${c.requirement_title || '-'}</td>
                     <td>
@@ -1512,6 +1518,58 @@
             if (!level) return '<span class="confidence-badge confidence-none">-</span>';
             const pct = score !== null && score !== undefined ? Math.round(score * 100) + '%' : '';
             return `<span class="confidence-badge confidence-${level}">${level}${pct ? ' ' + pct : ''}</span>`;
+        }
+
+        function renderRagBadge(ragInfluenced, confidenceLevel) {
+            if (!ragInfluenced || ragInfluenced === 0) {
+                return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:rgba(128,128,128,0.15);color:#888;border:1px solid rgba(128,128,128,0.3);">-</span>';
+            }
+            const level = confidenceLevel || 'D';
+            const config = {
+                'A': { bg: 'rgba(0,255,136,0.15)', color: '#00ff88', border: 'rgba(0,255,136,0.4)', label: 'A 强增强' },
+                'B': { bg: 'rgba(0,170,255,0.15)', color: '#00aaff', border: 'rgba(0,170,255,0.4)', label: 'B 中增强' },
+                'C': { bg: 'rgba(255,238,0,0.15)', color: '#ffee00', border: 'rgba(255,238,0,0.4)', label: 'C 弱增强' },
+                'D': { bg: 'rgba(255,68,102,0.15)', color: '#ff4466', border: 'rgba(255,68,102,0.4)', label: 'D 未生效' },
+            };
+            const c = config[level] || config['D'];
+            return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:${c.bg};color:${c.color};border:1px solid ${c.border};">${c.label}</span>`;
+        }
+
+        function renderRagEnhancementCard(caseData) {
+            const container = document.getElementById('ragEnhancementCard');
+            if (!container) return;
+            const ragInfluenced = caseData.rag_influenced;
+            const level = caseData.confidence_level;
+            const score = caseData.confidence_score;
+            if (!ragInfluenced || ragInfluenced === 0) {
+                container.style.display = 'none';
+                return;
+            }
+            container.style.display = 'block';
+            const badge = renderRagBadge(ragInfluenced, level);
+            const pct = score !== null && score !== undefined ? Math.round(score * 100) + '%' : '-';
+            const citations = caseData.citations || [];
+            const bySource = { historical_case: 0, defect: 0, requirement: 0 };
+            citations.forEach(cit => {
+                const stype = cit.source_type || 'unknown';
+                if (stype in bySource) bySource[stype] += (cit.count || 1);
+            });
+            const totalRecall = Object.values(bySource).reduce((a, b) => a + b, 0);
+            const sourceLabels = { historical_case: '历史用例', defect: '缺陷', requirement: '需求' };
+            const sourceBar = Object.entries(bySource).map(([k, v]) => {
+                const pctW = totalRecall > 0 ? (v / totalRecall * 100) : 0;
+                const colors = { historical_case: '#00ff88', defect: '#ff4466', requirement: '#00aaff' };
+                return `<div style="display:flex;align-items:center;gap:6px;margin:4px 0;"><span style="font-size:11px;color:#888;width:50px;">${sourceLabels[k]}</span><div style="flex:1;height:8px;background:rgba(255,255,255,0.05);border-radius:4px;overflow:hidden;"><div style="width:${pctW}%;height:100%;background:${colors[k]};border-radius:4px;"></div></div><span style="font-size:11px;color:#ccc;width:20px;text-align:right;">${v}</span></div>`;
+            }).join('');
+            container.innerHTML = `
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                    <span style="font-size:13px;color:var(--neon-cyan);letter-spacing:1px;">RAG增强信息</span>
+                    ${badge}
+                </div>
+                <div style="font-size:12px;color:#aaa;margin-bottom:8px;">置信度分数: <span style="color:#fff;font-weight:600;">${pct}</span></div>
+                <div style="font-size:11px;color:#888;margin-bottom:4px;">召回来源统计 (共${totalRecall}条)</div>
+                ${sourceBar}
+            `;
         }
 
         function getStatusText(status) {
@@ -1841,6 +1899,9 @@ const statusMap = { 2: 'pending_review', 3: 'approved', 4: 'rejected' };
                     ragLabel.textContent = c.rag_context && Object.keys(c.rag_context).length > 0 ? '已引用' : '未引用';
                     ragLabel.style.display = c.rag_context && Object.keys(c.rag_context).length > 0 ? 'inline-block' : 'none';
                 }
+
+// RAG增强信息卡片
+                renderRagEnhancementCard(c);
 
 // 引用来源
                 renderModalCitations(citations || []);

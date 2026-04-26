@@ -4075,6 +4075,51 @@
                 //     `;
                 // }
                 
+                // RAG检索质量报告
+                let ragHtml = '';
+                try {
+                    const result = task.result ? (typeof task.result === 'string' ? JSON.parse(task.result) : task.result) : {};
+                    const ragStats = result.rag_stats || {};
+                    const ragLevelDist = result.rag_level_distribution || {};
+                    const qualityReport = ragStats.quality_report || {};
+                    if (Object.keys(ragStats).length > 0 || Object.keys(ragLevelDist).length > 0) {
+                        ragHtml = '<h4 style="margin: 16px 0 12px; color: var(--neon-cyan); font-size: 14px;">RAG增强统计</h4>';
+                        ragHtml += '<div style="border: 1px solid var(--dark-border); border-radius: 6px; overflow: hidden;">';
+                        // 召回来源统计
+                        const cases = ragStats.cases || 0;
+                        const defects = ragStats.defects || 0;
+                        const reqs = ragStats.requirements || 0;
+                        ragHtml += `<div style="padding: 12px 16px; border-bottom: 1px solid var(--dark-border); display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">`;
+                        ragHtml += `<div style="text-align:center;"><div style="font-size:11px;color:#888;">历史用例</div><div style="font-size:18px;font-weight:700;color:#00ff88;">${cases}</div></div>`;
+                        ragHtml += `<div style="text-align:center;"><div style="font-size:11px;color:#888;">历史缺陷</div><div style="font-size:18px;font-weight:700;color:#ff4466;">${defects}</div></div>`;
+                        ragHtml += `<div style="text-align:center;"><div style="font-size:11px;color:#888;">相似需求</div><div style="font-size:18px;font-weight:700;color:#00aaff;">${reqs}</div></div>`;
+                        ragHtml += '</div>';
+                        // 检索质量指标
+                        if (qualityReport.avg_similarity !== undefined) {
+                            ragHtml += `<div style="padding: 10px 16px; border-bottom: 1px solid var(--dark-border); display: flex; justify-content: space-between; font-size: 12px;"><span style="color:#888;">平均相似度</span><span>${(qualityReport.avg_similarity * 100).toFixed(1)}%</span></div>`;
+                        }
+                        if (qualityReport.diversity_index !== undefined) {
+                            ragHtml += `<div style="padding: 10px 16px; border-bottom: 1px solid var(--dark-border); display: flex; justify-content: space-between; font-size: 12px;"><span style="color:#888;">多样性指数</span><span>${(qualityReport.diversity_index * 100).toFixed(1)}%</span></div>`;
+                        }
+                        if (qualityReport.quality_alert) {
+                            ragHtml += `<div style="padding: 10px 16px; border-bottom: 1px solid var(--dark-border); display: flex; justify-content: space-between; font-size: 12px;"><span style="color:#888;">质量告警</span><span style="color:#ff4466;">${qualityReport.quality_alert}</span></div>`;
+                        }
+                        // 增强等级分布
+                        if (Object.keys(ragLevelDist).length > 0) {
+                            const total = Object.values(ragLevelDist).reduce((a, b) => a + b, 0);
+                            ragHtml += '<div style="padding: 12px 16px; display: flex; gap: 8px; flex-wrap: wrap;">';
+                            const levelConfig = {A: '#00ff88', B: '#00aaff', C: '#ffee00', D: '#ff4466'};
+                            for (const [lv, cnt] of Object.entries(ragLevelDist)) {
+                                if (cnt > 0) {
+                                    ragHtml += `<span style="padding:4px 10px;border-radius:10px;font-size:11px;background:rgba(${lv==='A'?'0,255,136':lv==='B'?'0,170,255':lv==='C'?'255,238,0':'255,68,102'},0.15);color:${levelConfig[lv]};border:1px solid rgba(${lv==='A'?'0,255,136':lv==='B'?'0,170,255':lv==='C'?'255,238,0':'255,68,102'},0.4);">${lv}级: ${cnt}条</span>`;
+                                }
+                            }
+                            ragHtml += '</div>';
+                        }
+                        ragHtml += '</div>';
+                    }
+                } catch(e) { console.warn('RAG统计解析失败:', e); }
+
                 document.getElementById('detailContent').innerHTML = `
                     <div style="margin-bottom: 16px;">
                         <div><strong>任务ID:</strong> ${task.task_id}</div>
@@ -4086,6 +4131,7 @@
                         <div><strong>创建时间:</strong> ${task.created_at}</div>
                     </div>
                     ${stagesHtml}
+                    ${ragHtml}
                     ${snapshotHtml}
                 `;
                 

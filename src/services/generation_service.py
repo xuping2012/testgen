@@ -89,9 +89,7 @@ class GenerationService:
             print(
                 f"初始化完成，LLM默认配置: {default_info.get('name', '无')} ({default_info.get('provider', '未知')})"
             )
-            print(
-                f"LLM适配器列表: {list(llm_manager.adapters.keys())}"
-            )
+            print(f"LLM适配器列表: {list(llm_manager.adapters.keys())}")
             print(f"默认适配器: {llm_manager.default_adapter}")
 
         # 从数据库加载未完成的任务
@@ -2456,6 +2454,28 @@ class GenerationService:
                     "case_count": total_cases,
                     "total_count": total_cases,
                     "rag_stats": rag_stats,
+                    "rag_level_distribution": {
+                        "A": sum(
+                            1
+                            for c in all_generated_cases
+                            if c.get("confidence_level") == "A"
+                        ),
+                        "B": sum(
+                            1
+                            for c in all_generated_cases
+                            if c.get("confidence_level") == "B"
+                        ),
+                        "C": sum(
+                            1
+                            for c in all_generated_cases
+                            if c.get("confidence_level") == "C"
+                        ),
+                        "D": sum(
+                            1
+                            for c in all_generated_cases
+                            if c.get("confidence_level") == "D"
+                        ),
+                    },
                     "success_items": success_items,
                     "failed_items": failed_items,
                     "total_items": total_items,
@@ -4273,10 +4293,38 @@ class GenerationService:
         # 生成检索质量报告
         if self._retrieval_evaluator:
             try:
+                all_fused = []
+                for r in case_results[:top_k_cases] if case_results else []:
+                    all_fused.append(
+                        {
+                            "score": r.get("score", r.get("distance", 0)),
+                            "metadata": r.get("metadata", {}),
+                            "content": r.get("content", ""),
+                        }
+                    )
+                for r in defect_results[:top_k_defects] if defect_results else []:
+                    all_fused.append(
+                        {
+                            "score": r.get("score", r.get("distance", 0)),
+                            "metadata": r.get("metadata", {}),
+                            "content": r.get("content", ""),
+                        }
+                    )
+                for r in req_results[:top_k_requirements] if req_results else []:
+                    all_fused.append(
+                        {
+                            "score": r.get("score", r.get("distance", 0)),
+                            "metadata": r.get("metadata", {}),
+                            "content": r.get("content", ""),
+                        }
+                    )
                 quality_report = self._retrieval_evaluator.generate_quality_report(
-                    [], [], []
+                    case_results[:top_k_cases] if case_results else [],
+                    defect_results[:top_k_defects] if defect_results else [],
+                    all_fused,
                 )
                 rag_stats["quality_report"] = quality_report
+                rag_context_data["quality_report"] = quality_report
             except Exception as e:
                 print(f"[RAG召回] 生成质量报告失败: {e}")
 

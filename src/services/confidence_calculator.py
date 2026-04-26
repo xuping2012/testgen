@@ -461,11 +461,13 @@ class ConfidenceCalculator:
                 case_data, requirement_content, rag_results, chromadb_similarity
             )
             level = self.assign_confidence_level(score)
+            rag_influenced = level in ("A", "B", "C")
             return {
                 "confidence_score": score,
                 "confidence_level": level,
                 "breakdown": breakdown,
                 "requires_human_review": level in ("C", "D"),
+                "rag_influenced": rag_influenced,
             }
         except Exception as e:
             logger.error(f"置信度计算失败: {e}")
@@ -473,6 +475,7 @@ class ConfidenceCalculator:
                 "confidence_score": None,
                 "confidence_level": None,
                 "breakdown": {},
-                "requires_human_review": True,  # 计算失败时默认需要人工审核
+                "requires_human_review": True,
+                "rag_influenced": False,
                 "error": str(e),
             }
