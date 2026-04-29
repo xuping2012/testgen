@@ -1781,12 +1781,12 @@
                 <!-- 需求分析结果 -->
                 <div class="form-group">
                     <label>功能模块划分</label>
-                    <textarea class="form-control" id="reviewModules" rows="6" style="resize: vertical; font-family: monospace;"></textarea>
+                    <textarea class="form-control" id="reviewModules" style="resize: vertical; font-family: monospace; min-height: 60px; height: auto;" oninput="this.style.height='auto';this.style.height=(this.scrollHeight)+'px'"></textarea>
                 </div>
                 
                 <div class="form-group">
                     <label>测试点 (POINTS)</label>
-                    <textarea class="form-control" id="reviewPoints" rows="12" style="resize: vertical; font-family: monospace;"></textarea>
+                    <textarea class="form-control" id="reviewPoints" style="resize: vertical; font-family: monospace; min-height: 100px; height: auto;" oninput="this.style.height='auto';this.style.height=(this.scrollHeight)+'px'"></textarea>
                 </div>
                 
                 <!-- 已隐藏：业务规则、数据约束、需求分析文档 -->
@@ -2080,11 +2080,11 @@
             <div id="editContent">
                 <div class="form-group">
                     <label>功能模块（JSON格式）</label>
-                    <textarea class="form-control" id="editModules" rows="6" style="font-family: monospace;"></textarea>
+                    <textarea class="form-control" id="editModules" style="font-family: monospace; min-height: 60px; height: auto;" oninput="this.style.height='auto';this.style.height=(this.scrollHeight)+'px'"></textarea>
                 </div>
                 <div class="form-group">
                     <label>测试点（JSON格式）</label>
-                    <textarea class="form-control" id="testPoints" rows="8" style="font-family: monospace;"></textarea>
+                    <textarea class="form-control" id="testPoints" style="font-family: monospace; min-height: 80px; height: auto;" oninput="this.style.height='auto';this.style.height=(this.scrollHeight)+'px'"></textarea>
                 </div>
                 <div style="text-align: right;">
                     <button class="btn btn-secondary" onclick="closeModalById('editModal')">取消</button>
@@ -4051,6 +4051,17 @@
             }
         }
 
+        function toggleRagStats() {
+            const detail = document.getElementById('rag-stats-detail');
+            const arrow = document.getElementById('rag-arrow');
+            if (detail) {
+                detail.style.display = detail.style.display === 'none' ? '' : 'none';
+            }
+            if (arrow) {
+                arrow.textContent = detail && detail.style.display !== 'none' ? '▲' : '▼';
+            }
+        }
+
         async function showDetail(taskId) {
             try {
                 const response = await fetch(`/api/generate/${taskId}`);
@@ -4061,10 +4072,14 @@
                 const stages = [
                     { name: '需求分析', key: 'analysis', range: [5, 15] },
                     { name: '测试规划', key: 'plan', range: [15, 25] },
-                    { name: 'RAG检索', key: 'rag', range: [25, 40] },
-                    { name: 'LLM生成', key: 'generate', range: [40, 90] },
+                    { name: 'RAG检索[+]', key: 'rag', range: [25, 40] },
+                    { name: 'LLM生成', key: 'generate', range: [40, 85] },
+                    { name: 'AI评审[+]', key: 'case_review', range: [85, 90] },
                     { name: '保存完成', key: 'save', range: [90, 100] }
                 ];
+                
+                const caseReview = task.result ? (typeof task.result === 'string' ? JSON.parse(task.result) : task.result)?.case_review : null;
+                const ragStats = task.result ? (typeof task.result === 'string' ? JSON.parse(task.result) : task.result)?.rag_stats || {} : {};
                 
                 const progress = task.progress || 0;
                 let stagesHtml = '<h4 style="margin: 16px 0 12px; color: var(--neon-cyan); font-size: 14px;">阶段明细</h4>';
@@ -4107,7 +4122,7 @@
                     if (index > 0) stagesHtml += `<div style="height: 1px; background: var(--dark-border);"></div>`;
                     
                     stagesHtml += `
-                        <div style="padding: 12px 16px; background: ${bgColor}; border-left: 3px solid ${borderColor}; display: flex; justify-content: space-between; align-items: center;">
+                        <div class="stages-stage" data-key="${stage.key}" style="padding: 12px 16px; background: ${bgColor}; border-left: 3px solid ${borderColor}; display: flex; justify-content: space-between; align-items: center; cursor: pointer;">
                             <div style="display: flex; align-items: center; gap: 10px;">
                                 <span style="color: ${textColor}; font-size: 16px;">${icon}</span>
                                 <span style="color: var(--text-primary); font-weight: 500;">${stage.name}</span>
@@ -4115,9 +4130,39 @@
                             <span style="color: ${textColor}; font-size: 12px;">${statusText}</span>
                         </div>
                     `;
+                    // 添加展开详情内容
+                    if (stage.key === 'case_review' && caseReview) {
+                        const crScore = caseReview.overall_score || '--';
+                        const crDecision = caseReview.decision || '无';
+                        const crConclusion = caseReview.conclusion || '无';
+                        const crIssues = caseReview.issues || [];
+                        const decisionLabel = crDecision === 'AUTO_PASS' ? 'AI通过' : crDecision === 'NEEDS_REVIEW' ? '需人工复核' : '未通过';
+                        stagesHtml += `
+                            <div id="stage-detail-case_review" style="padding: 12px 16px; background: rgba(255, 170, 0, 0.05); display: none;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                                    <div><span style="color:#888;font-size:12px;">综合评分</span><div style="color:#ffaa00;font-size:18px;font-weight:bold;">${crScore}/100</div></div>
+                                    <div><span style="color:#888;font-size:12px;">评审决策</span><div style="color:#ffaa00;font-size:14px;font-weight:bold;">${decisionLabel}</div></div>
+                                </div>
+                                <div style="font-size:12px;color:#aaa;margin-bottom:8px;">${crConclusion.substring(0, 200)}${crConclusion.length > 200 ? '...' : ''}</div>
+                                ${crIssues.length > 0 ? `<div style="font-size:11px;color:#888;border-top:1px solid #333;padding-top:8px;">
+                                    <div style="margin-bottom:4px;">发现 ${crIssues.length} 个问题:</div>
+                                    ${crIssues.slice(0, 5).map(i => `<div style="padding:2px 0;color:#aaa;">• ${i.type}: ${(i.description || '').substring(0, 50)}</div>`).join('')}
+                                </div>` : ''}
+                            </div>`;
+                    }
+                    if (stage.key === 'rag' && (ragStats.cases > 0 || ragStats.defects > 0 || ragStats.requirements > 0)) {
+                        stagesHtml += `
+                            <div id="stage-detail-rag" style="padding: 12px 16px; background: rgba(0, 255, 136, 0.05); display: none;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                                    <div style="text-align:center;"><div style="font-size:11px;color:#888;">历史用例</div><div style="color:#00ff88;font-size:16px;font-weight:bold;">${ragStats.cases || 0}</div></div>
+                                    <div style="text-align:center;"><div style="font-size:11px;color:#888;">历史缺陷</div><div style="color:#ff4466;font-size:16px;font-weight:bold;">${ragStats.defects || 0}</div></div>
+                                    <div style="text-align:center;"><div style="font-size:11px;color:#888;">相似需求</div><div style="color:#00aaff;font-size:16px;font-weight:bold;">${ragStats.requirements || 0}</div></div>
+                                </div>
+                            </div>`;
+                    }
                 });
                 
-                stagesHtml += '</div>';
+stagesHtml += '</div>';
                 
                 if (task.error_message) {
                     stagesHtml += `<div style="margin-top: 16px; padding: 12px; background: rgba(255, 0, 85, 0.1); border-left: 3px solid #ff0055;"><strong style="color: #ff0055;">错误信息:</strong><br><pre style="white-space: pre-wrap; color: var(--text-secondary);">${task.error_message}</pre></div>`;
@@ -4160,43 +4205,22 @@
                 
                 // RAG检索质量报告
                 let ragHtml = '';
-                let caseReviewHtml = '';
                 try {
                     const result = task.result ? (typeof task.result === 'string' ? JSON.parse(task.result) : task.result) : {};
                     const ragStats = result.rag_stats || {};
                     const ragLevelDist = result.rag_level_distribution || {};
                     const qualityReport = ragStats.quality_report || {};
 
-                    // 用例评审结果
-                    const caseReview = result.case_review;
-                    if (caseReview) {
-                        const crScore = caseReview.overall_score || '--';
-                        const crDecision = caseReview.decision || '无';
-                        const crConclusion = caseReview.conclusion || '无评审结论';
-                        const crIssues = caseReview.issues || [];
-                        const decisionClass = crDecision === 'AUTO_PASS' ? 'var(--neon-green)' : (crDecision === 'NEEDS_REVIEW' ? '#ffaa00' : '#ff4466');
-                        caseReviewHtml = `
-                            <div style="margin-top: 16px; padding: 12px; background: rgba(255, 170, 0, 0.08); border: 1px solid #ffaa00; border-radius: 8px;">
-                                <div style="font-size: 16px; font-weight: bold; color: #ffaa00; margin-bottom: 8px;">
-                                    📋 用例评审结果
-                                </div>
-                                <div><strong>综合评分:</strong> <span style="font-size: 18px; font-weight: bold; color: #ffaa00;">${crScore}</span>/100</div>
-                                <div style="margin: 8px 0;"><strong>决策:</strong> <span style="color: ${decisionClass}; font-weight: bold;">${crDecision === 'AUTO_PASS' ? '✅ AI通过' : (crDecision === 'NEEDS_REVIEW' ? '⚠️ 需人工复核' : '❌ 未通过')}</span></div>
-                                <div style="margin: 8px 0; font-size: 13px; color: #ccc; line-height: 1.5;">${crConclusion}</div>
-                                ${crIssues.length > 0 ? `<div style="font-size: 12px; color: #888; border-top: 1px solid #333; padding-top: 8px;">
-                                    <div style="margin-bottom: 4px;">发现 ${crIssues.length} 个问题:</div>
-                                    ${crIssues.slice(0, 3).map(i => `<div style="padding: 2px 0; color: #aaa;">• ${i.type}: ${i.description?.substring(0, 50) || ''}</div>`).join('')}
-                                </div>` : ''}
-                            </div>`;
-                    }
-
                     if (Object.keys(ragStats).length > 0 || Object.keys(ragLevelDist).length > 0) {
-                        ragHtml = '<h4 style="margin: 16px 0 12px; color: var(--neon-cyan); font-size: 14px;">RAG增强统计</h4>';
-                        ragHtml += '<div style="border: 1px solid var(--dark-border); border-radius: 6px; overflow: hidden;">';
-                        // 召回来源统计
+                        ragHtml = '<div id="rag-stats-container" style="margin: 16px 0 12px; border: 1px solid var(--dark-border); border-radius: 6px; overflow: hidden;">';
                         const cases = ragStats.cases || 0;
                         const defects = ragStats.defects || 0;
                         const reqs = ragStats.requirements || 0;
+                        const ragSummary = '📊 RAG增强统计 (' + cases + '用例/' + defects + '缺陷/' + reqs + '需求)';
+                        ragHtml += '<div onclick="toggleRagStats()" style="padding:12px 16px;cursor:pointer;background:var(--dark-bg);border-bottom:1px solid var(--dark-border);">' +
+                            '<span style="color:var(--neon-cyan);font-size:14px;">' + ragSummary + ' <span id="rag-arrow">▼</span></span>' +
+                            '</div>';
+                        ragHtml += '<div id="rag-stats-detail" style="display:none;">';
                         ragHtml += `<div style="padding: 12px 16px; border-bottom: 1px solid var(--dark-border); display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">`;
                         ragHtml += `<div style="text-align:center;"><div style="font-size:11px;color:#888;">历史用例</div><div style="font-size:18px;font-weight:700;color:#00ff88;">${cases}</div></div>`;
                         ragHtml += `<div style="text-align:center;"><div style="font-size:11px;color:#888;">历史缺陷</div><div style="font-size:18px;font-weight:700;color:#ff4466;">${defects}</div></div>`;
@@ -4235,33 +4259,25 @@
                             ragHtml += '</div>';
                         }
                         ragHtml += '</div>';
+                        ragHtml += '</div>';  // 关闭rag-stats-detail
                     }
                 } catch(e) { console.warn('RAG统计解析失败:', e); }
 
-                // 评审结果展示
-                let reviewHtml = '';
-                if (task.review_info) {
-                    const ri = task.review_info;
-                    const score = ri.score || '--';
-                    const conclusion = ri.conclusion || '无评审结论';
-                    const oriItems = ri.original_items_count || '-';
-                    const oriPoints = ri.original_points_count || '-';
-                    const revItems = ri.reviewed_items_count || '-';
-                    const revPoints = ri.reviewed_points_count || '-';
-                    const reviewedAt = ri.reviewed_at ? ri.reviewed_at.substring(0, 19).replace('T', ' ') : '-';
-                    reviewHtml = `
-                        <div style="margin-top: 16px; padding: 12px; background: rgba(0, 255, 136, 0.08); border: 1px solid var(--neon-green); border-radius: 8px;">
-                            <div style="font-size: 16px; font-weight: bold; color: var(--neon-green); margin-bottom: 8px;">
-                                📊 模块评审结果
-                            </div>
-                            <div><strong>评分:</strong> <span style="font-size: 18px; font-weight: bold; color: var(--neon-green);">${score}</span>/100</div>
-                            <div style="margin: 8px 0; font-size: 13px; color: #ccc; line-height: 1.5;">${conclusion}</div>
-                            <div style="font-size: 12px; color: #888; border-top: 1px solid #333; padding-top: 8px;">
-                                📈 演变: ${oriItems}个原始模块/${oriPoints}个原始测试点 → ${revItems}个测试项/${revPoints}个测试点
-                            </div>
-                            <div style="font-size: 11px; color: #666;">评审时间: ${reviewedAt}</div>
-                        </div>`;
-                }
+                // 删除旧的ragToggleHtml代码
+                let ragToggleHtml = '';
+                try {
+                    const result = task.result ? (typeof task.result === 'string' ? JSON.parse(task.result) : task.result) : {};
+                    const ragStats = result.rag_stats || {};
+                    const ragLevelDist = result.rag_level_distribution || {};
+                    if (Object.keys(ragStats).length > 0 || Object.keys(ragLevelDist).length > 0) {
+                        const cases = ragStats.cases || 0;
+                        const defects = ragStats.defects || 0;
+                        const reqs = ragStats.requirements || 0;
+                        // ragToggleHtml = `<div id="rag-stats-toggle" style="padding:12px 16px;cursor:pointer;background:var(--dark-bg);border-bottom:1px solid var(--dark-border);" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none'">
+                        //     <span style="color:var(--neon-cyan);font-size:14px;">📊 RAG增强统计 (${cases}用例/${defects}缺陷/${reqs}需求) ▼</span>
+                        // </div>`;
+                    }
+                } catch(e) { }
 
                 document.getElementById('detailContent').innerHTML = `
                     <div style="margin-bottom: 16px;">
@@ -4273,14 +4289,23 @@
                         <div><strong>用例数:</strong> ${task.case_count || 0}</div>
                         <div><strong>创建时间:</strong> ${task.created_at}</div>
                     </div>
-                    ${reviewHtml}
-                    ${caseReviewHtml}
+                    ${ragToggleHtml}
                     ${stagesHtml}
                     ${ragHtml}
                     ${snapshotHtml}
                 `;
                 
                 document.getElementById('detailModal').classList.add('active');
+                
+                // 添加阶段点击展开事件
+                document.querySelectorAll('.stages-stage').forEach(el => {
+                    el.addEventListener('click', function() {
+                        const detail = document.getElementById('stage-detail-' + this.dataset.key);
+                        if (detail) {
+                            detail.style.display = detail.style.display === 'none' ? 'block' : 'none';
+                        }
+                    });
+                });
             } catch (error) {
                 console.error('加载详情失败:', error);
                 showToast('加载详情失败', 'error');

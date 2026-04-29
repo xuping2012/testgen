@@ -366,6 +366,10 @@ class HybridRetriever:
             safe_query = safe_query.replace("~", " ").replace("!", " ")
             safe_query = safe_query.replace("AND", " ").replace("OR", " ")
             safe_query = safe_query.replace("NOT", " ").replace("NEAR", " ")
+            # 移除中文标点
+            safe_query = safe_query.replace(""", " ").replace(""", " ")
+            safe_query = safe_query.replace("，", " ").replace("。", " ")
+            safe_query = safe_query.replace("；", " ").replace("：", " ")
             import re
 
             safe_query = re.sub(r"\s+", " ", safe_query).strip()

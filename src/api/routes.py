@@ -1353,6 +1353,8 @@ def list_cases():
                         "confidence_level": c.confidence_level,
                         "rag_influenced": c.rag_influenced,
                         "rag_sources": c.rag_sources,
+                        "is_duplicate": c.is_duplicate,
+                        "duplicate_of": c.duplicate_of,
                     }
                     for c in cases
                 ],

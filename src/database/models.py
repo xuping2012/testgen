@@ -151,6 +151,9 @@ class TestCase(Base):
     citations = Column(JSON, default=None)  # 引用来源列表
     rag_influenced = Column(Integer, default=0)  # RAG影响标识 (0=未影响, 1=受影响)
     rag_sources = Column(JSON, default=None)  # RAG来源列表 [{type, id, similarity}]
+    is_duplicate = Column(Integer, default=0)  # 重复标识 (0=正常, 1=重复)
+    duplicate_of = Column(String(200), default=None)  # 重复自哪个用例
+    duplicate_similarity = Column(Float, default=None)  # 重复相似度
 
     # 追溯信息
     requirement_clause = Column(String(100))  # 关联需求条款编号

@@ -1230,6 +1230,7 @@
                             <th>用例标题</th>
                             <th>优先级</th>
                             <th>RAG增强</th>
+                            <th>重复</th>
                             <th>状态</th>
                             <th>关联需求</th>
                             <th>操作</th>
@@ -1489,6 +1490,9 @@
                 const rowClass = c.confidence_level ? `row-confidence-${c.confidence_level}` : '';
                 const confBadge = renderConfidenceBadge(c.confidence_level, c.confidence_score);
                 const ragBadge = renderRagBadge(c.rag_influenced, c.confidence_level);
+                const dupBadge = c.is_duplicate === 1 
+                    ? `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:rgba(255,0,85,0.15);color:#ff4466;border:1px solid rgba(255,0,85,0.4);">重复</span>`
+                    : '';
                 const lowConfTag = c.confidence_level === 'C'
                     ? `<span style="font-size:10px;color:#ffee00;margin-left:4px;">待确认</span>`
                     : c.confidence_level === 'D'
@@ -1504,6 +1508,7 @@
                     <td>${c.name}${lowConfTag}</td>
                     <td><span class="priority-badge priority-${c.priority}">${c.priority}</span></td>
                     <td>${ragBadge}</td>
+                    <td>${dupBadge}</td>
                     <td><span class="status-badge status-${statusStr}">${getStatusText(c.status)}</span></td>
                     <td>${c.requirement_title || '-'}</td>
                     <td>

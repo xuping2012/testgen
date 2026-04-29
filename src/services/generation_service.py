@@ -1573,6 +1573,75 @@ class GenerationService:
             print(f"[质检] 重复检测失败: {e}")
             return []
 
+    def filter_duplicates(
+        self, cases: List[Dict[str, Any]], threshold: float = 0.85
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """
+        过滤重复用例，保留一个代表性用例
+
+        Args:
+            cases: 测试用例列表
+            threshold: 相似度阈值（默认0.85）
+
+        Returns:
+            (过滤后的用例列表, 被标记为重复的用例列表)
+        """
+        if not cases or len(cases) < 2:
+            return cases, []
+
+        try:
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            from sklearn.metrics.pairwise import cosine_similarity
+        except ImportError:
+            return cases, []
+
+        try:
+            documents = []
+            for case in cases:
+                title = case.get("name", case.get("case_title", ""))
+                steps = case.get("test_steps", [])
+                steps_text = " ".join(steps) if isinstance(steps, list) else str(steps)
+                documents.append(f"{title} {steps_text}")
+
+            vectorizer = TfidfVectorizer(
+                analyzer="char_wb", ngram_range=(2, 4), max_features=10000
+            )
+            tfidf_matrix = vectorizer.fit_transform(documents)
+            similarity_matrix = cosine_similarity(tfidf_matrix)
+
+            indices_to_remove = set()
+            num_cases = len(cases)
+            for i in range(num_cases):
+                if i in indices_to_remove:
+                    continue
+                for j in range(i + 1, num_cases):
+                    if j in indices_to_remove:
+                        continue
+                    if similarity_matrix[i][j] > threshold:
+                        indices_to_remove.add(j)
+                        cases[j]["duplicate_of"] = cases[i].get(
+                            "name", cases[i].get("case_title", "")
+                        )
+                        cases[j]["duplicate_similarity"] = round(
+                            float(similarity_matrix[i][j]), 4
+                        )
+
+            filtered = [
+                c for idx, c in enumerate(cases) if idx not in indices_to_remove
+            ]
+            duplicates = [c for idx, c in enumerate(cases) if idx in indices_to_remove]
+
+            if duplicates:
+                print(
+                    f"[去重] 过滤完成 - 保留 {len(filtered)} 条, 移除 {len(duplicates)} 条重复用例"
+                )
+
+            return filtered, duplicates
+
+        except Exception as e:
+            print(f"[去重] 过滤失败: {e}")
+            return cases, []
+
     def extract_point_id_from_case(self, case: Dict[str, Any]) -> Optional[str]:
         """
         从用例标题或标签中提取测试点ID
@@ -1658,11 +1727,26 @@ class GenerationService:
                 if point_id not in coverage_map:
                     coverage_map[point_id] = []
 
-            # 从用例提取 point_id 并映射
+            # 从用例提取 test_point 并使用包含匹配
+            import re
+
             for case in cases:
-                case_point_id = self.extract_point_id_from_case(case)
-                if case_point_id and case_point_id in coverage_map:
-                    coverage_map[case_point_id].append(case)
+                case_text = (
+                    f"{case.get('name', '')} {case.get('test_point', '')}".lower()
+                )
+                for point in all_points:
+                    point_title = point.get("point_title", "").lower()
+                    if not point_title:
+                        continue
+                    # 清理测试点标题中的特殊字符，提取关键词
+                    cleaned = re.sub(r"[\[\]*。\.【】☆★祥]", "", point_title)
+                    keywords = [w for w in cleaned.split() if len(w) >= 2]
+                    # 检查是否有关键词匹配
+                    matched = any(kw in case_text for kw in keywords)
+                    if matched:
+                        point_id = point["point_id"]
+                        if point_id in coverage_map:
+                            coverage_map[point_id].append(case)
 
             # 计算覆盖度
             covered_points = sum(
@@ -2424,18 +2508,27 @@ class GenerationService:
                 # 保存用例
                 if all_generated_cases:
                     try:
+                        # 去重过滤
+                        filtered_cases, duplicate_cases = self.filter_duplicates(
+                            all_generated_cases, threshold=0.85
+                        )
+                        if duplicate_cases:
+                            print(
+                                f"[去重] 过滤掉 {len(duplicate_cases)} 条重复用例，保留 {len(filtered_cases)} 条"
+                            )
+
                         rag_influenced = 1 if rag_stats.get("cases", 0) > 0 else 0
                         print(
-                            f"[用例保存] 开始保存用例 - 需求ID={requirement_id}, 用例数={len(all_generated_cases)}, RAG来源数={len(self._current_rag_sources.get(task_id, []))}"
+                            f"[用例保存] 开始保存用例 - 需求ID={requirement_id}, 用例数={len(filtered_cases)}, RAG来源数={len(self._current_rag_sources.get(task_id, []))}"
                         )
                         self._save_test_cases(
                             requirement_id,
-                            all_generated_cases,
+                            filtered_cases,
                             rag_influenced,
                             self._current_rag_sources.get(task_id, []),
                         )
                         print(
-                            f"[用例保存] 保存完成 - 共 {len(all_generated_cases)} 条用例, 需要人工复核: {len([c for c in all_generated_cases if c.get('requires_human_review')])}"
+                            f"[用例保存] 保存完成 - 共 {len(filtered_cases)} 条用例, 需要人工复核: {len([c for c in filtered_cases if c.get('requires_human_review')])}"
                         )
                     except Exception as save_error:
                         print(f"[用例保存] 保存失败: {save_error}")
@@ -3487,6 +3580,9 @@ class GenerationService:
                     citations=case_data.get("citations"),
                     rag_influenced=case_data.get("rag_influenced", 0),
                     rag_sources=case_data.get("rag_sources"),
+                    is_duplicate=1 if case_data.get("duplicate_of") else 0,
+                    duplicate_of=case_data.get("duplicate_of"),
+                    duplicate_similarity=case_data.get("duplicate_similarity"),
                 )
                 session.add(test_case)
                 saved_count += 1

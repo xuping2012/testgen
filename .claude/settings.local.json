@@ -48,7 +48,9 @@
       "Bash(ls -1 C:/pythonworkspace/auto_generator_testcase/.env* C:/pythonworkspace/auto_generator_testcase/*.env 2>/dev/null || echo \"No env files found\")",
       "Bash(ls -1 C:/pythonworkspace/auto_generator_testcase/LICENSE* C:/pythonworkspace/auto_generator_testcase/CHANGELOG* C:/pythonworkspace/auto_generator_testcase/CONTRIBUTING* 2>/dev/null || echo \"No additional standard docs found\")",
       "Bash(openspec list:*)",
-      "Bash(python -m pytest tests/test_rag_bugfix_completeness.py -v)"
+      "Bash(python -m pytest tests/test_rag_bugfix_completeness.py -v)",
+      "Bash(python -c \"\nimport openpyxl\nwb = openpyxl.load_workbook\\('test_cases_20260429_142451.xlsx'\\)\nws = wb.active\nprint\\('Sheet name:', ws.title\\)\nprint\\('Columns:', [cell.value for cell in ws[1]]\\)\nprint\\('Total rows \\(excluding header\\):', ws.max_row - 1\\)\nprint\\(\\)\nfor row_idx in range\\(2, ws.max_row + 1\\):\n    row_data = {}\n    for col_idx in range\\(1, ws.max_column + 1\\):\n        header = ws.cell\\(row=1, col_idx\\).value\n        value = ws.cell\\(row=row_idx, col_idx\\).value\n        row_data[header] = value\n    print\\(f'=== Row {row_idx-1} ==='\\)\n    for k, v in row_data.items\\(\\):\n        if v is not None:\n            print\\(f'  {k}: {v}'\\)\n    print\\(\\)\n\" 2>&1)",
+      "Bash(python -c \"\nimport openpyxl\nwb = openpyxl.load_workbook\\('test_cases_20260429_142451.xlsx'\\)\nws = wb.active\nprint\\('Sheet:', ws.title\\)\nheaders = []\nfor col in range\\(1, ws.max_column + 1\\):\n    headers.append\\(ws.cell\\(row=1, column=col\\).value\\)\nprint\\('Columns:', headers\\)\nprint\\('Rows:', ws.max_row - 1\\)\nprint\\(\\)\nfor row_idx in range\\(2, ws.max_row + 1\\):\n    row_data = {}\n    for col_idx in range\\(1, ws.max_column + 1\\):\n        val = ws.cell\\(row=row_idx, column=col_idx\\).value\n        row_data[headers[col_idx - 1]] = val\n    print\\(f'=== Case {row_idx - 1} ==='\\)\n    for k, v in row_data.items\\(\\):\n        if v is not None:\n            print\\(f'  {k}: {v}'\\)\n    print\\(\\)\n\")"
     ]
   }
 }

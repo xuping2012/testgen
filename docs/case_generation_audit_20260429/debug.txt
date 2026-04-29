@@ -1,0 +1,192 @@
+[需求分析] 开始分析 - 需求ID=11, 内容摘要: 1、账号名只能是邮箱地址； 2、密码长度8-18，强校验； 3、邮箱验证码校验。...
+2026-04-29 14:16:26 [INFO] [src.api.routes:248] [需求分析] 需求ID=11 状态更新为: 分析中
+2026-04-29 14:16:26 [INFO] [src.api.routes:252] [需求分析] 加载Prompt模板: requirement_analysis
+2026-04-29 14:16:26 [INFO] [src.services.prompt_template_service:68] [Prompt加载] 类型: requirement_analysis, 模板: default_analyze
+2026-04-29 14:16:26 [INFO] [src.api.routes:257] [Analyze] Prompt length: 1036
+[需求分析] Prompt模板渲染完成, 长度=1036字符
+[需求分析] 调用LLM: adapter=DeepSeekAdapter, temperature=0.3
+2026-04-29 14:16:49 [INFO] [src.api.routes:277] [需求分析] LLM调用完成, success=True
+2026-04-29 14:16:59 [INFO] [src.api.routes:291] [需求分析] 解析LLM响应, 长度=1970字符
+2026-04-29 14:16:59 [INFO] [src.api.routes:297] [需求分析] JSON解析成功
+[需求分析] 识别到 1 个功能模块, 5 个测试点
+[需求分析] 功能模块: 账号注册...
+[需求分析] 分析完成 - 需求ID=11, 状态=已分析
+[模块评审] 开始评审模块和测试点...
+初始化完成，LLM默认配置: lockin-deepseek (deepseek)
+LLM适配器列表: ['lockin-deepseek']
+默认适配器: lockin-deepseek
+[模块评审] 尝试使用LLM进行模块评审...
+2026-04-29 14:16:59 [INFO] [src.services.prompt_template_service:68] [Prompt加载] 类型: test_plan, 模板: default_review
+[模块评审] 评审完成 - 结论: 需求分析整体较为完整，但存在模块职责边界模糊、部分测试场景遗漏的问题。建议补充安全性和异常场景的测试覆盖，并明确非功能性需求的具体指标。风险控制方面需要加强验证码相关流程的细节定义。
+[模块评审] 总体评分: 87/100
+[模块评审] LLM评审成功，使用LLM评审结果
+[模块评审] 完成 - 1 个测试项, 9 个测试点, 评分: 87/100
+2026-04-29 14:17:19 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:17:19] "POST /api/requirements/11/analyze HTTP/1.1" 200 -
+2026-04-29 14:17:51 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:17:51] "GET /api/requirements?page=1&limit=10 HTTP/1.1" 200 -
+2026-04-29 14:17:51 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:17:51] "GET /api/tasks?status=1 HTTP/1.1" 200 -
+2026-04-29 14:18:17 [INFO] [src.api.routes:508] [模块评审] 开始评审 - 需求ID=11
+2026-04-29 14:18:17 [INFO] [src.api.routes:509] [模块评审] 功能模块数量: 1, 测试点数量: 5
+2026-04-29 14:18:17 [INFO] [src.api.routes:515] [模块评审] 模块列表: 账号注册
+2026-04-29 14:18:17 [INFO] [src.api.routes:520] [模块评审] 测试点列表: 输入非邮箱格式的账号名, 输入长度不足8位的密码, 输入不含特殊字符的密码, 输入错误的邮箱验证码, 输入已注册的邮箱账号
+2026-04-29 14:18:17 [INFO] [src.api.routes:539] [模块评审] 模块评审通过 - 需求ID=11
+2026-04-29 14:18:17 [INFO] [src.api.routes:545] [模块评审] 创建生成任务, task_id=task_e2dc60c1e40c
+2026-04-29 14:18:17 [INFO] [src.api.routes:549] [模块评审] 使用数据: 用户编辑后
+2026-04-29 14:18:17 [INFO] [src.api.routes:555] [模块评审] 启动生成任务, task_id=task_e2dc60c1e40c
+2026-04-29 14:18:17 [INFO] [src.services.generation_service:2170] [调试][execute_phase2_generation] 方法被调用 - task_id: task_e2dc60c1e40c
+2026-04-29 14:18:17 [INFO] [src.services.generation_service:2173] [调试][execute_phase2_generation] reviewed_plan: provided
+2026-04-29 14:18:17 [INFO] [src.services.generation_service:2637] [调试][execute_phase2_generation] 正在启动后台线程...
+2026-04-29 14:18:17 [INFO] [src.services.generation_service:2179] [调试][run_phase2_batch] ===== 后台线程开始执行 =====
+2026-04-29 14:18:17 [INFO] [src.services.generation_service:2641] [调试][execute_phase2_generation] 后台线程已启动 - thread name: Thread-183 (run_phase2_batch)
+2026-04-29 14:18:17 [INFO] [src.services.generation_service:2180] [调试][run_phase2_batch] task_id: task_e2dc60c1e40c
+2026-04-29 14:18:17 [INFO] [src.api.routes:559] [模块评审] 触发异步生成完成 - task_id=task_e2dc60c1e40c
+2026-04-29 14:18:17 [INFO] [src.services.generation_service:2181] [调试][run_phase2_batch] reviewed_plan: provided
+2026-04-29 14:18:17 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:18:17] "POST /api/requirements/11/review HTTP/1.1" 202 -
+2026-04-29 14:18:17 [INFO] [src.services.generation_service:2187] [调试][run_phase2_batch] task_obj: found
+[执行阶段2] reviewed_plan is not None: True
+[执行阶段2] test_plan_data: {'modules': '1. 账号注册', 'points': '1. [账号注册] 正常流程验证  [关注点: 主流程验证, 业务规则验证]\n2. [账号注册] 状态流转验证（覆盖1个状态转换）\n3. [账号注册] 边界值测试  [关注点: 边界值测试, 临界值验证]\n4. [账号注册] 异常处理验证  [关注点: 异常处理, 错误提示验证]\n5. [账号注册] 未测试连续多次输入错误验证码的锁定机制\n6*. [账号注册] 缺少对验证码时效性的测试（如5分钟后失效）\n7*. [账号注册] 未覆盖密码最大长度(18位)的边界测试  [关注点: 边界值测试, 临界值验证]\n8*. [账号注册] 缺少国际化邮箱格式的测试（如包含unicode字符的邮箱）\n9*. [账号注册] 未测试验证码发送频率限制（如1分钟只能发送1次）', 'items': [{'title': '账号注册', 'name': '账号注册', 'description': '', 'priority': 'P1', 'risk_level': 'medium', 'points': ['[账号注册] 正常流程验证  [关注点: 主流程验证, 业务规则验证]', '[账号注册] 状态流转验证 （覆盖1个状态转换）', '[账号注册] 边界值测试  [关注点: 边界值测试, 临界值验证]', '[账号注册] 异常处理验证  [关注点: 异常处理, 错误提示验证]', '[账号注册] 未测试连续多次输入错误验证码的锁定机制', '*. [账号注册] 缺少对验证码时效性的测试（如5分钟后失效）', '*. [账号注册] 未覆盖密码 最大长度(18位)的边界测试  [关注点: 边界值测试, 临界值验证]', '*. [账号注册] 缺少国际化邮箱格式的测试（如包含unicode字符的邮箱）', '*. [账号 注册] 未测试验证码发送频率限制（如1分钟只能发送1次）']}]}
+[执行阶段2] test_plan_data keys: ['modules', 'points', 'items']
+[执行阶段2] items count: 1
+[执行阶段2] first item: {'title': '账号注册', 'name': '账号注册', 'description': '', 'priority': 'P1', 'risk_level': 'medium', 'points': ['[账号注册] 正常流程验证  [关注点: 主流程验证, 业务规则验证]', '[账号注册] 状态流转验证（覆盖1个状态转换）', '[账号注册] 边界值测试  [关注点: 边界值测试, 临界值验证]', '[账号注册] 异常处理验证  [关注点: 异常处理, 错误提示验证]', '[账号注册] 未测试连续多次输入错误验证码的锁定机制', '*. [账号注册] 缺少对验证码时效性的测试（如5分钟后失效）', '*. [账号注册] 未覆盖密码最大长度(18位)的边界测试  [关注点: 边界值测试, 临界值验 证]', '*. [账号注册] 缺少国际化邮箱格式的测试（如包含unicode字符的邮箱）', '*. [账号注册] 未测试验证码发送频率限制（如1分钟只能发送1次）']}
+[调试] 开始分批生成 - 总共 1 个ITEM
+2026-04-29 14:18:17 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:18:17] "GET /api/requirements?page=1&limit=10 HTTP/1.1" 200 -
+[阶段2生成] ===== 开始生成任务 task_id=task_e2dc60c1e40c =====
+[阶段2生成] 需求内容摘要: 1、账号名只能是邮箱地址；
+2、密码长度8-18，强校验；
+3、邮箱验证码校验。...
+[阶段2生成] 全局上下文准备完成
+[RAG召回] 开始召回 - 查询需求内容长度: 40
+[RAG组件] DynamicRetriever 初始化完成
+[RAG组件] HybridRetriever 初始化完成
+[RAG组件] QueryOptimizer 初始化完成
+2026-04-29 14:18:17 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:18:17] "GET /api/tasks?status=1 HTTP/1.1" 200 -
+[RAG组件] ConfidenceCalculator 初始化完成
+[RAG组件] CitationParser 初始化完成
+[RAG组件] RetrievalEvaluator 初始化完成
+2026-04-29 14:18:18 [WARNING] [src.services.hybrid_retriever:390] FTS5 execute失败: near "'1、账号名只能是邮箱地址 2、密码长度8-18 强校验 3 、邮箱验证码校验'": syntax error
+2026-04-29 14:18:18 [INFO] [src.services.hybrid_retriever:210] 动态检索调整: expand (k=5->10)
+2026-04-29 14:18:18 [WARNING] [src.services.hybrid_retriever:390] FTS5 execute失败: near "'1、账号名只能是邮箱地址 2、密码长度8-18 强校验 3 、邮箱验证码校验'": syntax error
+2026-04-29 14:18:18 [INFO] [src.services.hybrid_retriever:210] 动态检索调整: keep (k=3->3)
+2026-04-29 14:18:19 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:18:19] "GET /api/tasks?page=1&limit=20 HTTP/1.1" 200 -
+2026-04-29 14:18:19 [INFO] [src.services.hybrid_retriever:210] 动态检索调整: expand (k=3->6)
+[RAG召回] 召回相似用例: 5条
+[RAG召回] 召回历史缺陷: 2条
+[RAG召回] 召回相似需求: 3条
+[用例生成] 开始按模块生成 - 共 1 个模块
+[用例生成] 处理模块 1/1: 账号注册, 测试点: [账号注册] 正常流程验证  [关注点: 主流程验证, 业务规则验证], [账号注册] 状态流转验证（覆盖1个状态转换）, [账号注册] 边界值测试  [关注点: 边界值测试, 临界值验证]
+[用例生成] 调用 generate_item_cases - 模块=账号注册, 测试点数=9
+[调试][generate_item_cases] 开始生成 - title: 账号注册
+[调试][generate_item_cases]   - item keys: ['title', 'name', 'description', 'priority', 'risk_level', 'points']
+[调试][generate_item_cases]   - points: 9
+[调试][generate_item_cases]   - priority: P1
+2026-04-29 14:18:19 [INFO] [src.services.prompt_template_service:68] [Prompt加载] 类型: case_generation, 模板: default_case_generation
+2026-04-29 14:18:19 [WARNING] [src.services.prompt_template_service:130] [Prompt渲染] 模板 case_generation 缺少变量: ['username', 'xxx', 'password']
+[generate_item_cases] 模板缺少变量: ['xxx', 'password', 'username']
+[调试][generate_item_cases] 调用LLM - adapter: DeepSeekAdapter
+[调试][generate_item_cases]   - prompt长度: 3486 字符
+[调试][generate_item_cases]   - temperature: 0.7, max_tokens: 4096, timeout: 120
+[用例生成] 调用LLM - adapter=DeepSeekAdapter, temperature=0.7
+2026-04-29 14:18:22 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:18:22] "GET /requirements.html HTTP/1.1" 304 -
+2026-04-29 14:18:22 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:18:22] "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 -
+2026-04-29 14:18:22 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:18:22] "GET /api/requirements?page=1&limit=10 HTTP/1.1" 200 -
+2026-04-29 14:18:22 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:18:22] "GET /api/tasks?status=1 HTTP/1.1" 200 -
+2026-04-29 14:18:23 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:18:23] "GET /api/tasks?page=1&limit=20 HTTP/1.1" 200 -
+2026-04-29 14:18:27 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:18:27] "GET /api/tasks?page=1&limit=20 HTTP/1.1" 200 -
+2026-04-29 14:18:29 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:18:29] "GET /api/generate/task_e2dc60c1e40c HTTP/1.1" 200 -
+2026-04-29 14:19:15 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:19:15] "GET /cases.html HTTP/1.1" 304 -
+2026-04-29 14:19:15 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:19:15] "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 -
+2026-04-29 14:19:15 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:19:15] "GET /api/requirements?limit=100 HTTP/1.1" 200 -
+2026-04-29 14:19:15 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:19:15] "GET /api/cases?page=1&limit=10 HTTP/1.1" 200 -
+2026-04-29 14:19:15 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:19:15] "GET /api/cases/stats HTTP/1.1" 200 -
+[用例生成] LLM响应成功 - 响应长度: 5609字符
+LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
+直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
+找到 1 个JSON代码块
+尝试解析第 1 个JSON代码块 (长度: 5597字符)
+从JSON代码块解析到 12 条用例
+[用例生成] 解析用例完成 - 生成 12 条用例
+[用例生成] 模块 '账号注册' 完成 - 共 12 条用例
+[调试] generate_item_cases 返回 12 条用例
+[分批生成] 模块 '账号注册' 生成 12 条用例
+[质检] 开始执行质量检查...
+[质检] Step 1: 重复检测...
+[质检] 重复检测完成 - 发现 0 对重复用例
+[质检] Step 2: 覆盖度检查...
+[质检] 覆盖度检查完成 - 3/9 (33.33%)
+[质检] Step 3: 质量评分...
+[质检] 质量评分完成 - 平均分: 96.7, 高质量: 12, 低质量: 0
+[质检] 质量检查完成 - 生成 1 条建议
+[补充生成] 为测试点 '[账号注册] 状态流转验证（覆盖1个状态转换）' 补充生成用例...
+LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
+直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
+找到 1 个JSON代码块
+尝试解析第 1 个JSON代码块 (长度: 997字符)
+从JSON代码块解析到 2 条用例
+[补充生成] 测试点 '[账号注册] 状态流转验证（覆盖1个状态转换）' 生成 2 条用例
+[补充生成] 为测试点 '[账号注册] 未测试连续多次输入错误验证码的锁定机制' 补充生成用例...
+LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
+直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
+找到 1 个JSON代码块
+尝试解析第 1 个JSON代码块 (长度: 1251字符)
+从JSON代码块解析到 2 条用例
+[补充生成] 测试点 '[账号注册] 未测试连续多次输入错误验证码的锁定机制' 生成 2 条用例
+[补充生成] 为测试点 '*. [账号注册] 缺少对验证码时效性的测试（如5分钟后失效）' 补充生成用例...
+2026-04-29 14:20:29 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:20:29] "GET /requirements.html HTTP/1.1" 304 -
+2026-04-29 14:20:29 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:20:29] "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 -
+2026-04-29 14:20:29 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:20:29] "GET /api/requirements?page=1&limit=10 HTTP/1.1" 200 -
+2026-04-29 14:20:29 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:20:29] "GET /api/tasks?status=1 HTTP/1.1" 200 -
+2026-04-29 14:20:30 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:20:30] "GET /api/tasks?page=1&limit=20 HTTP/1.1" 200 -
+2026-04-29 14:20:32 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:20:32] "GET /api/generate/task_e2dc60c1e40c HTTP/1.1" 200 -
+LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
+直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
+找到 1 个JSON代码块
+尝试解析第 1 个JSON代码块 (长度: 1160字符)
+从JSON代码块解析到 2 条用例
+[补充生成] 测试点 '*. [账号注册] 缺少对验证码时效性的测试（如5分钟后失效）' 生成 2 条用例
+[补充生成] 为测试点 '*. [账号注册] 未覆盖密码最大长度(18位)的边界测试  [关注点: 边界值测试, 临界值验证]' 补充生成用例...
+LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
+直接JSON解析失败: Expecting value: line 1 column 1 (char 0)
+找到 1 个JSON代码块
+尝试解析第 1 个JSON代码块 (长度: 1202字符)
+从JSON代码块解析到 2 条用例
+[补充生成] 测试点 '*. [账号注册] 未覆盖密码最大长度(18位)的边界测试  [关注点: 边界值测试, 临界值验证]' 生成 2 条用例
+[补充生成] 为测试点 '*. [账号注册] 缺少国际化邮箱格式的测试（如包含unicode字符的邮箱）' 补充生成用例...
+LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
+直接解析成功，返回 2 条用例
+[补充生成] 测试点 '*. [账号注册] 缺少国际化邮箱格式的测试（如包含unicode字符的邮箱）' 生成 2 条用例
+[补充生成] 为测试点 '*. [账号注册] 未测试验证码发送频率限制（如1分钟只能发送1次）' 补充生成用例...
+2026-04-29 14:21:09 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:21:09] "GET /api/tasks?page=1&limit=20 HTTP/1.1" 200 -
+LLM原始响应已保存到: C:\pythonworkspace\auto_generator_testcase\logs\llm_response.log
+直接解析成功，返回 2 条用例
+[补充生成] 测试点 '*. [账号注册] 未测试验证码发送频率限制（如1分钟只能发送1次）' 生成 2 条用例
+[补充生成] 补充生成完成 - 共生成 12 条用例
+[分批生成] 补充生成 12 条用例
+[质检] 开始执行质量检查...
+[质检] Step 1: 重复检测...
+[质检] 重复检测完成 - 发现 0 对重复用例
+[质检] Step 2: 覆盖度检查...
+[质检] 覆盖度检查完成 - 9/9 (100.00%)
+[质检] Step 3: 质量评分...
+[质检] 质量评分完成 - 平均分: 93.3, 高质量: 24, 低质量: 0
+[质检] 质量检查完成 - 生成 1 条建议
+[用例评审] 开始评审 - 用例总数: 24
+[用例评审] 调用CaseReviewAgent评审...
+2026-04-29 14:21:29 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:21:29] "GET /api/tasks?page=1&limit=20 HTTP/1.1" 200 -
+2026-04-29 14:21:29 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:21:29] "GET /api/tasks?page=1&limit=20 HTTP/1.1" 200 -
+[用例评审] 评审结果: AUTO_PASS
+[用例评审] 综合得分: 92
+[用例评审] AI评审通过
+[用例评审] 发现 3 个问题
+  - completeness: 缺少对密码复杂度要求的验证（如特殊字符、大小写字母等）
+  - accuracy: 预置条件中'验证码已过期'需明确过期时间标准
+  - priority: 验证码频率限制测试应提升至P1（安全相关）
+[用例保存] 开始保存用例 - 需求ID=11, 用例数=24, RAG来源数=0
+开始保存用例，需求ID: 11, 用例数: 24
+第一个用例数据: {'case_id': 'TC_000001', 'module': '账号注册', 'test_point': '正常流程验证', 'name': '用户输入有效邮箱和符合要求的密码后成功注册', 'preconditions': '1. 系统正常运行 2. 邮箱未注册过', 'test_steps': ['1. 打开注册页面', "2. 输入邮箱地址'user@example.com'", "3. 输入密码'Passw0rd123'", "4. 输入收到的邮箱验证码'123456'", '5. 点击注册按钮'], 'expected_results': ['1. 注册成功', '2. 页面跳转到登录页面或首页'], 'priority': 'P0', 'requirement_clause': '1,2,3', 'case_type': '功能', 'item_id': '', 'item_title': '账号注册', 'item_priority': 'P1'}
+2026-04-29 14:21:53 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:21:53] "GET /api/tasks?page=1&limit=20 HTTP/1.1" 200 -
+2026-04-29 14:21:54 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:21:54] "GET /api/tasks?page=1&limit=20 HTTP/1.1" 200 -
+2026-04-29 14:21:55 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:21:55] "GET /api/generate/task_e2dc60c1e40c HTTP/1.1" 200 -
+2026-04-29 14:22:02 [INFO] [werkzeug:97] 127.0.0.1 - - [29/Apr/2026 14:22:02] "GET /api/generate/task_e2dc60c1e40c HTTP/1.1" 200 -
+成功保存 24 条测试用例
+[用例保存] 保存完成 - 共 24 条用例, 需要人工复核: 0
+[任务完成] task_id=task_e2dc60c1e40c, 生成用例数=24, 状态=成功
+需求状态已更新为: 5
