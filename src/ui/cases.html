@@ -1200,6 +1200,14 @@
                         </select>
                     </div>
                     <div class="filter-item">
+                        <label>RAG影响:</label>
+                        <select id="filterRagInfluenced">
+                            <option value="">全部</option>
+                            <option value="1">只看RAG影响</option>
+                            <option value="0">排除RAG影响</option>
+                        </select>
+                    </div>
+                    <div class="filter-item">
                         <button class="btn btn-primary" onclick="applyFilters()">筛选</button>
                         <button class="btn btn-secondary" onclick="resetFilters()">重置</button>
                     </div>
@@ -1421,11 +1429,13 @@
                 const requirementId = document.getElementById('filterRequirement').value;
                 const status = document.getElementById('filterStatus').value;
                 const priority = document.getElementById('filterPriority').value;
+                const ragInfluenced = document.getElementById('filterRagInfluenced').value;
 
                 let url = `/api/cases?page=${page}&limit=${currentLimit}`;
                 if (requirementId) url += `&requirement_id=${requirementId}`;
                 if (status) url += `&status=${status}`;
                 if (priority) url += `&priority=${priority}`;
+                if (ragInfluenced) url += `&rag_influenced=${ragInfluenced}`;
 
                 const response = await fetch(url);
                 const data = await response.json();
@@ -2236,6 +2246,7 @@ const statusMap = { 2: 'pending_review', 3: 'approved', 4: 'rejected' };
             document.getElementById('filterRequirement').value = '';
             document.getElementById('filterStatus').value = '';
             document.getElementById('filterPriority').value = '';
+            document.getElementById('filterRagInfluenced').value = '';
             loadCases(1);
         }
 

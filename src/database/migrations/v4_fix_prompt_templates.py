@@ -12,11 +12,15 @@ import sys
 
 sys.stdout.reconfigure(encoding="utf-8")
 
+from src.utils import get_logger
+
+logger = get_logger(__name__)
+
 
 def migrate(db_path="data/testgen.db"):
     """Execute migration"""
     if not os.path.exists(db_path):
-        print(f"Database file not found: {db_path}")
+        logger.info(f"Database file not found: {db_path}")
         return
 
     conn = sqlite3.connect(db_path)
@@ -30,15 +34,15 @@ def migrate(db_path="data/testgen.db"):
             cursor.execute(
                 "ALTER TABLE prompt_templates ADD COLUMN updated_at TIMESTAMP"
             )
-            print("Added updated_at column to prompt_templates")
+            logger.info("Added updated_at column to prompt_templates")
         else:
-            print("updated_at column already exists")
+            logger.info("updated_at column already exists")
 
         conn.commit()
-        print("Migration completed")
+        logger.info("Migration completed")
 
     except Exception as e:
-        print(f"Migration failed: {e}")
+        logger.info(f"Migration failed: {e}")
         conn.rollback()
     finally:
         conn.close()

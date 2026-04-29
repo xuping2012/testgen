@@ -22,6 +22,9 @@ from sqlalchemy.orm import relationship, sessionmaker, scoped_session
 from datetime import datetime
 import enum
 import os
+from src.utils import get_logger
+
+logger = get_logger(__name__)
 
 Base = declarative_base()
 
@@ -147,6 +150,7 @@ class TestCase(Base):
     confidence_level = Column(String(10), default=None)  # 置信度等级 (A/B/C/D)
     citations = Column(JSON, default=None)  # 引用来源列表
     rag_influenced = Column(Integer, default=0)  # RAG影响标识 (0=未影响, 1=受影响)
+    rag_sources = Column(JSON, default=None)  # RAG来源列表 [{type, id, similarity}]
 
     # 追溯信息
     requirement_clause = Column(String(100))  # 关联需求条款编号
@@ -375,9 +379,9 @@ def init_database(db_path="data/testgen.db"):
                     conn.execute(
                         text(f"CREATE VIRTUAL TABLE {fts_table} USING fts5({columns})")
                     )
-                    print(f"创建FTS5虚拟表: {fts_table}")
+                    logger.info(f"创建FTS5虚拟表: {fts_table}")
             except Exception as e:
-                print(f"创建FTS5表失败: {e}")
+                logger.info(f"创建FTS5表失败: {e}")
         conn.commit()
 
     return engine

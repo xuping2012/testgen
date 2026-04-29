@@ -52,6 +52,7 @@ class GenerationService:
         self._tasks: Dict[str, GenerationTask] = {}
         self._lock = threading.Lock()
         self.callbacks: Dict[str, Callable] = {}
+        self._current_rag_sources: Dict[str, list] = {}  # 当前任务的RAG检索来源
 
         # 获取线程安全的scoped session工厂
         try:
@@ -1444,23 +1445,6 @@ class GenerationService:
                 f"[调试][generate_item_cases]   - temperature: 0.7, max_tokens: 4096, timeout: 120"
             )
 
-            # 保存prompt到日志文件
-            import os
-            from datetime import datetime
-
-            log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
-            os.makedirs(log_dir, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            prompt_log_path = os.path.join(log_dir, f"prompt_{timestamp}.txt")
-            with open(prompt_log_path, "w", encoding="utf-8") as f:
-                f.write(f"=== 模块: {item_title} ===\n")
-                f.write(f"=== 时间: {timestamp} ===\n")
-                f.write(f"=== Points: {item_points_str[:500]}...\n\n")
-                f.write("========== PROMPT START ==========\n")
-                f.write(prompt)
-                f.write("\n========== PROMPT END ==========\n")
-            print(f"[用例生成] Prompt已保存: {prompt_log_path}")
-
             print(
                 f"[用例生成] 调用LLM - adapter={type(adapter).__name__}, temperature=0.7"
             )
@@ -1485,8 +1469,22 @@ class GenerationService:
                 raise Exception(f"LLM生成失败: {response.error_message}")
 
             # 解析生成的用例
-            test_cases = self._parse_generated_cases(response.content)
-            print(f"[用例生成] 解析用例完成 - 生成 {len(test_cases)} 条用例")
+            try:
+                test_cases = self._parse_generated_cases(response.content)
+                print(f"[用例生成] 解析用例完成 - 生成 {len(test_cases)} 条用例")
+            except AttributeError as ae:
+                print(f"[用例生成] 解析方法AttributeError: {ae}")
+                print(f"[用例生成] 尝试备用解析方法...")
+                import traceback
+
+                traceback.print_exc()
+                test_cases = []
+            except Exception as parse_err:
+                print(f"[用例生成] 解析失败: {parse_err}")
+                import traceback
+
+                traceback.print_exc()
+                test_cases = []
 
             # 附加元数据到每个用例
             for case in test_cases:
@@ -2428,10 +2426,13 @@ class GenerationService:
                     try:
                         rag_influenced = 1 if rag_stats.get("cases", 0) > 0 else 0
                         print(
-                            f"[用例保存] 开始保存用例 - 需求ID={requirement_id}, 用例数={len(all_generated_cases)}, RAG影响={rag_influenced}"
+                            f"[用例保存] 开始保存用例 - 需求ID={requirement_id}, 用例数={len(all_generated_cases)}, RAG来源数={len(self._current_rag_sources.get(task_id, []))}"
                         )
                         self._save_test_cases(
-                            requirement_id, all_generated_cases, rag_influenced
+                            requirement_id,
+                            all_generated_cases,
+                            rag_influenced,
+                            self._current_rag_sources.get(task_id, []),
                         )
                         print(
                             f"[用例保存] 保存完成 - 共 {len(all_generated_cases)} 条用例, 需要人工复核: {len([c for c in all_generated_cases if c.get('requires_human_review')])}"
@@ -2454,6 +2455,7 @@ class GenerationService:
                     "case_count": total_cases,
                     "total_count": total_cases,
                     "rag_stats": rag_stats,
+                    "case_review": review_result,  # 用例评审结果
                     "rag_level_distribution": {
                         "A": sum(
                             1
@@ -2606,6 +2608,14 @@ class GenerationService:
                                 top_k_requirements=3,
                             )
                         )
+                        # 保存RAG检索来源到实例变量，供后续用例保存时使用
+                        retrieved_cases = rag_context_data.get("retrieved_cases", [])
+                        retrieved_defects = rag_context_data.get(
+                            "retrieved_defects", []
+                        )
+                        self._current_rag_sources[task_id] = (
+                            retrieved_cases + retrieved_defects
+                        )
 
                         recall_summary = f"✅ RAG召回完成 - "
                         if rag_stats["cases"] > 0:
@@ -2750,7 +2760,7 @@ class GenerationService:
                         task_obj = self.get_task(task_id)
                         if task_obj:
                             self._save_test_cases(
-                                task_obj.requirement_id, test_cases, 0
+                                task_obj.requirement_id, test_cases, 0, []
                             )
                             print(
                                 f"[直接保存] 成功保存 {len(test_cases)} 条用例到数据库"
@@ -3081,7 +3091,9 @@ class GenerationService:
                         print(
                             f"开始保存用例，需求ID: {task_obj.requirement_id}, 用例数: {len(test_cases)}"
                         )
-                        self._save_test_cases(task_obj.requirement_id, test_cases, 0)
+                        self._save_test_cases(
+                            task_obj.requirement_id, test_cases, 0, []
+                        )
                         print(f"用例保存完成")
 
                         self.update_progress(
@@ -3306,9 +3318,15 @@ class GenerationService:
             )
 
     def _save_test_cases(
-        self, requirement_id: int, test_cases: list, rag_influenced: int = 0
+        self,
+        requirement_id: int,
+        test_cases: list,
+        rag_influenced: int = 0,
+        rag_sources_context: list = None,
     ):
-        """保存测试用例到数据库 - 先删除旧用例再保存新用例"""
+        """保存测试用例到数据库 - 先删除旧用例再保存新用例
+        rag_sources_context: RAG检索的原始结果列表，用于计算用例与RAG来源的相似度
+        """
         if not test_cases:
             print("警告: 没有需要保存的测试用例")
             return
@@ -3323,6 +3341,16 @@ class GenerationService:
             import random
             import json as json_module
             import re
+            from src.services.rag_influence_tracker import calc_rag_influence
+
+            # 后处理：计算每个用例与RAG来源的相似度
+            if rag_sources_context:
+                test_cases = calc_rag_influence(
+                    test_cases, rag_sources_context, threshold=0.3
+                )
+                print(
+                    f"[RAG影响计算] 完成 - 检测到 {sum(1 for c in test_cases if c.get('rag_influenced'))} 条用例受RAG影响"
+                )
 
             saved_count = 0
 
@@ -3457,7 +3485,8 @@ class GenerationService:
                     confidence_score=case_data.get("confidence_score"),
                     confidence_level=case_data.get("confidence_level"),
                     citations=case_data.get("citations"),
-                    rag_influenced=rag_influenced,
+                    rag_influenced=case_data.get("rag_influenced", 0),
+                    rag_sources=case_data.get("rag_sources"),
                 )
                 session.add(test_case)
                 saved_count += 1
@@ -4205,6 +4234,15 @@ class GenerationService:
                             f"### 历史用例 {i}\n{case.get('content', '')}\n\n"
                         )
                     rag_stats["cases"] = len(case_results[:top_k_cases])
+                    # 保存原始检索结果用于后续相似度匹配
+                    rag_context_data["retrieved_cases"] = [
+                        {
+                            "id": c.get("id", f"case_{i}"),
+                            "content": c.get("content", ""),
+                            "type": "case",
+                        }
+                        for i, c in enumerate(case_results[:top_k_cases])
+                    ]
 
                 # 记录动态检索调整信息
                 if isinstance(case_response, dict) and case_response.get("adjustment"):
@@ -4234,6 +4272,15 @@ class GenerationService:
                             f"### 历史缺陷 {i}\n{defect.get('content', '')}\n\n"
                         )
                     rag_stats["defects"] = len(defect_results[:top_k_defects])
+                    # 保存原始检索结果用于后续相似度匹配
+                    rag_context_data["retrieved_defects"] = [
+                        {
+                            "id": d.get("id", f"defect_{i}"),
+                            "content": d.get("content", ""),
+                            "type": "defect",
+                        }
+                        for i, d in enumerate(defect_results[:top_k_defects])
+                    ]
                 defect_results = (
                     defect_response.get("results", [])
                     if isinstance(defect_response, dict)
@@ -4380,6 +4427,7 @@ class GenerationService:
         requirement_content: str,
         requirement_analysis: Dict[str, Any],
         rag_context: str = "",
+        return_review_info: bool = False,
     ) -> str:
         """
         测试规划Agent - 基于02_模块评审Agent.md
@@ -4390,8 +4438,13 @@ class GenerationService:
         - 风险评审（高风险覆盖/依赖异常）
 
         识别测试项(ITEM)和测试点(POINT)
+
+        Args:
+            return_review_info: 当为True时，返回包含test_plan和review_info的字典
         """
-        # 尝试使用LLM进行模块评审
+        review_info = None
+        test_plan = None
+
         if self.llm_manager:
             try:
                 print("[模块评审] 尝试使用LLM进行模块评审...")
@@ -4400,7 +4453,15 @@ class GenerationService:
                 )
                 if llm_review:
                     print("[模块评审] LLM评审成功，使用LLM评审结果")
-                    return self._build_test_plan_from_llm_review(
+                    review_info = {
+                        "score": llm_review.get("overall_score"),
+                        "conclusion": llm_review.get("conclusion"),
+                        "reviewed_items_count": llm_review.get("reviewed_items_count"),
+                        "reviewed_points_count": llm_review.get(
+                            "reviewed_points_count"
+                        ),
+                    }
+                    test_plan = self._build_test_plan_from_llm_review(
                         llm_review, requirement_analysis
                     )
                 else:
@@ -4408,8 +4469,14 @@ class GenerationService:
             except Exception as e:
                 print(f"[模块评审] LLM评审失败: {e}，回退到规则评审")
 
-        # 回退到基于规则的评审
-        return self._rule_based_test_plan(requirement_content, requirement_analysis)
+        if not test_plan:
+            test_plan = self._rule_based_test_plan(
+                requirement_content, requirement_analysis
+            )
+
+        if return_review_info:
+            return {"test_plan": test_plan, "review_info": review_info}
+        return test_plan
 
     def _llm_module_review(
         self, requirement_content: str, requirement_analysis: Dict[str, Any]

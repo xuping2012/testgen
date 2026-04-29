@@ -478,7 +478,6 @@ class PromptTemplateService:
 
 {business_rules}
 
-## RAG召回的历史参考信息
 {rag_context}
 
 ## 当前模块信息

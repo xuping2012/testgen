@@ -490,6 +490,28 @@
             letter-spacing: 1px;
         }
         
+        /* 评审结果面板 */
+        .review-info-panel {
+            background: rgba(0, 255, 136, 0.08);
+            border: 1px solid var(--neon-green);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        
+        .review-score {
+            font-size: 18px;
+            font-weight: bold;
+            color: var(--neon-green);
+            margin-bottom: 8px;
+        }
+        
+        .review-conclusion {
+            font-size: 13px;
+            color: #ccc;
+            line-height: 1.6;
+        }
+        
         .form-control {
             width: 100%;
             padding: 14px;
@@ -1747,14 +1769,23 @@
                     <div id="mdContentContainer" class="md-content-container"></div>
                 </div>
                 
+                <!-- 模块评审结果 -->
+                <div class="form-group" id="reviewInfoSection" style="display:none;">
+                    <label>模块评审结果</label>
+                    <div class="review-info-panel">
+                        <div class="review-score">评分: <span id="reviewScore">--</span>/100</div>
+                        <div class="review-conclusion" id="reviewConclusion"></div>
+                    </div>
+                </div>
+                
                 <!-- 需求分析结果 -->
                 <div class="form-group">
-                    <label>功能模块划分 (可编辑)</label>
+                    <label>功能模块划分</label>
                     <textarea class="form-control" id="reviewModules" rows="6" style="resize: vertical; font-family: monospace;"></textarea>
                 </div>
                 
                 <div class="form-group">
-                    <label>测试点 (POINTS) (可编辑)</label>
+                    <label>测试点 (POINTS)</label>
                     <textarea class="form-control" id="reviewPoints" rows="12" style="resize: vertical; font-family: monospace;"></textarea>
                 </div>
                 
@@ -2895,8 +2926,8 @@
                     currentTaskId = data.task_id;
                     
                     // 如果已经有分析结果（同步返回），直接显示
-                    if (data.analysis_result) {
-                        showReviewModal(data.analysis_result);
+                    if (data.analysis_data) {
+                        showReviewModal(data.analysis_data);
                         showToast('需求分析完成，请评审', 'success');
                     } else {
                         // 否则轮询任务进度
@@ -2975,6 +3006,27 @@
             // 填充评审弹窗数据
             document.getElementById('reviewTaskId').value = currentTaskId || '';
 
+            // 填充评审结果（如果存在）
+            const reviewInfoSection = document.getElementById('reviewInfoSection');
+            const reviewInfo = analysisResult.review_info;
+            if (reviewInfo) {
+                const score = reviewInfo.score || '--';
+                const conclusion = reviewInfo.conclusion || '无评审结论';
+                const oriItems = reviewInfo.original_items_count || analysisResult.modules?.length || 0;
+                const oriPoints = reviewInfo.original_points_count || analysisResult.test_points?.length || 0;
+                const revItems = reviewInfo.reviewed_items_count || analysisResult.items?.length || 0;
+                const revPoints = reviewInfo.reviewed_points_count || analysisResult.points?.length || 0;
+                document.getElementById('reviewScore').textContent = score;
+                document.getElementById('reviewConclusion').innerHTML = `
+                    <div style="margin-bottom: 8px;">${conclusion}</div>
+                    <div style="font-size: 12px; color: #888; border-top: 1px solid #333; padding-top: 8px;">
+                        📊 评分标准: 原始 ${oriItems}个模块/${oriPoints}个测试点 → 评审后 ${revItems}个测试项/${revPoints}个测试点
+                    </div>`;
+                reviewInfoSection.style.display = 'block';
+            } else {
+                reviewInfoSection.style.display = 'none';
+            }
+
             // 保存items数组（用于后续生成）- 支持多种字段名
             const itemsInput = document.getElementById('reviewItems');
             let items = null;
@@ -3005,32 +3057,63 @@
                 itemsInput.value = '[]';
             }
 
-            // 功能模块（可编辑）
+            // 功能模块（可编辑）- 优先使用评审后的items，如果没有就用原始modules
             const modulesDiv = document.getElementById('reviewModules');
-            if (analysisResult.modules && analysisResult.modules.length > 0) {
-                modulesDiv.value = analysisResult.modules.map((m, i) => {
+            let displayModules = [];
+            if (analysisResult.items && analysisResult.items.length > 0) {
+                // 使用评审后的测试项
+                displayModules = analysisResult.items.map((item, i) => {
+                    const title = item.title || item.name || '';
+                    const desc = item.description || '';
+                    return `${i + 1}. ${title}${desc ? ' - ' + desc : ''}`;
+                });
+            } else if (analysisResult.modules && analysisResult.modules.length > 0) {
+                displayModules = analysisResult.modules.map((m, i) => {
                     const moduleName = typeof m === 'string' ? m : (m.name || '');
                     const moduleDesc = typeof m === 'object' ? (m.description || '') : '';
                     const content = moduleDesc ? `${moduleName} - ${moduleDesc}` : moduleName;
                     return `${i + 1}. ${content}`;
-                }).join('\n');
-            } else {
-                modulesDiv.value = '未识别到功能模块';
+                });
             }
+            modulesDiv.value = displayModules.length > 0 ? displayModules.join('\n') : '未识别到功能模块';
 
-            // 测试点（可编辑）- 支持 test_points 和 points 两种字段名
+            // 测试点（可编辑）- 优先使用评审后的points
             const pointsDiv = document.getElementById('reviewPoints');
-            const points = analysisResult.points || analysisResult.test_points || [];
-            if (points && points.length > 0) {
-                pointsDiv.value = points.map((point, i) => {
+            let displayPoints = [];
+            const isFromReview = analysisResult.points && analysisResult.points.length > 0;
+            const originalPointsCount = analysisResult.test_points?.length || 0;
+            
+            if (analysisResult.points && analysisResult.points.length > 0) {
+                // 使用评审后的扩展测试点，带标记
+                displayPoints = analysisResult.points.map((point, i) => {
                     const itemLabel = point.item || point.module || '通用';
                     const focusPoints = point.focus_points && point.focus_points.length > 0
                         ? `  [关注点: ${point.focus_points.join(', ')}]`
                         : '';
-                    return `${i + 1}. [${itemLabel}] ${point.name}${focusPoints}`;
-                }).join('\n');
+                    // 如果是评审后新增的测试点，加上标记
+                    const isNew = i >= originalPointsCount;
+                    const newMarker = isNew ? '*' : '';
+                    return `${i + 1}${newMarker}. [${itemLabel}] ${point.name}${focusPoints}`;
+                });
             } else {
-                pointsDiv.value = '未识别到测试点';
+                const points = analysisResult.test_points || [];
+                if (points && points.length > 0) {
+                    displayPoints = points.map((point, i) => {
+                        const itemLabel = point.item || point.module || '通用';
+                        const focusPoints = point.focus_points && point.focus_points.length > 0
+                            ? `  [关注点: ${point.focus_points.join(', ')}]`
+                            : '';
+                        return `${i + 1}. [${itemLabel}] ${point.name}${focusPoints}`;
+                    });
+                } else {
+                    displayPoints = [];
+                }
+            }
+            pointsDiv.value = displayPoints.length > 0 ? displayPoints.join('\n') : '未识别到测试点';
+            
+            // 如果来自评审，显示提示
+            if (isFromReview && displayPoints.length > 0) {
+                pointsDiv.title = ' * = 评审后新增测试点';
             }
             
             // 隐藏AI分析报告区域
@@ -4077,11 +4160,36 @@
                 
                 // RAG检索质量报告
                 let ragHtml = '';
+                let caseReviewHtml = '';
                 try {
                     const result = task.result ? (typeof task.result === 'string' ? JSON.parse(task.result) : task.result) : {};
                     const ragStats = result.rag_stats || {};
                     const ragLevelDist = result.rag_level_distribution || {};
                     const qualityReport = ragStats.quality_report || {};
+
+                    // 用例评审结果
+                    const caseReview = result.case_review;
+                    if (caseReview) {
+                        const crScore = caseReview.overall_score || '--';
+                        const crDecision = caseReview.decision || '无';
+                        const crConclusion = caseReview.conclusion || '无评审结论';
+                        const crIssues = caseReview.issues || [];
+                        const decisionClass = crDecision === 'AUTO_PASS' ? 'var(--neon-green)' : (crDecision === 'NEEDS_REVIEW' ? '#ffaa00' : '#ff4466');
+                        caseReviewHtml = `
+                            <div style="margin-top: 16px; padding: 12px; background: rgba(255, 170, 0, 0.08); border: 1px solid #ffaa00; border-radius: 8px;">
+                                <div style="font-size: 16px; font-weight: bold; color: #ffaa00; margin-bottom: 8px;">
+                                    📋 用例评审结果
+                                </div>
+                                <div><strong>综合评分:</strong> <span style="font-size: 18px; font-weight: bold; color: #ffaa00;">${crScore}</span>/100</div>
+                                <div style="margin: 8px 0;"><strong>决策:</strong> <span style="color: ${decisionClass}; font-weight: bold;">${crDecision === 'AUTO_PASS' ? '✅ AI通过' : (crDecision === 'NEEDS_REVIEW' ? '⚠️ 需人工复核' : '❌ 未通过')}</span></div>
+                                <div style="margin: 8px 0; font-size: 13px; color: #ccc; line-height: 1.5;">${crConclusion}</div>
+                                ${crIssues.length > 0 ? `<div style="font-size: 12px; color: #888; border-top: 1px solid #333; padding-top: 8px;">
+                                    <div style="margin-bottom: 4px;">发现 ${crIssues.length} 个问题:</div>
+                                    ${crIssues.slice(0, 3).map(i => `<div style="padding: 2px 0; color: #aaa;">• ${i.type}: ${i.description?.substring(0, 50) || ''}</div>`).join('')}
+                                </div>` : ''}
+                            </div>`;
+                    }
+
                     if (Object.keys(ragStats).length > 0 || Object.keys(ragLevelDist).length > 0) {
                         ragHtml = '<h4 style="margin: 16px 0 12px; color: var(--neon-cyan); font-size: 14px;">RAG增强统计</h4>';
                         ragHtml += '<div style="border: 1px solid var(--dark-border); border-radius: 6px; overflow: hidden;">';
@@ -4104,6 +4212,16 @@
                         if (qualityReport.quality_alert) {
                             ragHtml += `<div style="padding: 10px 16px; border-bottom: 1px solid var(--dark-border); display: flex; justify-content: space-between; font-size: 12px;"><span style="color:#888;">质量告警</span><span style="color:#ff4466;">${qualityReport.quality_alert}</span></div>`;
                         }
+                        const ragAlerts = result.rag_alerts || [];
+                        if (ragAlerts.length > 0) {
+                            ragHtml += '<div style="padding: 10px 16px; border-bottom: 1px solid var(--dark-border);">';
+                            ragHtml += '<div style="color:#ffaa00; font-size: 12px; font-weight: bold; margin-bottom: 6px;">⚠ RAG检索告警</div>';
+                            for (const a of ragAlerts) {
+                                const alertText = a.alert === 'low_similarity' ? '低相似度，已扩大检索' : '无结果，已跳过RAG增强';
+                                ragHtml += `<div style="font-size: 11px; color: #ccc; padding: 2px 0;">• ${a.item}: ${alertText}</div>`;
+                            }
+                            ragHtml += '</div>';
+                        }
                         // 增强等级分布
                         if (Object.keys(ragLevelDist).length > 0) {
                             const total = Object.values(ragLevelDist).reduce((a, b) => a + b, 0);
@@ -4120,6 +4238,31 @@
                     }
                 } catch(e) { console.warn('RAG统计解析失败:', e); }
 
+                // 评审结果展示
+                let reviewHtml = '';
+                if (task.review_info) {
+                    const ri = task.review_info;
+                    const score = ri.score || '--';
+                    const conclusion = ri.conclusion || '无评审结论';
+                    const oriItems = ri.original_items_count || '-';
+                    const oriPoints = ri.original_points_count || '-';
+                    const revItems = ri.reviewed_items_count || '-';
+                    const revPoints = ri.reviewed_points_count || '-';
+                    const reviewedAt = ri.reviewed_at ? ri.reviewed_at.substring(0, 19).replace('T', ' ') : '-';
+                    reviewHtml = `
+                        <div style="margin-top: 16px; padding: 12px; background: rgba(0, 255, 136, 0.08); border: 1px solid var(--neon-green); border-radius: 8px;">
+                            <div style="font-size: 16px; font-weight: bold; color: var(--neon-green); margin-bottom: 8px;">
+                                📊 模块评审结果
+                            </div>
+                            <div><strong>评分:</strong> <span style="font-size: 18px; font-weight: bold; color: var(--neon-green);">${score}</span>/100</div>
+                            <div style="margin: 8px 0; font-size: 13px; color: #ccc; line-height: 1.5;">${conclusion}</div>
+                            <div style="font-size: 12px; color: #888; border-top: 1px solid #333; padding-top: 8px;">
+                                📈 演变: ${oriItems}个原始模块/${oriPoints}个原始测试点 → ${revItems}个测试项/${revPoints}个测试点
+                            </div>
+                            <div style="font-size: 11px; color: #666;">评审时间: ${reviewedAt}</div>
+                        </div>`;
+                }
+
                 document.getElementById('detailContent').innerHTML = `
                     <div style="margin-bottom: 16px;">
                         <div><strong>任务ID:</strong> ${task.task_id}</div>
@@ -4130,6 +4273,8 @@
                         <div><strong>用例数:</strong> ${task.case_count || 0}</div>
                         <div><strong>创建时间:</strong> ${task.created_at}</div>
                     </div>
+                    ${reviewHtml}
+                    ${caseReviewHtml}
                     ${stagesHtml}
                     ${ragHtml}
                     ${snapshotHtml}

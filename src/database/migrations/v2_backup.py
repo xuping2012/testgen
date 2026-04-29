@@ -7,15 +7,15 @@
 import shutil
 import os
 import sys
-import logging
 from datetime import datetime
 
-logging.basicConfig(level=logging.INFO, format='[Backup] %(message)s')
-logger = logging.getLogger(__name__)
+from src.utils import get_logger
+
+logger = get_logger(__name__)
 
 
 def get_db_path():
-    return os.environ.get('DB_PATH', 'data/testgen.db')
+    return os.environ.get("DB_PATH", "data/testgen.db")
 
 
 def backup_database(db_path=None, backup_dir=None):
@@ -28,13 +28,15 @@ def backup_database(db_path=None, backup_dir=None):
         return None
 
     if backup_dir is None:
-        backup_dir = os.path.join(os.path.dirname(db_path), 'backups')
+        backup_dir = os.path.join(os.path.dirname(db_path), "backups")
 
     os.makedirs(backup_dir, exist_ok=True)
 
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     db_name = os.path.basename(db_path)
-    backup_path = os.path.join(backup_dir, f"{os.path.splitext(db_name)[0]}_backup_{timestamp}.db")
+    backup_path = os.path.join(
+        backup_dir, f"{os.path.splitext(db_name)[0]}_backup_{timestamp}.db"
+    )
 
     shutil.copy2(db_path, backup_path)
     file_size = os.path.getsize(backup_path)
@@ -42,11 +44,11 @@ def backup_database(db_path=None, backup_dir=None):
     return backup_path
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     db_path = sys.argv[1] if len(sys.argv) > 1 else None
     result = backup_database(db_path)
     if result:
-        print(f"备份文件: {result}")
+        logger.info(f"备份文件: {result}")
         sys.exit(0)
     else:
         sys.exit(1)

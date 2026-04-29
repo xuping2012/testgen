@@ -357,8 +357,20 @@ class HybridRetriever:
             source_table = source_table_map.get(collection, collection)
 
             # 处理查询字符串，移除特殊字符并转为FTS5查询格式
-            safe_query = query.replace('"', " ").replace("'", " ").replace("\n", " ")
-            if not safe_query.strip():
+            safe_query = query.replace('"', " ").replace("'", " ")
+            safe_query = safe_query.replace("\n", " ").replace("\r", " ")
+            safe_query = safe_query.replace(":", " ").replace("*", " ")
+            safe_query = safe_query.replace("^", " ").replace("(", " ")
+            safe_query = safe_query.replace(")", " ").replace("{", " ")
+            safe_query = safe_query.replace("}", " ").replace("+", " ")
+            safe_query = safe_query.replace("~", " ").replace("!", " ")
+            safe_query = safe_query.replace("AND", " ").replace("OR", " ")
+            safe_query = safe_query.replace("NOT", " ").replace("NEAR", " ")
+            import re
+
+            safe_query = re.sub(r"\s+", " ", safe_query).strip()
+            safe_query = safe_query.replace("'", "''")
+            if not safe_query:
                 return []
 
             query_sql = f"""
@@ -368,6 +380,12 @@ class HybridRetriever:
                 ORDER BY rank
                 LIMIT {top_k}
             """
+            try:
+                cursor.execute(query_sql)
+            except Exception as exec_err:
+                logger.warning("FTS5 execute失败: %s", exec_err)
+                conn.close()
+                return []
             rows = cursor.fetchall()
 
             if not rows:

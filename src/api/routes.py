@@ -334,9 +334,11 @@ def analyze_requirement(requirement_id):
                     generation_service.llm_manager,
                     generation_service.vector_store,
                 )
-                test_plan = review_gen_service._create_test_plan(
-                    requirement.content, analysis_result
+                result = review_gen_service._create_test_plan(
+                    requirement.content, analysis_result, return_review_info=True
                 )
+                review_info = result.get("review_info")
+                test_plan = result.get("test_plan")
                 structured_plan = review_gen_service._parse_test_plan(test_plan)
 
                 reviewed_items = structured_plan.get("items", [])
@@ -344,10 +346,29 @@ def analyze_requirement(requirement_id):
 
                 if reviewed_items:
                     analysis_result["items"] = reviewed_items
+                    analysis_result["points"] = reviewed_points
+                    if review_info:
+                        from datetime import datetime
+
+                        review_info["reviewed_at"] = datetime.utcnow().isoformat()
+                        review_info["reviewed_items_count"] = len(reviewed_items)
+                        review_info["reviewed_points_count"] = len(reviewed_points)
+                        review_info["original_items_count"] = len(
+                            analysis_result.get("modules", [])
+                        )
+                        review_info["original_points_count"] = len(
+                            analysis_result.get("test_points", [])
+                        )
+                        analysis_result["review_info"] = review_info
                     requirement.analysis_data = analysis_result
                     db_session.commit()
+                    score_str = (
+                        f"{review_info['score']}/100"
+                        if review_info and review_info.get("score")
+                        else "N/A"
+                    )
                     print(
-                        f"[模块评审] 完成 - {len(reviewed_items)} 个测试项, {len(reviewed_points)} 个测试点"
+                        f"[模块评审] 完成 - {len(reviewed_items)} 个测试项, {len(reviewed_points)} 个测试点, 评分: {score_str}"
                     )
             except Exception as e:
                 print(f"[模块评审] 失败: {e}，使用原始分析结果")
@@ -1110,6 +1131,19 @@ def get_generation_progress(task_id):
         total_items = None
         item_title = None
 
+        # 获取需求的分析数据（包含评审结果）
+        review_info = None
+        analysis_data = None
+        if task.requirement_id:
+            from src.database.models import Requirement
+
+            requirement = (
+                db_session.query(Requirement).filter_by(id=task.requirement_id).first()
+            )
+            if requirement and requirement.analysis_data:
+                analysis_data = requirement.analysis_data
+                review_info = analysis_data.get("review_info")
+
         if task.phase_details:
             import re
 
@@ -1133,6 +1167,8 @@ def get_generation_progress(task_id):
                 "current_item": current_item,
                 "total_items": total_items,
                 "item_title": item_title,
+                "review_info": review_info,
+                "analysis_data": analysis_data,
                 "started_at": task.started_at.isoformat() if task.started_at else None,
                 "updated_at": task.updated_at.isoformat() if task.updated_at else None,
             }
@@ -1163,6 +1199,21 @@ def get_generation_status(task_id):
             if not task_model:
                 return jsonify({"error": "任务不存在"}), 404
 
+            # 获取需求的分析数据（包含评审结果）
+            task_review_info = None
+            task_analysis_data = None
+            if task_model.requirement_id:
+                from src.database.models import Requirement
+
+                req = (
+                    db_session.query(Requirement)
+                    .filter_by(id=task_model.requirement_id)
+                    .first()
+                )
+                if req and req.analysis_data:
+                    task_analysis_data = req.analysis_data
+                    task_review_info = task_analysis_data.get("review_info")
+
             # 转换为字典格式
             return jsonify(
                 {
@@ -1178,6 +1229,8 @@ def get_generation_status(task_id):
                     "case_count": task_model.case_count or 0,
                     "duration": task_model.duration or 0.0,
                     "analysis_snapshot": task_model.analysis_snapshot,
+                    "review_info": task_review_info,
+                    "analysis_data": task_analysis_data,
                     "created_at": (
                         task_model.created_at.isoformat()
                         if task_model.created_at
@@ -1237,6 +1290,7 @@ def list_cases():
         status = request.args.get("status")
         priority = request.args.get("priority")
         confidence_level = request.args.get("confidence_level")
+        rag_influenced = request.args.get("rag_influenced")  # 0=未影响, 1=受影响
         sort_field = request.args.get("sort")
         order = request.args.get("order", "desc")
         page = request.args.get("page", 1, type=int)
@@ -1262,6 +1316,9 @@ def list_cases():
                 query = query.filter(TestCase.confidence_level.is_(None))
             else:
                 query = query.filter(TestCase.confidence_level == confidence_level)
+        # 按RAG影响筛选
+        if rag_influenced:
+            query = query.filter(TestCase.rag_influenced == rag_influenced)
 
         # 按置信度分数排序
         if sort_field == "confidence_score":
@@ -1295,6 +1352,7 @@ def list_cases():
                         "confidence_score": c.confidence_score,
                         "confidence_level": c.confidence_level,
                         "rag_influenced": c.rag_influenced,
+                        "rag_sources": c.rag_sources,
                     }
                     for c in cases
                 ],

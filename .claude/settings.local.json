@@ -46,7 +46,9 @@
       "Bash(ls -1 C:/pythonworkspace/auto_generator_testcase/.cursor* C:/pythonworkspace/auto_generator_testcase/.cursorrules C:/pythonworkspace/auto_generator_testcase/.github/copilot-instructions.md 2>/dev/null || echo \"No cursor/copilot rules found\")",
       "Bash(find C:/pythonworkspace/auto_generator_testcase/docs -type f -name \"*.md\" 2>/dev/null | head -20)",
       "Bash(ls -1 C:/pythonworkspace/auto_generator_testcase/.env* C:/pythonworkspace/auto_generator_testcase/*.env 2>/dev/null || echo \"No env files found\")",
-      "Bash(ls -1 C:/pythonworkspace/auto_generator_testcase/LICENSE* C:/pythonworkspace/auto_generator_testcase/CHANGELOG* C:/pythonworkspace/auto_generator_testcase/CONTRIBUTING* 2>/dev/null || echo \"No additional standard docs found\")"
+      "Bash(ls -1 C:/pythonworkspace/auto_generator_testcase/LICENSE* C:/pythonworkspace/auto_generator_testcase/CHANGELOG* C:/pythonworkspace/auto_generator_testcase/CONTRIBUTING* 2>/dev/null || echo \"No additional standard docs found\")",
+      "Bash(openspec list:*)",
+      "Bash(python -m pytest tests/test_rag_bugfix_completeness.py -v)"
     ]
   }
 }

@@ -85,37 +85,6 @@ def _create_logger() -> logging.Logger:
 def init_global_logging():
     """初始化全局日志配置"""
     _create_logger()
-
-    import builtins
-
-    class PrintInterceptor:
-        _original_print = None
-
-        @classmethod
-        def install(cls):
-            if cls._original_print is not None:
-                return
-            cls._original_print = builtins.print
-
-            def logged_print(*args, **kwargs):
-                msg = " ".join(str(a) for a in args)
-                frame = inspect.currentframe()
-                if frame:
-                    caller_frame = frame.f_back
-                    if caller_frame:
-                        caller_module = caller_frame.f_globals.get(
-                            "__name__", "unknown"
-                        )
-                        caller_module = caller_module.split(".")[-1]
-                    else:
-                        caller_module = "unknown"
-                else:
-                    caller_module = "unknown"
-                logging.getLogger(caller_module).info(msg)
-
-            builtins.print = logged_print
-
-    PrintInterceptor.install()
     logging.getLogger("root").info("日志系统初始化完成")
 
 

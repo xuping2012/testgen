@@ -12,11 +12,15 @@ import sys
 
 sys.stdout.reconfigure(encoding="utf-8")
 
+from src.utils import get_logger
+
+logger = get_logger(__name__)
+
 
 def migrate(db_path="data/testgen.db"):
     """Execute migration"""
     if not os.path.exists(db_path):
-        print(f"Database file not found: {db_path}")
+        logger.info(f"Database file not found: {db_path}")
         return
 
     conn = sqlite3.connect(db_path)
@@ -28,20 +32,20 @@ def migrate(db_path="data/testgen.db"):
 
         if "analysis_data" not in columns:
             cursor.execute("ALTER TABLE requirements ADD COLUMN analysis_data TEXT")
-            print("Added analysis_data column")
+            logger.info("Added analysis_data column")
 
         cursor.execute(
             "UPDATE requirements SET status = 'pending_analysis' WHERE status = 'pending'"
         )
         migrated_count = cursor.rowcount
         if migrated_count > 0:
-            print(f"Migrated {migrated_count} records to pending_analysis status")
+            logger.info(f"Migrated {migrated_count} records to pending_analysis status")
 
         conn.commit()
-        print("Migration completed")
+        logger.info("Migration completed")
 
     except Exception as e:
-        print(f"Migration failed: {e}")
+        logger.info(f"Migration failed: {e}")
         conn.rollback()
     finally:
         conn.close()

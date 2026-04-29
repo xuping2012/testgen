@@ -13,6 +13,9 @@ import uuid
 import zipfile
 from openpyxl import Workbook
 from typing import List, Dict, Any
+from src.utils import get_logger
+
+logger = get_logger(__name__)
 
 
 class CaseExporter:
@@ -450,4 +453,4 @@ if __name__ == "__main__":
     # 导出到XMind
     xmind_path = "test_cases.xmind"
     result = exporter.export_to_xmind(test_cases, xmind_path)
-    print(result)
+    logger.info(result)

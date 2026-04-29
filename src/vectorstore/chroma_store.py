@@ -11,13 +11,16 @@ from typing import List, Dict, Any, Optional
 import chromadb
 from chromadb.config import Settings
 from chromadb.utils import embedding_functions
+from src.utils import get_logger
+
+logger = get_logger(__name__)
 
 
 class ChromaVectorStore:
     """ChromaDB向量存储封装"""
 
     def __init__(
-        self, persist_directory: str = "data/chroma_db", enable_chunking: bool = False
+        self, persist_directory: str = "data/chroma_db", enable_chunking: bool = True
     ):
         """
         初始化向量数据库
@@ -41,7 +44,7 @@ class ChromaVectorStore:
             self._init_client()
             self._init_collections()
         except Exception as e:
-            print(f"ChromaDB初始化失败，尝试重建: {e}")
+            logger.info(f"ChromaDB初始化失败，尝试重建: {e}")
             self._rebuild_database()
 
     def _init_client(self):
@@ -59,16 +62,16 @@ class ChromaVectorStore:
             backup_dir = f"{self.persist_directory}_backup_{int(time.time())}"
             try:
                 shutil.move(self.persist_directory, backup_dir)
-                print(f"已备份损坏的数据库到: {backup_dir}")
+                logger.info(f"已备份损坏的数据库到: {backup_dir}")
             except Exception as e:
-                print(f"备份失败，直接删除: {e}")
+                logger.info(f"备份失败，直接删除: {e}")
                 shutil.rmtree(self.persist_directory, ignore_errors=True)
 
         # 重新创建目录和客户端
         os.makedirs(self.persist_directory, exist_ok=True)
         self._init_client()
         self._init_collections()
-        print("数据库已重建完成")
+        logger.info("数据库已重建完成")
 
     def _init_collections(self):
         """初始化集合"""
@@ -97,7 +100,7 @@ class ChromaVectorStore:
             # 验证集合是否正常工作
             self._validate_collections()
         except Exception as e:
-            print(f"初始化集合失败: {e}")
+            logger.info(f"初始化集合失败: {e}")
             raise
 
     def _validate_collections(self):
@@ -111,7 +114,7 @@ class ChromaVectorStore:
                 "hnsw" in error_msg.lower()
                 or "nothing found on disk" in error_msg.lower()
             ):
-                print(f"检测到hnsw索引损坏，正在重建...")
+                logger.info(f"检测到hnsw索引损坏，正在重建...")
                 self._rebuild_database()
             else:
                 raise
@@ -147,7 +150,7 @@ class ChromaVectorStore:
                     )
                 return
             except Exception as e:
-                print(f"[ChromaDB] 需求分块失败，使用原始内容: {e}")
+                logger.info(f"[ChromaDB] 需求分块失败，使用原始内容: {e}")
 
         # 未分块或分块失败，添加原始内容
         meta = metadata or {}
@@ -185,7 +188,7 @@ class ChromaVectorStore:
                     )
                 return
             except Exception as e:
-                print(f"[ChromaDB] 用例分块失败，使用原始内容: {e}")
+                logger.info(f"[ChromaDB] 用例分块失败，使用原始内容: {e}")
 
         # 未分块或分块失败，添加原始内容
         meta = metadata or {}
@@ -221,7 +224,7 @@ class ChromaVectorStore:
                     )
                 return
             except Exception as e:
-                print(f"[ChromaDB] 缺陷分块失败，使用原始内容: {e}")
+                logger.info(f"[ChromaDB] 缺陷分块失败，使用原始内容: {e}")
 
         # 未分块或分块失败，添加原始内容
         meta = metadata or {}
@@ -230,6 +233,35 @@ class ChromaVectorStore:
         self.defect_collection.add(
             ids=[defect_id], documents=[content], metadatas=[meta]
         )
+
+    def get_by_id(self, collection: str, doc_id: str) -> Dict[str, Any]:
+        try:
+            collection_map = {
+                "requirements": self.requirement_collection,
+                "historical_cases": self.case_collection,
+                "cases": self.case_collection,
+                "defects": self.defect_collection,
+            }
+            col = collection_map.get(collection)
+        except AttributeError:
+            return {"id": doc_id, "content": "", "metadata": {}, "exists": False}
+        if not col:
+            return {"id": doc_id, "content": "", "metadata": {}, "exists": False}
+
+        try:
+            result = col.get(ids=[doc_id])
+            if result["ids"]:
+                content = result["documents"][0] if result["documents"] else ""
+                metadata = result["metadatas"][0] if result["metadatas"] else {}
+                return {
+                    "id": doc_id,
+                    "content": content,
+                    "metadata": metadata,
+                    "exists": True,
+                }
+            return {"id": doc_id, "content": "", "metadata": {}, "exists": False}
+        except Exception:
+            return {"id": doc_id, "content": "", "metadata": {}, "exists": False}
 
     def search_similar_requirements(
         self, query: str, top_k: int = 3
@@ -307,7 +339,7 @@ class ChromaVectorStore:
 
                 self._chunker = DocumentChunker()
             except Exception as e:
-                print(f"[ChromaDB] 分块器初始化失败: {e}")
+                logger.info(f"[ChromaDB] 分块器初始化失败: {e}")
                 return None
         return self._chunker
 
